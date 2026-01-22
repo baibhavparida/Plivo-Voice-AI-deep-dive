@@ -1,0 +1,1369 @@
+---
+title: "Voice AI Deployment Guide"
+description: "Complete guide to deploying voice AI applications - production checklists, Docker containerization, Kubernetes deployment, CI/CD pipelines, monitoring, and rollback strategies"
+category: "implementation"
+tags:
+  - deployment
+  - docker
+  - kubernetes
+  - cicd
+  - monitoring
+  - production
+relatedTopics:
+  - code-examples
+  - sdk-reference
+  - scalability
+lastUpdated: "2026-01-21"
+difficulty: advanced
+---
+
+# Voice AI Deployment Guide
+
+This guide covers everything you need to deploy voice AI applications to production, from pre-deployment checklists to monitoring and rollback strategies.
+
+## Production Checklist
+
+Before deploying your voice AI application, verify each item in this checklist.
+
+```
++------------------------------------------------------------------+
+|                    PRODUCTION READINESS CHECKLIST                 |
++------------------------------------------------------------------+
+|                                                                   |
+|  INFRASTRUCTURE                                                   |
+|  [ ] SSL/TLS certificates configured                             |
+|  [ ] Domain names registered and DNS configured                  |
+|  [ ] Load balancer configured                                    |
+|  [ ] Auto-scaling policies defined                               |
+|  [ ] WebSocket support verified at all layers                    |
+|                                                                   |
+|  SECURITY                                                         |
+|  [ ] API keys stored in secrets manager                          |
+|  [ ] Network policies configured                                 |
+|  [ ] Webhook signatures validated                                |
+|  [ ] Audio encryption enabled (TLS for all streams)              |
+|  [ ] PII handling compliant with regulations                     |
+|  [ ] Rate limiting configured                                    |
+|                                                                   |
+|  RELIABILITY                                                      |
+|  [ ] Health check endpoints implemented                          |
+|  [ ] Graceful shutdown handling                                  |
+|  [ ] Retry logic with exponential backoff                        |
+|  [ ] Circuit breakers for external services                      |
+|  [ ] Fallback responses for service failures                     |
+|                                                                   |
+|  OBSERVABILITY                                                    |
+|  [ ] Structured logging configured                               |
+|  [ ] Metrics collection (Prometheus/DataDog/etc.)               |
+|  [ ] Distributed tracing (OpenTelemetry)                        |
+|  [ ] Alerting rules defined                                      |
+|  [ ] Dashboard created for key metrics                           |
+|                                                                   |
+|  TESTING                                                          |
+|  [ ] Load testing completed                                      |
+|  [ ] Chaos testing performed                                     |
+|  [ ] Failover procedures tested                                  |
+|  [ ] Rollback procedures documented and tested                   |
+|                                                                   |
+|  DOCUMENTATION                                                    |
+|  [ ] Runbook created                                             |
+|  [ ] On-call procedures documented                               |
+|  [ ] Architecture diagrams updated                               |
+|  [ ] API documentation current                                   |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+## Environment Configuration
+
+### Configuration Management
+
+```python
+"""
+Production configuration management
+"""
+
+import os
+from typing import Optional
+from pydantic import BaseSettings, Field, validator
+from functools import lru_cache
+
+
+class VoiceAgentSettings(BaseSettings):
+    """
+    Voice AI application settings
+    Loaded from environment variables with validation
+    """
+
+    # Environment
+    environment: str = Field(default="development", env="ENVIRONMENT")
+    debug: bool = Field(default=False, env="DEBUG")
+
+    # Server
+    host: str = Field(default="0.0.0.0", env="HOST")
+    port: int = Field(default=8080, env="PORT")
+    workers: int = Field(default=4, env="WORKERS")
+
+    # API Keys (loaded from environment or secrets manager)
+    openai_api_key: str = Field(..., env="OPENAI_API_KEY")
+    deepgram_api_key: str = Field(..., env="DEEPGRAM_API_KEY")
+    elevenlabs_api_key: str = Field(..., env="ELEVENLABS_API_KEY")
+    plivo_auth_id: Optional[str] = Field(None, env="PLIVO_AUTH_ID")
+    plivo_auth_token: Optional[str] = Field(None, env="PLIVO_AUTH_TOKEN")
+
+    # STT Configuration
+    stt_model: str = Field(default="nova-2", env="STT_MODEL")
+    stt_language: str = Field(default="en-US", env="STT_LANGUAGE")
+
+    # LLM Configuration
+    llm_model: str = Field(default="gpt-4-turbo-preview", env="LLM_MODEL")
+    llm_max_tokens: int = Field(default=150, env="LLM_MAX_TOKENS")
+    llm_temperature: float = Field(default=0.7, env="LLM_TEMPERATURE")
+    llm_timeout: int = Field(default=30, env="LLM_TIMEOUT")
+
+    # TTS Configuration
+    tts_voice_id: str = Field(default="21m00Tcm4TlvDq8ikWAM", env="TTS_VOICE_ID")
+    tts_model: str = Field(default="eleven_turbo_v2", env="TTS_MODEL")
+
+    # Timeouts and Limits
+    request_timeout: int = Field(default=30, env="REQUEST_TIMEOUT")
+    max_conversation_turns: int = Field(default=20, env="MAX_CONVERSATION_TURNS")
+    max_concurrent_calls: int = Field(default=100, env="MAX_CONCURRENT_CALLS")
+
+    # Logging
+    log_level: str = Field(default="INFO", env="LOG_LEVEL")
+    log_format: str = Field(default="json", env="LOG_FORMAT")
+
+    # Metrics
+    metrics_enabled: bool = Field(default=True, env="METRICS_ENABLED")
+    metrics_port: int = Field(default=9090, env="METRICS_PORT")
+
+    # Feature Flags
+    enable_streaming: bool = Field(default=True, env="ENABLE_STREAMING")
+    enable_function_calling: bool = Field(default=True, env="ENABLE_FUNCTION_CALLING")
+
+    @validator("environment")
+    def validate_environment(cls, v):
+        allowed = ["development", "staging", "production"]
+        if v not in allowed:
+            raise ValueError(f"Environment must be one of: {allowed}")
+        return v
+
+    @validator("log_level")
+    def validate_log_level(cls, v):
+        allowed = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        if v.upper() not in allowed:
+            raise ValueError(f"Log level must be one of: {allowed}")
+        return v.upper()
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+
+
+@lru_cache()
+def get_settings() -> VoiceAgentSettings:
+    """Get cached settings instance"""
+    return VoiceAgentSettings()
+
+
+# Environment-specific overrides
+def get_environment_config():
+    """Load environment-specific configuration"""
+    settings = get_settings()
+
+    configs = {
+        "development": {
+            "log_level": "DEBUG",
+            "workers": 1,
+            "max_concurrent_calls": 10,
+        },
+        "staging": {
+            "log_level": "INFO",
+            "workers": 2,
+            "max_concurrent_calls": 50,
+        },
+        "production": {
+            "log_level": "INFO",
+            "workers": 4,
+            "max_concurrent_calls": 100,
+        }
+    }
+
+    return configs.get(settings.environment, configs["development"])
+```
+
+### Secrets Management
+
+```yaml
+# kubernetes/secrets.yaml
+# Note: In production, use external secrets manager (AWS Secrets Manager, Vault, etc.)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: voice-agent-secrets
+  namespace: voice-ai
+type: Opaque
+stringData:
+  OPENAI_API_KEY: "sk-..."
+  DEEPGRAM_API_KEY: "..."
+  ELEVENLABS_API_KEY: "..."
+  PLIVO_AUTH_ID: "..."
+  PLIVO_AUTH_TOKEN: "..."
+---
+# For production, use External Secrets Operator with AWS Secrets Manager
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: voice-agent-secrets
+  namespace: voice-ai
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: voice-agent-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: OPENAI_API_KEY
+      remoteRef:
+        key: voice-ai/production/openai
+        property: api_key
+    - secretKey: DEEPGRAM_API_KEY
+      remoteRef:
+        key: voice-ai/production/deepgram
+        property: api_key
+```
+
+## Docker Containerization
+
+### Dockerfile
+
+```dockerfile
+# Dockerfile
+# Multi-stage build for production voice AI application
+
+# Stage 1: Builder
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Stage 2: Production
+FROM python:3.11-slim as production
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && adduser --disabled-password --gecos "" appuser
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy application code
+COPY --chown=appuser:appuser . .
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose ports
+EXPOSE 8080 9090
+
+# Run the application
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+### Docker Compose for Local Development
+
+```yaml
+# docker-compose.yaml
+version: '3.8'
+
+services:
+  voice-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - voice-ai-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - voice-ai-network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - voice-ai-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - voice-ai-network
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  redis_data:
+
+networks:
+  voice-ai-network:
+    driver: bridge
+```
+
+### Optimized Production Image
+
+```dockerfile
+# Dockerfile.production
+# Highly optimized production image
+
+FROM python:3.11-slim as base
+
+# Prevent Python from writing pyc files and buffering stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Builder stage
+FROM base as builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install -r requirements.txt
+
+# Production stage
+FROM base as production
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+    tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash appuser
+
+# Copy venv from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+# Copy application
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser main.py .
+
+USER appuser
+
+EXPOSE 8080 9090
+
+# Use tini as init system
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+CMD ["python", "-m", "uvicorn", "main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8080", \
+     "--workers", "4", \
+     "--loop", "uvloop", \
+     "--http", "httptools"]
+```
+
+## Kubernetes Deployment
+
+### Deployment Manifest
+
+```yaml
+# kubernetes/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent
+  namespace: voice-ai
+  labels:
+    app: voice-agent
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: voice-agent
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: voice-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: voice-agent
+          image: your-registry/voice-agent:v1.0.0
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: WORKERS
+              value: "4"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+          envFrom:
+            - secretRef:
+                name: voice-agent-secrets
+            - configMapRef:
+                name: voice-agent-config
+
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: voice-agent
+                topologyKey: kubernetes.io/hostname
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: voice-agent
+
+      terminationGracePeriodSeconds: 60
+```
+
+### Service and Ingress
+
+```yaml
+# kubernetes/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-agent
+  namespace: voice-ai
+  labels:
+    app: voice-agent
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app: voice-agent
+---
+# kubernetes/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voice-agent
+  namespace: voice-ai
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/websocket-services: "voice-agent"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$request_uri"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - voice-api.yourdomain.com
+      secretName: voice-agent-tls
+  rules:
+    - host: voice-api.yourdomain.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: voice-agent
+                port:
+                  number: 80
+```
+
+### Horizontal Pod Autoscaler
+
+```yaml
+# kubernetes/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: voice-agent
+  namespace: voice-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: voice-agent
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+    - type: Pods
+      pods:
+        metric:
+          name: voice_agent_active_calls
+        target:
+          type: AverageValue
+          averageValue: "50"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+```
+
+## CI/CD Pipeline Setup
+
+### GitHub Actions
+
+```yaml
+# .github/workflows/deploy.yaml
+name: Deploy Voice AI Agent
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run linting
+        run: |
+          ruff check .
+          mypy .
+
+      - name: Run tests
+        run: pytest --cov=src --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,prefix=
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.production
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  deploy-staging:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
+
+      - name: Deploy to staging
+        run: |
+          kubectl set image deployment/voice-agent \
+            voice-agent=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
+            -n voice-ai-staging
+          kubectl rollout status deployment/voice-agent -n voice-ai-staging
+
+      - name: Run smoke tests
+        run: |
+          ./scripts/smoke-tests.sh staging
+
+  deploy-production:
+    needs: [build, deploy-staging]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+
+      - name: Deploy to production
+        run: |
+          kubectl set image deployment/voice-agent \
+            voice-agent=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} \
+            -n voice-ai
+          kubectl rollout status deployment/voice-agent -n voice-ai --timeout=10m
+
+      - name: Verify deployment
+        run: |
+          ./scripts/verify-deployment.sh production
+
+      - name: Notify on success
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Deployed voice-agent ${{ github.ref_name }} to production"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+```
+
+### GitLab CI/CD
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - test
+  - build
+  - deploy-staging
+  - deploy-production
+
+variables:
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE
+  KUBERNETES_NAMESPACE_STAGING: voice-ai-staging
+  KUBERNETES_NAMESPACE_PRODUCTION: voice-ai
+
+.docker-login: &docker-login
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+test:
+  stage: test
+  image: python:3.11-slim
+  script:
+    - pip install -r requirements.txt -r requirements-dev.txt
+    - ruff check .
+    - pytest --cov=src
+  coverage: '/TOTAL.*\s+(\d+%)/'
+
+build:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  <<: *docker-login
+  script:
+    - docker build -t $DOCKER_IMAGE:$CI_COMMIT_SHA -f Dockerfile.production .
+    - docker push $DOCKER_IMAGE:$CI_COMMIT_SHA
+    - |
+      if [[ -n "$CI_COMMIT_TAG" ]]; then
+        docker tag $DOCKER_IMAGE:$CI_COMMIT_SHA $DOCKER_IMAGE:$CI_COMMIT_TAG
+        docker push $DOCKER_IMAGE:$CI_COMMIT_TAG
+      fi
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+deploy-staging:
+  stage: deploy-staging
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context $KUBE_CONTEXT_STAGING
+    - kubectl set image deployment/voice-agent voice-agent=$DOCKER_IMAGE:$CI_COMMIT_SHA -n $KUBERNETES_NAMESPACE_STAGING
+    - kubectl rollout status deployment/voice-agent -n $KUBERNETES_NAMESPACE_STAGING
+  environment:
+    name: staging
+    url: https://staging-voice-api.yourdomain.com
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+deploy-production:
+  stage: deploy-production
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context $KUBE_CONTEXT_PRODUCTION
+    - kubectl set image deployment/voice-agent voice-agent=$DOCKER_IMAGE:$CI_COMMIT_TAG -n $KUBERNETES_NAMESPACE_PRODUCTION
+    - kubectl rollout status deployment/voice-agent -n $KUBERNETES_NAMESPACE_PRODUCTION --timeout=10m
+  environment:
+    name: production
+    url: https://voice-api.yourdomain.com
+  when: manual
+  rules:
+    - if: $CI_COMMIT_TAG
+```
+
+## Monitoring and Logging
+
+### Prometheus Configuration
+
+```yaml
+# monitoring/prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - "alerts/*.yml"
+
+scrape_configs:
+  - job_name: 'voice-agent'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - voice-ai
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+```
+
+### Alert Rules
+
+```yaml
+# monitoring/alerts/voice-agent.yml
+groups:
+  - name: voice-agent
+    rules:
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(voice_agent_latency_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High latency in voice agent
+          description: 95th percentile latency is {{ $value }}s
+
+      - alert: HighErrorRate
+        expr: rate(voice_agent_calls_total{status="error"}[5m]) / rate(voice_agent_calls_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High error rate in voice agent
+          description: Error rate is {{ $value | humanizePercentage }}
+
+      - alert: TooManyActiveCalls
+        expr: voice_agent_active_calls > 90
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Approaching max concurrent calls
+          description: {{ $value }} active calls (limit 100)
+
+      - alert: PodNotReady
+        expr: kube_pod_status_ready{namespace="voice-ai", pod=~"voice-agent.*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Voice agent pod not ready
+          description: Pod {{ $labels.pod }} is not ready
+
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{namespace="voice-ai", container="voice-agent"} / container_spec_memory_limit_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High memory usage
+          description: Memory usage is at {{ $value | humanizePercentage }}
+```
+
+### Grafana Dashboard
+
+```json
+{
+  "dashboard": {
+    "title": "Voice AI Agent Dashboard",
+    "panels": [
+      {
+        "title": "Active Calls",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "voice_agent_active_calls",
+            "legendFormat": "Active Calls"
+          }
+        ]
+      },
+      {
+        "title": "Calls per Second",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(voice_agent_calls_total[1m])",
+            "legendFormat": "{{status}}"
+          }
+        ]
+      },
+      {
+        "title": "Latency Distribution",
+        "type": "heatmap",
+        "targets": [
+          {
+            "expr": "rate(voice_agent_latency_seconds_bucket[5m])",
+            "format": "heatmap"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(voice_agent_calls_total{status='error'}[5m]) / rate(voice_agent_calls_total[5m]) * 100",
+            "legendFormat": "Error Rate %"
+          }
+        ]
+      },
+      {
+        "title": "P95 Latency by Operation",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(voice_agent_latency_seconds_bucket[5m]))",
+            "legendFormat": "{{operation}}"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## Rollback Strategies
+
+### Kubernetes Rollback
+
+```bash
+#!/bin/bash
+# scripts/rollback.sh
+
+NAMESPACE=${1:-voice-ai}
+DEPLOYMENT=${2:-voice-agent}
+REVISION=${3:-}  # Optional: specific revision
+
+echo "Rolling back $DEPLOYMENT in $NAMESPACE..."
+
+if [ -n "$REVISION" ]; then
+    # Rollback to specific revision
+    kubectl rollout undo deployment/$DEPLOYMENT -n $NAMESPACE --to-revision=$REVISION
+else
+    # Rollback to previous version
+    kubectl rollout undo deployment/$DEPLOYMENT -n $NAMESPACE
+fi
+
+# Wait for rollback to complete
+kubectl rollout status deployment/$DEPLOYMENT -n $NAMESPACE --timeout=5m
+
+# Verify pods are healthy
+kubectl get pods -n $NAMESPACE -l app=$DEPLOYMENT
+
+# Show current revision
+kubectl rollout history deployment/$DEPLOYMENT -n $NAMESPACE
+```
+
+### Blue-Green Deployment
+
+```yaml
+# kubernetes/blue-green/blue-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent-blue
+  namespace: voice-ai
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: voice-agent
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+        version: blue
+    spec:
+      containers:
+        - name: voice-agent
+          image: your-registry/voice-agent:v1.0.0
+          # ... rest of container spec
+---
+# kubernetes/blue-green/green-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent-green
+  namespace: voice-ai
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: voice-agent
+      version: green
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+        version: green
+    spec:
+      containers:
+        - name: voice-agent
+          image: your-registry/voice-agent:v1.1.0
+          # ... rest of container spec
+---
+# kubernetes/blue-green/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-agent
+  namespace: voice-ai
+spec:
+  selector:
+    app: voice-agent
+    version: blue  # Switch to "green" for cutover
+  ports:
+    - port: 80
+      targetPort: 8080
+```
+
+### Canary Deployment with Istio
+
+```yaml
+# kubernetes/canary/virtual-service.yaml
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: voice-agent
+  namespace: voice-ai
+spec:
+  hosts:
+    - voice-agent
+  http:
+    - match:
+        - headers:
+            x-canary:
+              exact: "true"
+      route:
+        - destination:
+            host: voice-agent
+            subset: canary
+    - route:
+        - destination:
+            host: voice-agent
+            subset: stable
+          weight: 95
+        - destination:
+            host: voice-agent
+            subset: canary
+          weight: 5
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: voice-agent
+  namespace: voice-ai
+spec:
+  host: voice-agent
+  subsets:
+    - name: stable
+      labels:
+        version: stable
+    - name: canary
+      labels:
+        version: canary
+```
+
+### Automated Rollback Script
+
+```python
+"""
+Automated rollback based on metrics
+"""
+
+import time
+import subprocess
+from prometheus_api_client import PrometheusConnect
+
+class AutoRollback:
+    """Automated rollback based on error rate and latency"""
+
+    def __init__(
+        self,
+        prometheus_url: str,
+        namespace: str = "voice-ai",
+        deployment: str = "voice-agent"
+    ):
+        self.prom = PrometheusConnect(url=prometheus_url)
+        self.namespace = namespace
+        self.deployment = deployment
+
+        # Thresholds
+        self.error_rate_threshold = 0.05  # 5%
+        self.latency_threshold = 3.0  # 3 seconds p95
+        self.check_interval = 30  # seconds
+        self.consecutive_failures = 3
+
+    def get_error_rate(self) -> float:
+        """Get current error rate"""
+        query = f'''
+            rate(voice_agent_calls_total{{status="error",namespace="{self.namespace}"}}[5m])
+            /
+            rate(voice_agent_calls_total{{namespace="{self.namespace}"}}[5m])
+        '''
+        result = self.prom.custom_query(query)
+        if result:
+            return float(result[0]['value'][1])
+        return 0.0
+
+    def get_p95_latency(self) -> float:
+        """Get current p95 latency"""
+        query = f'''
+            histogram_quantile(0.95,
+                rate(voice_agent_latency_seconds_bucket{{namespace="{self.namespace}"}}[5m])
+            )
+        '''
+        result = self.prom.custom_query(query)
+        if result:
+            return float(result[0]['value'][1])
+        return 0.0
+
+    def rollback(self):
+        """Execute rollback"""
+        print(f"Initiating rollback for {self.deployment}...")
+        subprocess.run([
+            "kubectl", "rollout", "undo",
+            f"deployment/{self.deployment}",
+            "-n", self.namespace
+        ], check=True)
+
+        # Wait for rollback
+        subprocess.run([
+            "kubectl", "rollout", "status",
+            f"deployment/{self.deployment}",
+            "-n", self.namespace,
+            "--timeout=5m"
+        ], check=True)
+
+        print("Rollback completed successfully")
+
+    def monitor_and_rollback(self, duration_minutes: int = 30):
+        """Monitor metrics and rollback if thresholds exceeded"""
+        failures = 0
+        end_time = time.time() + (duration_minutes * 60)
+
+        print(f"Monitoring deployment for {duration_minutes} minutes...")
+
+        while time.time() < end_time:
+            error_rate = self.get_error_rate()
+            latency = self.get_p95_latency()
+
+            print(f"Error rate: {error_rate:.2%}, P95 latency: {latency:.2f}s")
+
+            if error_rate > self.error_rate_threshold or latency > self.latency_threshold:
+                failures += 1
+                print(f"Threshold exceeded ({failures}/{self.consecutive_failures})")
+
+                if failures >= self.consecutive_failures:
+                    print("Consecutive failures exceeded, triggering rollback")
+                    self.rollback()
+                    return False
+            else:
+                failures = 0
+
+            time.sleep(self.check_interval)
+
+        print("Monitoring completed successfully, deployment is healthy")
+        return True
+
+
+if __name__ == "__main__":
+    rollback = AutoRollback(
+        prometheus_url="http://prometheus:9090",
+        namespace="voice-ai",
+        deployment="voice-agent"
+    )
+
+    rollback.monitor_and_rollback(duration_minutes=30)
+```
+
+## Summary
+
+This deployment guide covers the essential aspects of deploying voice AI applications to production:
+
+1. **Production Checklist**: Comprehensive verification before deployment
+2. **Environment Configuration**: Secure, validated configuration management
+3. **Docker Containerization**: Optimized multi-stage builds
+4. **Kubernetes Deployment**: Production-ready manifests with autoscaling
+5. **CI/CD Pipelines**: GitHub Actions and GitLab CI examples
+6. **Monitoring**: Prometheus, Grafana, and alerting setup
+7. **Rollback Strategies**: Manual, blue-green, and canary deployments
+
+For additional guidance on scaling your deployment, see the [Scalability](/topics/enterprise/scalability) section. For security considerations, refer to [Security and Compliance](/topics/enterprise/security-compliance).
+
+<RelatedTopics
+  topics={[
+    {
+      title: "Code Examples",
+      href: "/topics/implementation/code-examples",
+      description: "Production-ready code patterns and examples"
+    },
+    {
+      title: "Scalability",
+      href: "/topics/enterprise/scalability",
+      description: "Scale your voice AI application to handle high volumes"
+    },
+    {
+      title: "Security and Compliance",
+      href: "/topics/enterprise/security-compliance",
+      description: "Security best practices and compliance requirements"
+    },
+    {
+      title: "Error Handling",
+      href: "/topics/agent-architecture/error-handling",
+      description: "Comprehensive error handling strategies"
+    }
+  ]}
+/>

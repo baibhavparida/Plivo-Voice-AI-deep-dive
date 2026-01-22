@@ -1,0 +1,1838 @@
+---
+title: "Voice AI Code Examples"
+description: "Production-ready code examples for voice AI development - basic agents, streaming audio, function calling, multi-language support, and production patterns"
+category: "implementation"
+tags:
+  - code-examples
+  - python
+  - nodejs
+  - streaming
+  - function-calling
+  - production
+relatedTopics:
+  - getting-started
+  - sdk-reference
+  - deployment
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Voice AI Code Examples
+
+This collection provides production-ready code examples covering common voice AI implementation patterns. Each example is designed to be functional and adaptable to your specific requirements.
+
+## Basic Voice Agent
+
+### Python Implementation
+
+A complete voice agent demonstrating the STT to LLM to TTS pipeline.
+
+```python
+"""
+Basic Voice AI Agent
+Full implementation with conversation management and error handling
+"""
+
+import os
+import asyncio
+import logging
+from typing import Optional, AsyncIterator
+from dataclasses import dataclass, field
+from dotenv import load_dotenv
+from openai import AsyncOpenAI
+from deepgram import DeepgramClient, PrerecordedOptions
+import httpx
+
+load_dotenv()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentConfig:
+    """Configuration for the voice agent"""
+    # STT Settings
+    stt_model: str = "nova-2"
+    stt_language: str = "en-US"
+
+    # LLM Settings
+    llm_model: str = "gpt-4-turbo-preview"
+    llm_temperature: float = 0.7
+    llm_max_tokens: int = 150
+
+    # TTS Settings
+    tts_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    tts_model: str = "eleven_turbo_v2"
+
+    # Agent Behavior
+    system_prompt: str = """You are a helpful voice assistant. Keep your responses
+    concise and conversational - aim for 1-2 sentences. Speak naturally as if
+    having a phone conversation. If you don't understand something, ask for
+    clarification."""
+
+
+@dataclass
+class ConversationTurn:
+    """Single turn in the conversation"""
+    role: str
+    content: str
+    audio_duration: Optional[float] = None
+
+
+@dataclass
+class Conversation:
+    """Manages conversation state"""
+    turns: list[ConversationTurn] = field(default_factory=list)
+    max_turns: int = 20
+
+    def add_turn(self, role: str, content: str, duration: float = None):
+        """Add a turn to the conversation"""
+        self.turns.append(ConversationTurn(role, content, duration))
+
+        # Trim old turns if exceeding max
+        if len(self.turns) > self.max_turns:
+            # Keep system message and recent turns
+            self.turns = self.turns[:1] + self.turns[-(self.max_turns-1):]
+
+    def to_messages(self) -> list[dict]:
+        """Convert to OpenAI message format"""
+        return [{"role": t.role, "content": t.content} for t in self.turns]
+
+
+class VoiceAgent:
+    """Production voice AI agent"""
+
+    def __init__(self, config: AgentConfig = None):
+        self.config = config or AgentConfig()
+
+        # Initialize clients
+        self.openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.deepgram = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"))
+        self.elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+
+        # Initialize conversation with system prompt
+        self.conversation = Conversation()
+        self.conversation.add_turn("system", self.config.system_prompt)
+
+    async def transcribe(self, audio_data: bytes) -> str:
+        """
+        Convert speech to text
+
+        Args:
+            audio_data: Raw audio bytes (WAV format expected)
+
+        Returns:
+            Transcribed text
+        """
+        try:
+            options = PrerecordedOptions(
+                model=self.config.stt_model,
+                language=self.config.stt_language,
+                smart_format=True,
+                punctuate=True,
+                diarize=False,
+            )
+
+            response = await asyncio.to_thread(
+                self.deepgram.listen.prerecorded.v("1").transcribe_file,
+                {"buffer": audio_data, "mimetype": "audio/wav"},
+                options
+            )
+
+            transcript = response.results.channels[0].alternatives[0].transcript
+            confidence = response.results.channels[0].alternatives[0].confidence
+
+            logger.info(f"Transcribed: '{transcript}' (confidence: {confidence:.2f})")
+            return transcript
+
+        except Exception as e:
+            logger.error(f"Transcription error: {e}")
+            raise
+
+    async def generate_response(self, user_input: str) -> str:
+        """
+        Generate LLM response
+
+        Args:
+            user_input: User's transcribed message
+
+        Returns:
+            Agent's text response
+        """
+        # Add user message to conversation
+        self.conversation.add_turn("user", user_input)
+
+        try:
+            response = await self.openai.chat.completions.create(
+                model=self.config.llm_model,
+                messages=self.conversation.to_messages(),
+                max_tokens=self.config.llm_max_tokens,
+                temperature=self.config.llm_temperature,
+            )
+
+            assistant_message = response.choices[0].message.content
+
+            # Add assistant response to conversation
+            self.conversation.add_turn("assistant", assistant_message)
+
+            logger.info(f"Generated response: '{assistant_message}'")
+            return assistant_message
+
+        except Exception as e:
+            logger.error(f"LLM error: {e}")
+            raise
+
+    async def synthesize_speech(self, text: str) -> bytes:
+        """
+        Convert text to speech
+
+        Args:
+            text: Text to synthesize
+
+        Returns:
+            Audio bytes (MP3 format)
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"https://api.elevenlabs.io/v1/text-to-speech/{self.config.tts_voice_id}",
+                    headers={
+                        "xi-api-key": self.elevenlabs_key,
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "text": text,
+                        "model_id": self.config.tts_model,
+                        "voice_settings": {
+                            "stability": 0.5,
+                            "similarity_boost": 0.75,
+                            "style": 0.0,
+                            "use_speaker_boost": True
+                        }
+                    },
+                    timeout=30.0
+                )
+                response.raise_for_status()
+
+                audio_data = response.content
+                logger.info(f"Synthesized {len(audio_data)} bytes of audio")
+                return audio_data
+
+        except Exception as e:
+            logger.error(f"TTS error: {e}")
+            raise
+
+    async def process_turn(self, audio_data: bytes) -> bytes:
+        """
+        Process a complete conversation turn
+
+        Args:
+            audio_data: User's audio input
+
+        Returns:
+            Agent's audio response
+        """
+        # Step 1: Speech to Text
+        transcript = await self.transcribe(audio_data)
+
+        if not transcript.strip():
+            logger.warning("Empty transcript received")
+            return await self.synthesize_speech(
+                "I didn't catch that. Could you please repeat?"
+            )
+
+        # Step 2: Generate Response
+        response_text = await self.generate_response(transcript)
+
+        # Step 3: Text to Speech
+        audio_response = await self.synthesize_speech(response_text)
+
+        return audio_response
+
+    def reset_conversation(self):
+        """Reset conversation to initial state"""
+        self.conversation = Conversation()
+        self.conversation.add_turn("system", self.config.system_prompt)
+
+
+# Usage example
+async def main():
+    # Create agent with custom configuration
+    config = AgentConfig(
+        system_prompt="""You are a helpful customer service agent for a
+        software company. Be friendly, professional, and concise. Help
+        customers with their questions about products and services."""
+    )
+
+    agent = VoiceAgent(config)
+
+    # Simulate conversation
+    print("\n=== Voice AI Agent Demo ===\n")
+
+    test_messages = [
+        "Hi, I need help with my account.",
+        "I forgot my password and can't log in.",
+        "Thanks for your help!"
+    ]
+
+    for message in test_messages:
+        print(f"User: {message}")
+        response = await agent.generate_response(message)
+        print(f"Agent: {response}\n")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Node.js Implementation
+
+```typescript
+/**
+ * Basic Voice AI Agent - Node.js Implementation
+ */
+
+import OpenAI from 'openai';
+import { createClient as createDeepgramClient } from '@deepgram/sdk';
+import axios from 'axios';
+import { config as loadEnv } from 'dotenv';
+
+loadEnv();
+
+interface AgentConfig {
+  sttModel: string;
+  sttLanguage: string;
+  llmModel: string;
+  llmTemperature: number;
+  llmMaxTokens: number;
+  ttsVoiceId: string;
+  ttsModel: string;
+  systemPrompt: string;
+}
+
+interface ConversationTurn {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+const defaultConfig: AgentConfig = {
+  sttModel: 'nova-2',
+  sttLanguage: 'en-US',
+  llmModel: 'gpt-4-turbo-preview',
+  llmTemperature: 0.7,
+  llmMaxTokens: 150,
+  ttsVoiceId: '21m00Tcm4TlvDq8ikWAM',
+  ttsModel: 'eleven_turbo_v2',
+  systemPrompt: `You are a helpful voice assistant. Keep your responses
+    concise and conversational - aim for 1-2 sentences.`,
+};
+
+class VoiceAgent {
+  private config: AgentConfig;
+  private openai: OpenAI;
+  private deepgram: ReturnType<typeof createDeepgramClient>;
+  private conversation: ConversationTurn[];
+
+  constructor(config: Partial<AgentConfig> = {}) {
+    this.config = { ...defaultConfig, ...config };
+
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    this.deepgram = createDeepgramClient(process.env.DEEPGRAM_API_KEY || '');
+
+    this.conversation = [
+      { role: 'system', content: this.config.systemPrompt },
+    ];
+  }
+
+  async transcribe(audioData: Buffer): Promise<string> {
+    try {
+      const response = await this.deepgram.listen.prerecorded.transcribeFile(
+        audioData,
+        {
+          model: this.config.sttModel,
+          language: this.config.sttLanguage,
+          smart_format: true,
+          punctuate: true,
+        }
+      );
+
+      const transcript =
+        response.result?.results?.channels[0]?.alternatives[0]?.transcript || '';
+
+      console.log(`[STT] Transcribed: "${transcript}"`);
+      return transcript;
+    } catch (error) {
+      console.error('[STT] Error:', error);
+      throw error;
+    }
+  }
+
+  async generateResponse(userInput: string): Promise<string> {
+    this.conversation.push({ role: 'user', content: userInput });
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: this.config.llmModel,
+        messages: this.conversation,
+        max_tokens: this.config.llmMaxTokens,
+        temperature: this.config.llmTemperature,
+      });
+
+      const assistantMessage = response.choices[0]?.message?.content || '';
+      this.conversation.push({ role: 'assistant', content: assistantMessage });
+
+      console.log(`[LLM] Response: "${assistantMessage}"`);
+      return assistantMessage;
+    } catch (error) {
+      console.error('[LLM] Error:', error);
+      throw error;
+    }
+  }
+
+  async synthesizeSpeech(text: string): Promise<Buffer> {
+    try {
+      const response = await axios.post(
+        `https://api.elevenlabs.io/v1/text-to-speech/${this.config.ttsVoiceId}`,
+        {
+          text,
+          model_id: this.config.ttsModel,
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+          },
+        },
+        {
+          headers: {
+            'xi-api-key': process.env.ELEVENLABS_API_KEY,
+            'Content-Type': 'application/json',
+          },
+          responseType: 'arraybuffer',
+        }
+      );
+
+      console.log(`[TTS] Synthesized ${response.data.length} bytes`);
+      return Buffer.from(response.data);
+    } catch (error) {
+      console.error('[TTS] Error:', error);
+      throw error;
+    }
+  }
+
+  async processTurn(audioData: Buffer): Promise<Buffer> {
+    const transcript = await this.transcribe(audioData);
+
+    if (!transcript.trim()) {
+      return this.synthesizeSpeech("I didn't catch that. Could you repeat?");
+    }
+
+    const response = await this.generateResponse(transcript);
+    return this.synthesizeSpeech(response);
+  }
+
+  resetConversation(): void {
+    this.conversation = [
+      { role: 'system', content: this.config.systemPrompt },
+    ];
+  }
+}
+
+// Usage
+async function main() {
+  const agent = new VoiceAgent({
+    systemPrompt: 'You are a friendly voice assistant. Be helpful and concise.',
+  });
+
+  console.log('\n=== Voice AI Agent Demo ===\n');
+
+  const testMessages = [
+    'Hello, what can you help me with?',
+    'Tell me about the weather.',
+    'Thank you!',
+  ];
+
+  for (const message of testMessages) {
+    console.log(`User: ${message}`);
+    const response = await agent.generateResponse(message);
+    console.log(`Agent: ${response}\n`);
+  }
+}
+
+main().catch(console.error);
+```
+
+## Streaming Audio with WebSockets
+
+### Real-Time Streaming Pipeline
+
+```python
+"""
+Streaming Voice AI Pipeline
+Demonstrates concurrent STT -> LLM -> TTS streaming for low latency
+"""
+
+import os
+import asyncio
+import json
+import base64
+from typing import AsyncIterator, Callable, Optional
+from dataclasses import dataclass
+import websockets
+from openai import AsyncOpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+@dataclass
+class StreamingConfig:
+    """Configuration for streaming pipeline"""
+    # Audio settings
+    sample_rate: int = 16000
+    channels: int = 1
+    encoding: str = "linear16"
+
+    # Streaming settings
+    chunk_duration_ms: int = 20
+    silence_threshold_ms: int = 500
+
+    # TTS chunking
+    min_chunk_chars: int = 20
+    sentence_delimiters: tuple = ('.', '!', '?', ',', ';')
+
+
+class StreamingSTT:
+    """Real-time speech-to-text using WebSocket"""
+
+    def __init__(self, api_key: str, config: StreamingConfig):
+        self.api_key = api_key
+        self.config = config
+        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+
+    async def connect(self) -> None:
+        """Establish WebSocket connection to Deepgram"""
+        url = (
+            f"wss://api.deepgram.com/v1/listen"
+            f"?encoding={self.config.encoding}"
+            f"&sample_rate={self.config.sample_rate}"
+            f"&channels={self.config.channels}"
+            f"&punctuate=true"
+            f"&interim_results=true"
+        )
+
+        self.ws = await websockets.connect(
+            url,
+            extra_headers={"Authorization": f"Token {self.api_key}"},
+            ping_interval=20
+        )
+
+    async def stream_audio(
+        self,
+        audio_source: AsyncIterator[bytes]
+    ) -> AsyncIterator[dict]:
+        """
+        Stream audio and yield transcription results
+
+        Args:
+            audio_source: Async iterator of audio chunks
+
+        Yields:
+            Transcription results with is_final flag
+        """
+        if not self.ws:
+            await self.connect()
+
+        async def send_audio():
+            async for chunk in audio_source:
+                await self.ws.send(chunk)
+            # Signal end of audio
+            await self.ws.send(json.dumps({"type": "CloseStream"}))
+
+        async def receive_transcripts():
+            async for message in self.ws:
+                data = json.loads(message)
+
+                if data.get("type") == "Results":
+                    channel = data.get("channel", {})
+                    alternatives = channel.get("alternatives", [])
+
+                    if alternatives:
+                        yield {
+                            "text": alternatives[0].get("transcript", ""),
+                            "confidence": alternatives[0].get("confidence", 0),
+                            "is_final": data.get("is_final", False)
+                        }
+
+        # Run send and receive concurrently
+        send_task = asyncio.create_task(send_audio())
+
+        async for result in receive_transcripts():
+            yield result
+
+        await send_task
+
+    async def close(self):
+        """Close WebSocket connection"""
+        if self.ws:
+            await self.ws.close()
+            self.ws = None
+
+
+class StreamingLLM:
+    """Streaming LLM responses"""
+
+    def __init__(self, api_key: str):
+        self.client = AsyncOpenAI(api_key=api_key)
+
+    async def stream_response(
+        self,
+        messages: list[dict],
+        model: str = "gpt-4-turbo-preview"
+    ) -> AsyncIterator[str]:
+        """
+        Stream LLM response token by token
+
+        Args:
+            messages: Conversation messages
+            model: Model to use
+
+        Yields:
+            Individual tokens
+        """
+        stream = await self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+            max_tokens=150
+        )
+
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield delta.content
+
+
+class StreamingTTS:
+    """Streaming text-to-speech"""
+
+    def __init__(self, api_key: str, voice_id: str = "21m00Tcm4TlvDq8ikWAM"):
+        self.api_key = api_key
+        self.voice_id = voice_id
+        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+
+    async def connect(self) -> None:
+        """Connect to ElevenLabs streaming TTS"""
+        url = f"wss://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}/stream-input"
+
+        self.ws = await websockets.connect(
+            url,
+            extra_headers={"xi-api-key": self.api_key}
+        )
+
+        # Send initial configuration
+        await self.ws.send(json.dumps({
+            "text": " ",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75
+            },
+            "generation_config": {
+                "chunk_length_schedule": [120, 160, 250, 290]
+            }
+        }))
+
+    async def stream_text(
+        self,
+        text_source: AsyncIterator[str]
+    ) -> AsyncIterator[bytes]:
+        """
+        Stream text and yield audio chunks
+
+        Args:
+            text_source: Async iterator of text chunks
+
+        Yields:
+            Audio chunks (MP3 format)
+        """
+        if not self.ws:
+            await self.connect()
+
+        async def send_text():
+            async for text in text_source:
+                await self.ws.send(json.dumps({"text": text}))
+            # Signal end of text
+            await self.ws.send(json.dumps({"text": ""}))
+
+        async def receive_audio():
+            async for message in self.ws:
+                data = json.loads(message)
+                if data.get("audio"):
+                    yield base64.b64decode(data["audio"])
+                elif data.get("isFinal"):
+                    break
+
+        send_task = asyncio.create_task(send_text())
+
+        async for audio in receive_audio():
+            yield audio
+
+        await send_task
+
+    async def close(self):
+        """Close WebSocket connection"""
+        if self.ws:
+            await self.ws.close()
+            self.ws = None
+
+
+class StreamingPipeline:
+    """Complete streaming voice AI pipeline"""
+
+    def __init__(self, config: StreamingConfig = None):
+        self.config = config or StreamingConfig()
+
+        self.stt = StreamingSTT(
+            api_key=os.getenv("DEEPGRAM_API_KEY"),
+            config=self.config
+        )
+        self.llm = StreamingLLM(api_key=os.getenv("OPENAI_API_KEY"))
+        self.tts = StreamingTTS(
+            api_key=os.getenv("ELEVENLABS_API_KEY")
+        )
+
+        self.conversation = [
+            {"role": "system", "content": "You are a helpful voice assistant. Be concise."}
+        ]
+
+    async def process_stream(
+        self,
+        audio_source: AsyncIterator[bytes],
+        on_transcript: Callable[[str, bool], None] = None,
+        on_response_text: Callable[[str], None] = None
+    ) -> AsyncIterator[bytes]:
+        """
+        Full streaming pipeline: audio in -> audio out
+
+        Args:
+            audio_source: Incoming audio stream
+            on_transcript: Callback for transcription updates
+            on_response_text: Callback for LLM response tokens
+
+        Yields:
+            Audio response chunks
+        """
+        # Collect full transcript from STT stream
+        full_transcript = ""
+
+        async for result in self.stt.stream_audio(audio_source):
+            if on_transcript:
+                on_transcript(result["text"], result["is_final"])
+
+            if result["is_final"]:
+                full_transcript = result["text"]
+
+        if not full_transcript.strip():
+            # No speech detected
+            fallback = "I didn't catch that. Could you please repeat?"
+            async for audio in self.tts.stream_text(iter([fallback])):
+                yield audio
+            return
+
+        # Add to conversation
+        self.conversation.append({"role": "user", "content": full_transcript})
+
+        # Stream LLM response to TTS
+        async def llm_to_tts():
+            """Buffer LLM output into speakable chunks"""
+            buffer = ""
+
+            async for token in self.llm.stream_response(self.conversation):
+                if on_response_text:
+                    on_response_text(token)
+
+                buffer += token
+
+                # Check for sentence boundary
+                if buffer.endswith(self.config.sentence_delimiters):
+                    if len(buffer) >= self.config.min_chunk_chars:
+                        yield buffer
+                        buffer = ""
+
+            # Yield remaining buffer
+            if buffer.strip():
+                yield buffer
+
+        # Stream TTS audio
+        async for audio_chunk in self.tts.stream_text(llm_to_tts()):
+            yield audio_chunk
+
+    async def close(self):
+        """Clean up all connections"""
+        await self.stt.close()
+        await self.tts.close()
+
+
+# Usage example
+async def demo_streaming():
+    """Demonstrate streaming pipeline"""
+    pipeline = StreamingPipeline()
+
+    # Simulate audio input (in practice, this would be from a microphone or phone)
+    async def mock_audio_source():
+        # Yield 20ms chunks of silence (simulating audio)
+        for _ in range(100):
+            yield b"\x00" * 640  # 20ms at 16kHz, 16-bit
+            await asyncio.sleep(0.02)
+
+    print("Starting streaming pipeline...")
+
+    def on_transcript(text: str, is_final: bool):
+        prefix = "[FINAL]" if is_final else "[PARTIAL]"
+        print(f"{prefix} {text}")
+
+    def on_response(token: str):
+        print(token, end="", flush=True)
+
+    audio_chunks = []
+    async for audio in pipeline.process_stream(
+        mock_audio_source(),
+        on_transcript=on_transcript,
+        on_response_text=on_response
+    ):
+        audio_chunks.append(audio)
+
+    print(f"\n\nReceived {len(audio_chunks)} audio chunks")
+    await pipeline.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(demo_streaming())
+```
+
+## Function Calling Integration
+
+### LLM with Tool Use
+
+```python
+"""
+Voice AI Agent with Function Calling
+Enables the agent to perform actions based on user requests
+"""
+
+import os
+import json
+import asyncio
+from typing import Any, Callable, Optional
+from dataclasses import dataclass
+from openai import AsyncOpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+@dataclass
+class ToolDefinition:
+    """Definition of a callable tool"""
+    name: str
+    description: str
+    parameters: dict
+    handler: Callable[..., Any]
+
+
+class FunctionCallingAgent:
+    """Voice agent with function calling capabilities"""
+
+    def __init__(self):
+        self.openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.tools: dict[str, ToolDefinition] = {}
+        self.conversation = []
+
+        self._setup_system_prompt()
+
+    def _setup_system_prompt(self):
+        """Initialize system prompt"""
+        self.conversation = [{
+            "role": "system",
+            "content": """You are a helpful voice assistant with access to various
+            tools. When a user makes a request that requires an action (like
+            checking weather, scheduling appointments, or looking up information),
+            use the appropriate tool. After using a tool, summarize the results
+            conversationally for the user."""
+        }]
+
+    def register_tool(
+        self,
+        name: str,
+        description: str,
+        parameters: dict,
+        handler: Callable[..., Any]
+    ):
+        """
+        Register a tool for the agent to use
+
+        Args:
+            name: Tool name
+            description: What the tool does
+            parameters: JSON Schema for parameters
+            handler: Function to execute
+        """
+        self.tools[name] = ToolDefinition(
+            name=name,
+            description=description,
+            parameters=parameters,
+            handler=handler
+        )
+
+    def _get_tools_schema(self) -> list[dict]:
+        """Convert tools to OpenAI function schema"""
+        return [{
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters
+            }
+        } for tool in self.tools.values()]
+
+    async def _execute_tool(
+        self,
+        tool_name: str,
+        arguments: dict
+    ) -> str:
+        """Execute a tool and return result"""
+        tool = self.tools.get(tool_name)
+        if not tool:
+            return f"Error: Unknown tool '{tool_name}'"
+
+        try:
+            # Execute the tool handler
+            if asyncio.iscoroutinefunction(tool.handler):
+                result = await tool.handler(**arguments)
+            else:
+                result = tool.handler(**arguments)
+
+            return json.dumps(result) if isinstance(result, dict) else str(result)
+
+        except Exception as e:
+            return f"Error executing {tool_name}: {str(e)}"
+
+    async def process_message(self, user_message: str) -> str:
+        """
+        Process user message with potential tool calls
+
+        Args:
+            user_message: User's input
+
+        Returns:
+            Agent's response (may include tool results)
+        """
+        self.conversation.append({
+            "role": "user",
+            "content": user_message
+        })
+
+        # First LLM call - may request tool use
+        response = await self.openai.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=self.conversation,
+            tools=self._get_tools_schema() if self.tools else None,
+            tool_choice="auto" if self.tools else None
+        )
+
+        message = response.choices[0].message
+
+        # Check if model wants to use tools
+        if message.tool_calls:
+            # Add assistant message with tool calls
+            self.conversation.append(message)
+
+            # Execute each tool call
+            for tool_call in message.tool_calls:
+                tool_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
+
+                print(f"[Tool Call] {tool_name}({arguments})")
+                result = await self._execute_tool(tool_name, arguments)
+                print(f"[Tool Result] {result}")
+
+                # Add tool result to conversation
+                self.conversation.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result
+                })
+
+            # Second LLM call - generate response with tool results
+            final_response = await self.openai.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=self.conversation
+            )
+
+            final_message = final_response.choices[0].message.content
+            self.conversation.append({
+                "role": "assistant",
+                "content": final_message
+            })
+
+            return final_message
+        else:
+            # No tool calls, return direct response
+            content = message.content
+            self.conversation.append({
+                "role": "assistant",
+                "content": content
+            })
+            return content
+
+
+# Example tools implementation
+def get_weather(location: str, unit: str = "fahrenheit") -> dict:
+    """Simulated weather lookup"""
+    # In production, this would call a real weather API
+    return {
+        "location": location,
+        "temperature": 72 if unit == "fahrenheit" else 22,
+        "unit": unit,
+        "conditions": "sunny",
+        "humidity": 45
+    }
+
+
+def schedule_appointment(
+    date: str,
+    time: str,
+    description: str
+) -> dict:
+    """Simulated appointment scheduling"""
+    return {
+        "status": "confirmed",
+        "date": date,
+        "time": time,
+        "description": description,
+        "confirmation_number": "APT-12345"
+    }
+
+
+def search_knowledge_base(query: str) -> dict:
+    """Simulated knowledge base search"""
+    # In production, this would search a vector database
+    return {
+        "results": [
+            {"title": "Product FAQ", "relevance": 0.95},
+            {"title": "User Guide", "relevance": 0.87}
+        ],
+        "answer": f"Based on the search for '{query}', here is the relevant information..."
+    }
+
+
+async def transfer_to_agent(
+    department: str,
+    reason: str
+) -> dict:
+    """Transfer call to human agent"""
+    return {
+        "status": "transferring",
+        "department": department,
+        "estimated_wait": "2 minutes",
+        "queue_position": 3
+    }
+
+
+# Usage example
+async def demo_function_calling():
+    """Demonstrate function calling agent"""
+    agent = FunctionCallingAgent()
+
+    # Register tools
+    agent.register_tool(
+        name="get_weather",
+        description="Get current weather for a location",
+        parameters={
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "City and state, e.g., San Francisco, CA"
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["fahrenheit", "celsius"],
+                    "description": "Temperature unit"
+                }
+            },
+            "required": ["location"]
+        },
+        handler=get_weather
+    )
+
+    agent.register_tool(
+        name="schedule_appointment",
+        description="Schedule an appointment",
+        parameters={
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "Date in YYYY-MM-DD format"},
+                "time": {"type": "string", "description": "Time in HH:MM format"},
+                "description": {"type": "string", "description": "Appointment description"}
+            },
+            "required": ["date", "time", "description"]
+        },
+        handler=schedule_appointment
+    )
+
+    agent.register_tool(
+        name="transfer_to_agent",
+        description="Transfer the call to a human agent",
+        parameters={
+            "type": "object",
+            "properties": {
+                "department": {
+                    "type": "string",
+                    "enum": ["sales", "support", "billing"],
+                    "description": "Department to transfer to"
+                },
+                "reason": {"type": "string", "description": "Reason for transfer"}
+            },
+            "required": ["department", "reason"]
+        },
+        handler=transfer_to_agent
+    )
+
+    # Test conversations
+    test_messages = [
+        "What's the weather like in San Francisco?",
+        "Can you schedule an appointment for tomorrow at 2pm for a product demo?",
+        "I need to speak with someone in billing about my invoice."
+    ]
+
+    print("\n=== Function Calling Demo ===\n")
+
+    for message in test_messages:
+        print(f"User: {message}")
+        response = await agent.process_message(message)
+        print(f"Agent: {response}\n")
+        print("-" * 50 + "\n")
+
+
+if __name__ == "__main__":
+    asyncio.run(demo_function_calling())
+```
+
+## Multi-Language Support
+
+```python
+"""
+Multi-Language Voice AI Agent
+Supports automatic language detection and multilingual responses
+"""
+
+import os
+import asyncio
+from typing import Optional
+from dataclasses import dataclass
+from enum import Enum
+from openai import AsyncOpenAI
+from deepgram import DeepgramClient, PrerecordedOptions
+import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+class Language(Enum):
+    """Supported languages"""
+    ENGLISH = "en"
+    SPANISH = "es"
+    FRENCH = "fr"
+    GERMAN = "de"
+    PORTUGUESE = "pt"
+    JAPANESE = "ja"
+    CHINESE = "zh"
+    HINDI = "hi"
+
+
+@dataclass
+class LanguageConfig:
+    """Configuration for a specific language"""
+    code: str
+    stt_model: str
+    tts_voice_id: str
+    system_prompt_prefix: str
+
+
+LANGUAGE_CONFIGS = {
+    Language.ENGLISH: LanguageConfig(
+        code="en-US",
+        stt_model="nova-2",
+        tts_voice_id="21m00Tcm4TlvDq8ikWAM",
+        system_prompt_prefix="Respond in English."
+    ),
+    Language.SPANISH: LanguageConfig(
+        code="es",
+        stt_model="nova-2",
+        tts_voice_id="AZnzlk1XvdvUeBnXmlld",  # Spanish voice
+        system_prompt_prefix="Responde en espanol."
+    ),
+    Language.FRENCH: LanguageConfig(
+        code="fr",
+        stt_model="nova-2",
+        tts_voice_id="IKne3meq5aSn9XLyUdCD",  # French voice
+        system_prompt_prefix="Repondez en francais."
+    ),
+    Language.GERMAN: LanguageConfig(
+        code="de",
+        stt_model="nova-2",
+        tts_voice_id="onwK4e9ZLuTAKqWW03F9",  # German voice
+        system_prompt_prefix="Antworten Sie auf Deutsch."
+    ),
+}
+
+
+class MultiLanguageAgent:
+    """Voice agent with multi-language support"""
+
+    def __init__(self, default_language: Language = Language.ENGLISH):
+        self.openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.deepgram = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"))
+        self.elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+
+        self.current_language = default_language
+        self.auto_detect = True
+        self.conversation = []
+
+        self._setup_conversation()
+
+    def _setup_conversation(self):
+        """Initialize conversation with language-aware system prompt"""
+        config = LANGUAGE_CONFIGS.get(self.current_language)
+        prompt_prefix = config.system_prompt_prefix if config else ""
+
+        self.conversation = [{
+            "role": "system",
+            "content": f"""You are a helpful multilingual voice assistant.
+            {prompt_prefix}
+
+            Important guidelines:
+            1. Detect the language of the user's input
+            2. Respond in the same language the user is speaking
+            3. Keep responses concise and conversational
+            4. If asked to switch languages, do so naturally"""
+        }]
+
+    async def detect_language(self, text: str) -> Language:
+        """
+        Detect the language of input text using LLM
+
+        Args:
+            text: Input text to analyze
+
+        Returns:
+            Detected language
+        """
+        response = await self.openai.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=[{
+                "role": "user",
+                "content": f"""Detect the language of this text and respond with
+                only the language code (en, es, fr, de, pt, ja, zh, hi):
+
+                "{text}"
+
+                Language code:"""
+            }],
+            max_tokens=5
+        )
+
+        code = response.choices[0].message.content.strip().lower()
+
+        # Map to Language enum
+        for lang in Language:
+            if lang.value == code:
+                return lang
+
+        return Language.ENGLISH  # Default fallback
+
+    async def transcribe(
+        self,
+        audio_data: bytes,
+        language: Optional[Language] = None
+    ) -> tuple[str, Language]:
+        """
+        Transcribe audio with language detection
+
+        Args:
+            audio_data: Audio bytes
+            language: Optional language hint
+
+        Returns:
+            Tuple of (transcript, detected_language)
+        """
+        # Use provided language or auto-detect
+        lang_config = LANGUAGE_CONFIGS.get(
+            language or self.current_language,
+            LANGUAGE_CONFIGS[Language.ENGLISH]
+        )
+
+        options = PrerecordedOptions(
+            model=lang_config.stt_model,
+            language=lang_config.code if language else None,
+            detect_language=self.auto_detect and language is None,
+            smart_format=True,
+            punctuate=True,
+        )
+
+        response = await asyncio.to_thread(
+            self.deepgram.listen.prerecorded.v("1").transcribe_file,
+            {"buffer": audio_data, "mimetype": "audio/wav"},
+            options
+        )
+
+        transcript = response.results.channels[0].alternatives[0].transcript
+
+        # Get detected language
+        detected_code = response.results.channels[0].detected_language
+        detected_lang = self.current_language
+
+        if detected_code:
+            for lang in Language:
+                if lang.value in detected_code.lower():
+                    detected_lang = lang
+                    break
+
+        return transcript, detected_lang
+
+    async def generate_response(
+        self,
+        user_input: str,
+        target_language: Language
+    ) -> str:
+        """Generate response in specified language"""
+        # Update current language
+        self.current_language = target_language
+        config = LANGUAGE_CONFIGS.get(target_language)
+
+        # Add language instruction if switching
+        language_instruction = ""
+        if config:
+            language_instruction = f"\n[Respond in {target_language.name}]"
+
+        self.conversation.append({
+            "role": "user",
+            "content": user_input + language_instruction
+        })
+
+        response = await self.openai.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=self.conversation,
+            max_tokens=150
+        )
+
+        assistant_message = response.choices[0].message.content
+        self.conversation.append({
+            "role": "assistant",
+            "content": assistant_message
+        })
+
+        return assistant_message
+
+    async def synthesize_speech(
+        self,
+        text: str,
+        language: Language
+    ) -> bytes:
+        """Synthesize speech in specified language"""
+        config = LANGUAGE_CONFIGS.get(language, LANGUAGE_CONFIGS[Language.ENGLISH])
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{config.tts_voice_id}",
+                headers={
+                    "xi-api-key": self.elevenlabs_key,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "text": text,
+                    "model_id": "eleven_multilingual_v2",
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75
+                    }
+                },
+                timeout=30.0
+            )
+            response.raise_for_status()
+            return response.content
+
+    async def process_turn(self, audio_data: bytes) -> tuple[bytes, Language]:
+        """
+        Process a conversation turn with language handling
+
+        Returns:
+            Tuple of (audio_response, detected_language)
+        """
+        # Transcribe and detect language
+        transcript, detected_lang = await self.transcribe(audio_data)
+
+        if not transcript.strip():
+            fallback = await self.synthesize_speech(
+                "I didn't catch that. Could you please repeat?",
+                self.current_language
+            )
+            return fallback, self.current_language
+
+        print(f"[{detected_lang.name}] User: {transcript}")
+
+        # Generate response in detected language
+        response_text = await self.generate_response(transcript, detected_lang)
+        print(f"[{detected_lang.name}] Agent: {response_text}")
+
+        # Synthesize in same language
+        audio_response = await self.synthesize_speech(response_text, detected_lang)
+
+        return audio_response, detected_lang
+
+
+# Usage example
+async def demo_multilingual():
+    """Demonstrate multilingual agent"""
+    agent = MultiLanguageAgent()
+
+    print("\n=== Multilingual Voice Agent Demo ===\n")
+
+    # Simulate conversations in different languages
+    test_inputs = [
+        ("Hello, how are you today?", Language.ENGLISH),
+        ("Hola, como estas?", Language.SPANISH),
+        ("Bonjour, comment allez-vous?", Language.FRENCH),
+        ("Can you switch back to English please?", Language.ENGLISH),
+    ]
+
+    for text, expected_lang in test_inputs:
+        print(f"\n[Input - {expected_lang.name}]: {text}")
+
+        # Detect language
+        detected = await agent.detect_language(text)
+        print(f"[Detected]: {detected.name}")
+
+        # Generate response
+        response = await agent.generate_response(text, detected)
+        print(f"[Response]: {response}")
+        print("-" * 40)
+
+
+if __name__ == "__main__":
+    asyncio.run(demo_multilingual())
+```
+
+## Production Patterns
+
+### Error Handling, Logging, and Monitoring
+
+```python
+"""
+Production Voice AI Patterns
+Comprehensive error handling, logging, and monitoring
+"""
+
+import os
+import time
+import uuid
+import asyncio
+import logging
+import json
+from typing import Optional, Any
+from dataclasses import dataclass, field
+from datetime import datetime
+from contextlib import asynccontextmanager
+from functools import wraps
+import structlog
+from openai import AsyncOpenAI
+from prometheus_client import Counter, Histogram, Gauge
+
+# Configure structured logging
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer()
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
+
+# Prometheus metrics
+CALL_COUNTER = Counter(
+    'voice_agent_calls_total',
+    'Total number of voice agent calls',
+    ['status', 'error_type']
+)
+
+LATENCY_HISTOGRAM = Histogram(
+    'voice_agent_latency_seconds',
+    'Voice agent operation latency',
+    ['operation'],
+    buckets=[0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0]
+)
+
+ACTIVE_CALLS = Gauge(
+    'voice_agent_active_calls',
+    'Number of active voice agent calls'
+)
+
+
+@dataclass
+class CallContext:
+    """Context for a single call/session"""
+    call_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    start_time: datetime = field(default_factory=datetime.utcnow)
+    turn_count: int = 0
+    total_stt_latency: float = 0.0
+    total_llm_latency: float = 0.0
+    total_tts_latency: float = 0.0
+    errors: list = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for logging"""
+        return {
+            "call_id": self.call_id,
+            "duration_seconds": (datetime.utcnow() - self.start_time).total_seconds(),
+            "turn_count": self.turn_count,
+            "avg_stt_latency": self.total_stt_latency / max(self.turn_count, 1),
+            "avg_llm_latency": self.total_llm_latency / max(self.turn_count, 1),
+            "avg_tts_latency": self.total_tts_latency / max(self.turn_count, 1),
+            "error_count": len(self.errors)
+        }
+
+
+class VoiceAgentError(Exception):
+    """Base exception for voice agent errors"""
+    def __init__(self, message: str, error_code: str, recoverable: bool = True):
+        super().__init__(message)
+        self.error_code = error_code
+        self.recoverable = recoverable
+
+
+class STTError(VoiceAgentError):
+    """Speech-to-text error"""
+    def __init__(self, message: str):
+        super().__init__(message, "STT_ERROR", recoverable=True)
+
+
+class LLMError(VoiceAgentError):
+    """Language model error"""
+    def __init__(self, message: str):
+        super().__init__(message, "LLM_ERROR", recoverable=True)
+
+
+class TTSError(VoiceAgentError):
+    """Text-to-speech error"""
+    def __init__(self, message: str):
+        super().__init__(message, "TTS_ERROR", recoverable=True)
+
+
+def timed_operation(operation_name: str):
+    """Decorator to time and log operations"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            start = time.time()
+            try:
+                result = await func(*args, **kwargs)
+                duration = time.time() - start
+                LATENCY_HISTOGRAM.labels(operation=operation_name).observe(duration)
+                logger.info(
+                    f"{operation_name}_completed",
+                    duration=duration,
+                    operation=operation_name
+                )
+                return result
+            except Exception as e:
+                duration = time.time() - start
+                logger.error(
+                    f"{operation_name}_failed",
+                    duration=duration,
+                    operation=operation_name,
+                    error=str(e)
+                )
+                raise
+        return wrapper
+    return decorator
+
+
+def retry_with_backoff(
+    max_attempts: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    exceptions: tuple = (Exception,)
+):
+    """Decorator for retry with exponential backoff"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            delay = base_delay
+
+            for attempt in range(max_attempts):
+                try:
+                    return await func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_attempts - 1:
+                        logger.warning(
+                            "operation_retry",
+                            function=func.__name__,
+                            attempt=attempt + 1,
+                            max_attempts=max_attempts,
+                            delay=delay,
+                            error=str(e)
+                        )
+                        await asyncio.sleep(delay)
+                        delay = min(delay * 2, max_delay)
+
+            raise last_exception
+        return wrapper
+    return decorator
+
+
+class ProductionVoiceAgent:
+    """Production-ready voice agent with monitoring"""
+
+    def __init__(self):
+        self.openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.conversation = []
+        self.context: Optional[CallContext] = None
+
+    @asynccontextmanager
+    async def call_session(self, call_id: str = None):
+        """Context manager for a call session"""
+        self.context = CallContext(call_id=call_id or str(uuid.uuid4()))
+        ACTIVE_CALLS.inc()
+
+        log = logger.bind(call_id=self.context.call_id)
+        log.info("call_started")
+
+        try:
+            yield self.context
+            CALL_COUNTER.labels(status="success", error_type="none").inc()
+            log.info("call_completed", **self.context.to_dict())
+
+        except VoiceAgentError as e:
+            CALL_COUNTER.labels(status="error", error_type=e.error_code).inc()
+            log.error("call_error", error_code=e.error_code, error=str(e))
+            raise
+
+        except Exception as e:
+            CALL_COUNTER.labels(status="error", error_type="UNKNOWN").inc()
+            log.error("call_unexpected_error", error=str(e))
+            raise
+
+        finally:
+            ACTIVE_CALLS.dec()
+            self.context = None
+
+    @timed_operation("stt")
+    @retry_with_backoff(max_attempts=2, exceptions=(STTError,))
+    async def transcribe(self, audio_data: bytes) -> str:
+        """Transcribe audio with retries and monitoring"""
+        start = time.time()
+
+        try:
+            # Actual STT implementation here
+            # For demo, simulate with delay
+            await asyncio.sleep(0.2)
+            transcript = "Hello, this is a test."
+
+            if self.context:
+                self.context.total_stt_latency += time.time() - start
+
+            return transcript
+
+        except Exception as e:
+            if self.context:
+                self.context.errors.append({"stage": "stt", "error": str(e)})
+            raise STTError(f"Transcription failed: {e}")
+
+    @timed_operation("llm")
+    @retry_with_backoff(max_attempts=2, exceptions=(LLMError,))
+    async def generate_response(self, user_input: str) -> str:
+        """Generate LLM response with monitoring"""
+        start = time.time()
+
+        try:
+            self.conversation.append({"role": "user", "content": user_input})
+
+            response = await self.openai.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=self.conversation,
+                max_tokens=150,
+                timeout=30.0
+            )
+
+            content = response.choices[0].message.content
+            self.conversation.append({"role": "assistant", "content": content})
+
+            if self.context:
+                self.context.total_llm_latency += time.time() - start
+                self.context.turn_count += 1
+
+            return content
+
+        except Exception as e:
+            if self.context:
+                self.context.errors.append({"stage": "llm", "error": str(e)})
+            raise LLMError(f"LLM generation failed: {e}")
+
+    @timed_operation("tts")
+    @retry_with_backoff(max_attempts=2, exceptions=(TTSError,))
+    async def synthesize_speech(self, text: str) -> bytes:
+        """Synthesize speech with monitoring"""
+        start = time.time()
+
+        try:
+            # Actual TTS implementation here
+            await asyncio.sleep(0.1)
+            audio_data = b"mock_audio_data"
+
+            if self.context:
+                self.context.total_tts_latency += time.time() - start
+
+            return audio_data
+
+        except Exception as e:
+            if self.context:
+                self.context.errors.append({"stage": "tts", "error": str(e)})
+            raise TTSError(f"Speech synthesis failed: {e}")
+
+    async def process_turn_with_fallback(self, audio_data: bytes) -> bytes:
+        """Process turn with graceful degradation"""
+        try:
+            transcript = await self.transcribe(audio_data)
+        except STTError:
+            logger.warning("stt_fallback", call_id=self.context.call_id if self.context else None)
+            return await self.synthesize_speech(
+                "I'm having trouble hearing you. Could you please repeat that?"
+            )
+
+        if not transcript.strip():
+            return await self.synthesize_speech(
+                "I didn't catch that. Could you please repeat?"
+            )
+
+        try:
+            response_text = await self.generate_response(transcript)
+        except LLMError:
+            logger.warning("llm_fallback", call_id=self.context.call_id if self.context else None)
+            return await self.synthesize_speech(
+                "I'm experiencing some technical difficulties. Please hold for a moment."
+            )
+
+        try:
+            audio_response = await self.synthesize_speech(response_text)
+        except TTSError:
+            logger.warning("tts_fallback", call_id=self.context.call_id if self.context else None)
+            # Return empty audio as last resort
+            return b""
+
+        return audio_response
+
+
+# Health check endpoint for Kubernetes
+from aiohttp import web
+
+async def health_check(request):
+    """Kubernetes liveness probe"""
+    return web.json_response({"status": "healthy"})
+
+async def readiness_check(request):
+    """Kubernetes readiness probe"""
+    # Check if dependencies are available
+    checks = {
+        "openai": True,  # Add actual check
+        "deepgram": True,
+        "elevenlabs": True
+    }
+
+    if all(checks.values()):
+        return web.json_response({"status": "ready", "checks": checks})
+    else:
+        return web.json_response(
+            {"status": "not_ready", "checks": checks},
+            status=503
+        )
+
+async def metrics(request):
+    """Prometheus metrics endpoint"""
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    return web.Response(
+        body=generate_latest(),
+        content_type=CONTENT_TYPE_LATEST
+    )
+
+
+# Usage example
+async def demo_production():
+    """Demonstrate production patterns"""
+    agent = ProductionVoiceAgent()
+
+    # Process multiple calls
+    for i in range(3):
+        async with agent.call_session(call_id=f"call-{i}") as ctx:
+            print(f"\n=== Call {ctx.call_id} ===")
+
+            # Simulate conversation turns
+            for turn in range(2):
+                audio = b"mock_audio"
+                response = await agent.process_turn_with_fallback(audio)
+                print(f"Turn {turn + 1} completed")
+
+            print(f"Call summary: {json.dumps(ctx.to_dict(), indent=2)}")
+
+
+if __name__ == "__main__":
+    asyncio.run(demo_production())
+```
+
+## Summary
+
+This collection of code examples demonstrates:
+
+1. **Basic Voice Agents**: Complete STT to LLM to TTS pipelines in Python and Node.js
+2. **Streaming Audio**: Real-time WebSocket-based streaming for low latency
+3. **Function Calling**: Tool use for taking actions during conversations
+4. **Multi-Language**: Automatic language detection and multilingual responses
+5. **Production Patterns**: Error handling, logging, monitoring, and health checks
+
+Each example is designed to be a starting point that you can adapt for your specific use case. For deployment guidance, continue to the [Deployment Guide](/topics/implementation/deployment).
+
+<RelatedTopics
+  topics={[
+    {
+      title: "Getting Started",
+      href: "/topics/implementation/getting-started",
+      description: "Build your first voice AI agent in 15 minutes"
+    },
+    {
+      title: "SDK Reference",
+      href: "/topics/implementation/sdk-reference",
+      description: "Detailed SDK documentation for Python, Node.js, and Go"
+    },
+    {
+      title: "API Reference",
+      href: "/topics/implementation/api-reference",
+      description: "REST and WebSocket API documentation"
+    },
+    {
+      title: "Deployment Guide",
+      href: "/topics/implementation/deployment",
+      description: "Deploy voice AI applications to production"
+    }
+  ]}
+/>

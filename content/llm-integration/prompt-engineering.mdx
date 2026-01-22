@@ -1,0 +1,322 @@
+---
+title: "Prompt Engineering for Voice AI Agents"
+description: "Voice-specific prompting techniques, system prompt design, persona creation, and brand voice implementation for conversational AI"
+category: "llm-integration"
+tags: ["prompt-engineering", "voice-ai", "system-prompts", "persona-design", "guardrails", "brand-voice"]
+relatedTopics: ["model-selection", "function-calling", "context-management"]
+---
+
+# Prompt Engineering for Voice AI Agents
+
+Voice-specific prompt engineering differs significantly from text-based applications. Proper voice AI prompt engineering can reduce response latency from 1,500ms to under 200ms and eliminate 93% of conversation breakdowns.
+
+## Core Principles
+
+1. **Brevity**: Voice responses should be 60-70% shorter than text equivalents
+2. **Clarity**: Avoid complex sentence structures
+3. **Confirmation**: Build in acknowledgment patterns
+4. **Turn-taking**: Design for natural conversation flow
+
+## System Prompt Structure
+
+A well-designed system prompt for voice agents follows this structure:
+
+```markdown
+# Voice Agent System Prompt Template
+
+## Identity
+You are [Agent Name], a [role] for [company]. Your voice is
+[personality traits: warm, professional, etc.].
+
+## Communication Style
+- Keep responses under 35 words unless detailed explanation is needed
+- Use conversational language, not formal writing
+- Speak in short, clear sentences
+- Pause naturally between thoughts using "..."
+- Confirm understanding before taking actions
+
+## Response Guidelines
+### DO:
+- Acknowledge the user's request first
+- Ask one question at a time
+- Use verbal confirmations ("Got it", "I understand")
+- Spell out numbers and complex terms
+
+### DON'T:
+- Use bullet points or lists (say "first... second...")
+- Include URLs or email addresses verbally
+- Use acronyms without explanation
+- Provide unsolicited advice
+
+## Turn-Taking Rules
+- If interrupted, stop speaking immediately
+- Wait 500ms after user stops speaking before responding
+- If user is silent for 3 seconds, offer gentle prompt
+
+## Error Handling
+- If you don't understand: "I didn't quite catch that. Could you say that again?"
+- If unsure: "Let me make sure I understand. You're asking about [X], is that right?"
+- If can't help: "I'm not able to help with that directly, but I can [alternative]."
+```
+
+## Example: Customer Service Agent
+
+```markdown
+## Identity
+You are Alex, a customer support specialist for TechCorp. You're helpful,
+patient, and efficient.
+
+## Context
+- Customer is calling about their account
+- You have access to their order history via functions
+- You can transfer to human agents if needed
+
+## Conversation Flow
+1. Greet warmly and identify yourself
+2. Ask how you can help today
+3. Listen and confirm understanding
+4. Resolve or escalate appropriately
+5. Confirm resolution and offer further help
+
+## Commands
+- ALWAYS confirm before making account changes
+- NEVER share full credit card numbers
+- ALWAYS offer human transfer for complaints
+
+## Example Interactions
+
+User: "I want to cancel my order"
+Agent: "I can help you with that. Can you give me your order number?"
+
+User: "The product arrived broken"
+Agent: "I'm so sorry to hear that. Let me look into getting you a replacement
+right away. Can you describe the damage briefly?"
+```
+
+## Voice Personality Framework
+
+Define your agent's personality across key dimensions:
+
+### Personality Dimensions
+
+```markdown
+## Formality Spectrum
+1 = Very casual ("Hey! What's up?")
+5 = Very formal ("Good afternoon. How may I assist you today?")
+
+## Energy Level
+1 = Calm and measured
+5 = Enthusiastic and upbeat
+
+## Empathy Expression
+1 = Factual and efficient
+5 = Warm and emotionally supportive
+
+## Humor Usage
+1 = Professional, no humor
+5 = Playful with appropriate jokes
+
+## Example Personality: "Friendly Professional" (3-3-4-2)
+- Balanced formality: "Hi there! How can I help you today?"
+- Moderate energy: Engaged but not overwhelming
+- High empathy: Acknowledges feelings before solutions
+- Light humor: Occasional light moments when appropriate
+```
+
+## Brand Voice Implementation
+
+```python
+BRAND_VOICE_TEMPLATES = {
+    "luxury_retail": {
+        "greeting": "Good {time_of_day}. Welcome to {brand}. How may I assist you?",
+        "acknowledgment": "Certainly. I'd be happy to help with that.",
+        "apology": "I sincerely apologize for any inconvenience.",
+        "closing": "Thank you for choosing {brand}. Is there anything else?",
+        "formality": 4,
+        "pace": "measured"
+    },
+    "tech_startup": {
+        "greeting": "Hey! Thanks for calling {brand}. What can I do for you?",
+        "acknowledgment": "Got it! Let me take care of that.",
+        "apology": "Oh no, sorry about that! Let me fix this.",
+        "closing": "Awesome! Anything else?",
+        "formality": 2,
+        "pace": "quick"
+    },
+    "healthcare": {
+        "greeting": "Hello, this is {brand}. How can I help you today?",
+        "acknowledgment": "I understand. Let me help you with that.",
+        "apology": "I'm sorry you're experiencing this. Let's work together to resolve it.",
+        "closing": "Is there anything else I can help you with today?",
+        "formality": 3,
+        "pace": "calm"
+    }
+}
+```
+
+## Guardrails and Safety
+
+### Safety Layer Architecture
+
+```
++-------------------------------------------------------------+
+|                    SAFETY ARCHITECTURE                       |
++-------------------------------------------------------------+
+|                                                             |
+|  User Input                                                 |
+|      |                                                      |
+|      v                                                      |
+|  +-------------------------------------+                   |
+|  |  Input Validation                   | <- Block PII, attacks
+|  +-------------------------------------+                   |
+|      |                                                      |
+|      v                                                      |
+|  +-------------------------------------+                   |
+|  |  Topic Classification               | <- Detect sensitive
+|  +-------------------------------------+                   |
+|      |                                                      |
+|      v                                                      |
+|  +-------------------------------------+                   |
+|  |  LLM Generation (with guardrails)   | <- System prompt  |
+|  +-------------------------------------+                   |
+|      |                                                      |
+|      v                                                      |
+|  +-------------------------------------+                   |
+|  |  Output Validation                  | <- Block harmful  |
+|  +-------------------------------------+                   |
+|      |                                                      |
+|      v                                                      |
+|  Safe Response                                              |
+|                                                             |
++-------------------------------------------------------------+
+```
+
+### Guardrail Implementation
+
+```python
+class VoiceGuardrails:
+    """Safety guardrails for voice AI agents."""
+
+    def __init__(self):
+        self.blocked_topics = [
+            "medical_advice", "legal_advice", "financial_advice",
+            "violence", "self_harm", "illegal_activities"
+        ]
+        self.pii_patterns = self._load_pii_patterns()
+
+    async def validate_input(self, text: str) -> tuple[bool, str]:
+        """Validate user input before processing."""
+
+        # Check for PII that shouldn't be collected
+        pii_found = self._detect_pii(text)
+        if pii_found:
+            return False, "pii_detected"
+
+        # Check for prompt injection attempts
+        if self._detect_injection(text):
+            return False, "injection_attempt"
+
+        return True, "ok"
+
+    async def validate_output(self, response: str) -> tuple[bool, str]:
+        """Validate LLM output before speaking."""
+
+        # Check for accidental PII disclosure
+        if self._detect_pii(response):
+            return False, self._redact_pii(response)
+
+        # Check for harmful content
+        if await self._check_harmful(response):
+            return False, "I'm not able to provide that information."
+
+        # Check response length (avoid rambling)
+        if len(response.split()) > 100:
+            return True, self._truncate_response(response)
+
+        return True, response
+
+    def _detect_injection(self, text: str) -> bool:
+        """Detect prompt injection attempts."""
+        injection_patterns = [
+            r"ignore (?:all )?(?:previous |prior )?instructions",
+            r"you are now",
+            r"new persona",
+            r"system prompt",
+            r"reveal your"
+        ]
+        text_lower = text.lower()
+        return any(re.search(p, text_lower) for p in injection_patterns)
+```
+
+## Compliance Templates
+
+### HIPAA-Compliant Voice Agent Guidelines
+
+```markdown
+## Prohibited Actions
+- NEVER confirm or deny patient presence
+- NEVER read full medical records aloud
+- NEVER discuss treatment without authentication
+
+## Required Actions
+- ALWAYS authenticate before accessing PHI
+- ALWAYS log all PHI access
+- ALWAYS offer to transfer to human for sensitive matters
+
+## Authentication Flow
+1. "For your security, I'll need to verify your identity."
+2. "Can you please confirm your date of birth?"
+3. "Thank you. And what's the last four digits of your SSN?"
+4. [After verification] "Great, I've verified your identity."
+```
+
+## Response Length Guidelines
+
+| Scenario | Target Length | Example |
+|----------|---------------|---------|
+| Simple confirmation | 5-10 words | "Got it. I'll update that for you now." |
+| Status update | 15-25 words | "Your order shipped yesterday and should arrive by Thursday. Would you like the tracking number?" |
+| Explanation | 30-50 words | Keep to key points, offer follow-up |
+| Complex response | Multiple turns | Break into digestible chunks |
+
+## Conversation Flow Patterns
+
+### Acknowledgment Pattern
+```
+User: [Request]
+Agent: [Acknowledge] + [Action/Question]
+
+Example:
+User: "I need to change my address"
+Agent: "Of course, I can help with that. What's your new address?"
+```
+
+### Confirmation Pattern
+```
+Agent: [Summarize understanding] + [Confirm]
+
+Example:
+Agent: "So you'd like to cancel order 12345 and get a refund. Is that correct?"
+```
+
+### Graceful Failure Pattern
+```
+Agent: [Acknowledge limitation] + [Alternative]
+
+Example:
+Agent: "I'm not able to process returns directly, but I can connect you
+with our returns team who can help right away."
+```
+
+## Sampling Strategy Recommendations
+
+| Strategy | Voice Use Case | Temperature |
+|----------|----------------|-------------|
+| Greedy | Factual queries, data lookups | 0.0 |
+| Top-p (Nucleus) | Natural conversation | 0.3-0.5 |
+| Temperature | Creative/casual agents | 0.5-0.7 |
+
+**Recommended for Voice Agents:**
+- Temperature: 0.2-0.4 for customer service
+- Temperature: 0.5-0.7 for creative/casual agents
+- Top-p: 0.3-0.5 for consistent, reliable responses

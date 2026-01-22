@@ -1,0 +1,76 @@
+---
+title: "Telephony"
+description: "Guide to telephony integration for connecting voice AI systems to phone networks, SIP, WebRTC, and PSTN"
+category: "infrastructure"
+tags:
+  - telephony
+  - sip
+  - webrtc
+  - pstn
+  - voip
+  - voice-ai
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Telephony
+
+Telephony infrastructure connects your voice AI to the phone networks and communication channels where users interact. Whether through traditional phone calls, WebRTC in browsers, or SIP-based VoIP, telephony is how voice reaches your AI.
+
+## Why Telephony Matters
+
+Most enterprise voice AI deployments involve phone integration:
+
+- **Customer Service**: Inbound calls to contact centers
+- **Outbound Campaigns**: Sales and notification calls
+- **IVR Replacement**: Modernizing legacy phone systems
+- **Omnichannel**: Consistent experience across channels
+
+## Topics in This Section
+
+### [SIP Protocol](/topics/infrastructure/telephony/sip-protocol)
+Session Initiation Protocol for establishing and managing voice calls. The foundation of VoIP communication.
+
+### [WebRTC](/topics/infrastructure/telephony/webrtc)
+Web Real-Time Communication for browser-based voice applications. Enable voice AI directly in web applications.
+
+### [PSTN Integration](/topics/infrastructure/telephony/pstn-integration)
+Connecting voice AI to traditional phone networks via PSTN gateways and SIP trunking.
+
+### [Call Routing](/topics/infrastructure/telephony/call-routing)
+Intelligent call routing, IVR integration, and call transfer mechanisms. Direct calls to the right destination.
+
+## Communication Channels
+
+| Channel | Latency | Quality | Use Case |
+|---------|---------|---------|----------|
+| **WebRTC** | Lowest | High | Web/mobile apps |
+| **SIP/VoIP** | Low | High | Enterprise phone systems |
+| **PSTN** | Medium | Variable | Traditional phone calls |
+| **Mobile** | Variable | Variable | Cellular networks |
+
+## Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **SIP** | Protocol for initiating, maintaining, and terminating calls |
+| **RTP** | Real-time Transport Protocol for streaming audio |
+| **SRTP** | Secure RTP with encryption |
+| **Codec** | Audio compression format (G.711, Opus, etc.) |
+| **SIP Trunk** | Connection between your system and PSTN |
+
+## Architecture Patterns
+
+### Cloud-Based Voice AI
+```
+PSTN → SIP Trunk Provider → Voice AI Platform → Your Application
+```
+
+### On-Premise Integration
+```
+PBX → SIP → Media Server → Voice AI → Business Logic
+```
+
+## Getting Started
+
+Start with [SIP Protocol](/topics/infrastructure/telephony/sip-protocol) to understand the foundation of voice communication, then explore [WebRTC](/topics/infrastructure/telephony/webrtc) for browser-based applications or [PSTN Integration](/topics/infrastructure/telephony/pstn-integration) for phone network connectivity.

@@ -1,0 +1,163 @@
+---
+title: "Resources"
+description: "Additional resources, references, and learning materials for voice AI"
+---
+
+# Voice AI Resources
+
+This section provides reference materials, benchmarks, provider comparisons, and curated research to support your voice AI development journey.
+
+## Reference Materials
+
+### Glossary
+
+Comprehensive terminology reference for voice AI.
+
+- **[Glossary](/topics/resources/glossary)** - Definitions for 100+ voice AI terms and acronyms
+
+### Benchmarks
+
+Performance data to guide your technology choices.
+
+- **[Benchmarks](/topics/resources/benchmarks)** - STT accuracy, TTS quality, latency comparisons
+
+### Provider Directory
+
+Detailed information about voice AI service providers.
+
+- **[Provider Directory](/topics/resources/provider-directory)** - STT, TTS, LLM, and telephony providers
+
+### Research Papers
+
+Academic and industry research in voice AI.
+
+- **[Research Papers](/topics/resources/research-papers)** - Influential papers and latest advances
+
+## Quick Reference Tables
+
+### STT Providers at a Glance
+
+| Provider | Best For | Latency | Accuracy | Price Range |
+|----------|----------|---------|----------|-------------|
+| **Deepgram** | Real-time, telephony | Very Low | High | $$ |
+| **Google Cloud** | Multi-language | Low | Very High | $$$ |
+| **AWS Transcribe** | AWS ecosystem | Medium | High | $$ |
+| **Azure Speech** | Microsoft ecosystem | Low | High | $$ |
+| **AssemblyAI** | Async processing | Medium | Very High | $$ |
+| **Whisper (OpenAI)** | Accuracy, open source | High | Very High | $ (self-host) |
+
+### TTS Providers at a Glance
+
+| Provider | Best For | Latency | Quality | Price Range |
+|----------|----------|---------|---------|-------------|
+| **ElevenLabs** | Voice cloning, quality | Medium | Excellent | $$$$ |
+| **Google Cloud** | Multi-language | Low | Very Good | $$ |
+| **AWS Polly** | Cost efficiency | Very Low | Good | $ |
+| **Azure Speech** | Neural voices | Low | Very Good | $$ |
+| **Cartesia** | Ultra-low latency | Very Low | Very Good | $$$ |
+| **PlayHT** | Voice variety | Medium | Very Good | $$$ |
+
+### LLM Providers at a Glance
+
+| Provider | Model | Speed | Quality | Price (1M tokens) |
+|----------|-------|-------|---------|-------------------|
+| **OpenAI** | GPT-4o | Fast | Excellent | $5-15 |
+| **OpenAI** | GPT-4o-mini | Very Fast | Very Good | $0.15-0.60 |
+| **Anthropic** | Claude 3.5 Sonnet | Fast | Excellent | $3-15 |
+| **Anthropic** | Claude 3.5 Haiku | Very Fast | Good | $0.25-1.25 |
+| **Google** | Gemini 2.0 Flash | Very Fast | Very Good | $0.075-0.30 |
+| **Meta** | Llama 3.1 70B | Fast | Very Good | Self-host |
+
+### Telephony Providers at a Glance
+
+| Provider | Strengths | Global Coverage | API Quality |
+|----------|-----------|-----------------|-------------|
+| **Plivo** | Price, reliability | Excellent | Excellent |
+| **Twilio** | Ecosystem, docs | Excellent | Excellent |
+| **Vonage** | Enterprise features | Good | Good |
+| **Telnyx** | Price, flexibility | Good | Very Good |
+| **Bandwidth** | US coverage | US focused | Good |
+
+## Common Acronyms
+
+| Acronym | Full Form | Description |
+|---------|-----------|-------------|
+| **STT** | Speech-to-Text | Converting speech to text |
+| **TTS** | Text-to-Speech | Converting text to speech |
+| **ASR** | Automatic Speech Recognition | Same as STT |
+| **NLU** | Natural Language Understanding | Understanding meaning |
+| **NLG** | Natural Language Generation | Generating responses |
+| **VAD** | Voice Activity Detection | Detecting speech |
+| **AEC** | Acoustic Echo Cancellation | Removing echo |
+| **WER** | Word Error Rate | STT accuracy metric |
+| **MOS** | Mean Opinion Score | Audio quality metric |
+| **TTFB** | Time to First Byte | Latency metric |
+
+## Useful Links
+
+### Documentation
+
+- [OpenAI API Docs](https://platform.openai.com/docs)
+- [Anthropic API Docs](https://docs.anthropic.com)
+- [Deepgram Docs](https://developers.deepgram.com)
+- [ElevenLabs Docs](https://docs.elevenlabs.io)
+- [Plivo Docs](https://www.plivo.com/docs)
+
+### Tools & Frameworks
+
+- [LangChain](https://langchain.com) - Agent framework
+- [LangGraph](https://langchain-ai.github.io/langgraph/) - Stateful agent graphs
+- [Pipecat](https://github.com/pipecat-ai/pipecat) - Voice AI framework
+- [LiveKit](https://livekit.io) - Real-time communication
+
+### Communities
+
+- [Voice AI Discord](https://discord.gg/voiceai) - Community discussions
+- [r/VoiceAI](https://reddit.com/r/voiceai) - Reddit community
+- [Hacker News](https://news.ycombinator.com) - Tech discussions
+
+## Calculation Formulas
+
+### Word Error Rate (WER)
+
+```
+WER = (Substitutions + Deletions + Insertions) / Total Words in Reference
+```
+
+Lower is better. Industry standard for good STT is WER < 10%.
+
+### Mean Opinion Score (MOS)
+
+Scale from 1-5:
+- 5: Excellent (indistinguishable from human)
+- 4: Good (minor imperfections)
+- 3: Fair (noticeable artifacts)
+- 2: Poor (difficult to understand)
+- 1: Bad (unacceptable)
+
+### Latency Budget
+
+```
+Total Latency = Network (in) + STT + LLM + TTS + Network (out) + Buffer
+```
+
+Target: < 500ms for natural conversation feel.
+
+### Cost Per Call
+
+```
+Cost = STT Cost + LLM Cost + TTS Cost + Telephony Cost + Infrastructure Cost
+```
+
+Typical range: $0.05 - $0.50 per minute depending on providers.
+
+## Getting Started with Resources
+
+1. **[Glossary](/topics/resources/glossary)** - Learn the terminology
+2. **[Provider Directory](/topics/resources/provider-directory)** - Compare your options
+3. **[Benchmarks](/topics/resources/benchmarks)** - Make data-driven decisions
+4. **[Research Papers](/topics/resources/research-papers)** - Understand the science
+
+## Contributing
+
+Have a resource to suggest? We welcome contributions to the Voice AI Repository. Visit our [GitHub repository](https://github.com/plivo/voice-ai-repository) to submit additions or corrections.

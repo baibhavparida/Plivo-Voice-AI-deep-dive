@@ -1,0 +1,101 @@
+---
+title: "Foundations"
+description: "Core technologies and fundamental concepts that power voice AI systems"
+---
+
+# Foundations of Voice AI
+
+Welcome to the Foundations section of the Voice AI Knowledge Repository. This section covers the core technologies that power modern voice AI systems, from converting speech to text and back again, to understanding and generating natural language.
+
+## What You'll Learn
+
+The foundations of voice AI consist of four key technology areas that work together to enable natural voice conversations:
+
+### Speech Recognition (STT)
+
+**Speech-to-Text** technology converts spoken language into written text. This is the first step in any voice AI pipeline—understanding what the user said.
+
+- [STT Overview](/topics/foundations/speech-recognition/stt-overview) - Introduction to speech recognition technology
+- [Acoustic Models](/topics/foundations/speech-recognition/acoustic-models) - How neural networks process audio signals
+- [Language Models](/topics/foundations/speech-recognition/language-models) - Predicting likely word sequences
+- [Streaming vs Batch](/topics/foundations/speech-recognition/streaming-vs-batch) - Real-time vs offline processing
+- [Provider Comparison](/topics/foundations/speech-recognition/stt-provider-comparison) - Comparing Google, AWS, Deepgram, and more
+- [Optimization](/topics/foundations/speech-recognition/stt-optimization) - Improving accuracy and reducing latency
+
+### Speech Synthesis (TTS)
+
+**Text-to-Speech** technology converts written text into natural-sounding speech. This is how your voice AI agent "speaks" to users.
+
+- [TTS Overview](/topics/foundations/speech-synthesis/tts-overview) - Introduction to speech synthesis
+- [Neural TTS](/topics/foundations/speech-synthesis/neural-tts) - Modern deep learning approaches
+- [Voice Cloning](/topics/foundations/speech-synthesis/voice-cloning) - Creating custom voice personas
+- [SSML](/topics/foundations/speech-synthesis/ssml) - Controlling speech characteristics
+- [Provider Comparison](/topics/foundations/speech-synthesis/tts-provider-comparison) - Comparing ElevenLabs, Google, AWS Polly, and more
+- [Optimization](/topics/foundations/speech-synthesis/tts-optimization) - Improving quality and reducing latency
+
+### Language Understanding (NLU)
+
+**Natural Language Understanding** interprets the meaning behind user utterances—what they want and what information they've provided.
+
+- [Intent Recognition](/topics/foundations/language-understanding/intent-recognition) - Classifying user intentions
+- [Entity Extraction](/topics/foundations/language-understanding/entity-extraction) - Extracting structured data
+- [Dialogue State](/topics/foundations/language-understanding/dialogue-state) - Tracking conversation context
+- [Sentiment Analysis](/topics/foundations/language-understanding/sentiment-analysis) - Understanding emotional tone
+
+### Language Generation (NLG)
+
+**Natural Language Generation** creates human-like responses that are contextually appropriate and consistent with your agent's persona.
+
+- [Response Templates](/topics/foundations/language-generation/response-templates) - Template-based generation
+- [Dynamic Generation](/topics/foundations/language-generation/dynamic-generation) - LLM-powered responses
+- [Persona Consistency](/topics/foundations/language-generation/persona-consistency) - Maintaining voice and tone
+
+## The Voice AI Pipeline
+
+These four technologies work together in a continuous loop:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Voice AI Pipeline                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   User Speech → [STT] → Text → [NLU] → Intent/Entities      │
+│                                              ↓               │
+│   Agent Speech ← [TTS] ← Text ← [NLG] ← Response            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+1. **STT** converts the user's speech to text
+2. **NLU** understands what the user wants
+3. **NLG** generates an appropriate response
+4. **TTS** speaks the response back to the user
+
+## Getting Started
+
+If you're new to voice AI, we recommend starting with:
+
+1. **[STT Overview](/topics/foundations/speech-recognition/stt-overview)** - Understand how speech recognition works
+2. **[TTS Overview](/topics/foundations/speech-synthesis/tts-overview)** - Learn about speech synthesis
+3. **[Intent Recognition](/topics/foundations/language-understanding/intent-recognition)** - See how NLU classifies user requests
+
+For a complete introduction to voice AI, visit our [Introduction](/topics/welcome/introduction) in the Welcome section.
+
+## Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Latency** | Time delay between user speech and agent response |
+| **Word Error Rate (WER)** | Accuracy metric for speech recognition |
+| **Mean Opinion Score (MOS)** | Quality metric for synthesized speech |
+| **F1 Score** | Accuracy metric for intent classification |
+| **Streaming** | Processing audio in real-time as it arrives |
+| **Turn-taking** | Managing when each party speaks in a conversation |
+
+## Next Steps
+
+Once you understand the foundations, explore:
+
+- **[Infrastructure](/topics/infrastructure)** - Audio pipelines, telephony, and streaming
+- **[LLM Integration](/topics/llm-integration)** - Adding intelligence with large language models
+- **[Agent Architecture](/topics/agent-architecture)** - Design patterns for voice AI agents

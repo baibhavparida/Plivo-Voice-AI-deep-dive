@@ -1,0 +1,1141 @@
+---
+title: "Entity Extraction for Voice AI"
+description: "Complete guide to entity extraction in voice AI systems, covering named entity recognition, slot filling, custom entity types, fuzzy matching for speech errors, and validation strategies."
+category: "foundations"
+tags:
+  - entity-extraction
+  - NER
+  - slot-filling
+  - voice-ai
+  - NLU
+relatedTopics:
+  - intent-recognition
+  - dialogue-state
+  - sentiment-analysis
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Entity Extraction for Voice AI
+
+Entity extraction identifies and extracts specific pieces of information from user utterances. In voice AI, this process must handle the unique challenges of spoken language, including ASR errors, disfluencies, and natural speech patterns.
+
+## Named Entity Recognition (NER)
+
+Named Entity Recognition identifies and classifies named entities in text into predefined categories such as person names, organizations, locations, dates, and more.
+
+### Standard NER Categories
+
+| Category | Examples | Voice Challenges |
+|----------|----------|-----------------|
+| **PERSON** | "John Smith", "Dr. Johnson" | Name pronunciation variants |
+| **LOCATION** | "New York", "123 Main St" | Address formats, abbreviations |
+| **ORGANIZATION** | "Apple", "United Airlines" | Brand name confusion |
+| **DATE** | "tomorrow", "next Friday" | Relative references |
+| **TIME** | "3 PM", "in an hour" | Ambiguous formats |
+| **MONEY** | "$50", "fifty dollars" | Number transcription errors |
+| **PHONE** | "555-1234" | Digit recognition issues |
+
+### NER Architectures
+
+**1. Sequence Labeling (BIO Tagging)**:
+
+```python
+from transformers import AutoModelForTokenClassification, AutoTokenizer
+import torch
+
+class NERExtractor:
+    def __init__(self, model_name: str = "dslim/bert-base-NER"):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForTokenClassification.from_pretrained(model_name)
+        self.model.eval()
+
+        self.id2label = self.model.config.id2label
+
+    def extract(self, text: str) -> list[dict]:
+        """Extract entities using BIO tagging"""
+        inputs = self.tokenizer(
+            text,
+            return_tensors="pt",
+            return_offsets_mapping=True,
+            truncation=True
+        )
+
+        offset_mapping = inputs.pop("offset_mapping")[0]
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            predictions = torch.argmax(outputs.logits, dim=-1)[0]
+
+        entities = []
+        current_entity = None
+
+        for idx, (pred, offset) in enumerate(zip(predictions, offset_mapping)):
+            label = self.id2label[pred.item()]
+
+            if label.startswith("B-"):  # Beginning of entity
+                if current_entity:
+                    entities.append(current_entity)
+                current_entity = {
+                    "type": label[2:],
+                    "start": offset[0].item(),
+                    "end": offset[1].item(),
+                    "text": text[offset[0]:offset[1]]
+                }
+            elif label.startswith("I-") and current_entity:  # Inside entity
+                current_entity["end"] = offset[1].item()
+                current_entity["text"] = text[current_entity["start"]:current_entity["end"]]
+            else:  # Outside
+                if current_entity:
+                    entities.append(current_entity)
+                    current_entity = None
+
+        if current_entity:
+            entities.append(current_entity)
+
+        return entities
+```
+
+**2. Span-Based Extraction**:
+
+```python
+class SpanNERExtractor:
+    """Extract entities by classifying all possible spans"""
+
+    def __init__(self, model, max_span_length: int = 8):
+        self.model = model
+        self.max_span_length = max_span_length
+
+    def extract(self, tokens: list[str]) -> list[dict]:
+        entities = []
+        n = len(tokens)
+
+        for start in range(n):
+            for end in range(start + 1, min(start + self.max_span_length + 1, n + 1)):
+                span = tokens[start:end]
+                span_text = " ".join(span)
+
+                # Classify span
+                entity_type, confidence = self.model.classify_span(span_text)
+
+                if entity_type != "O" and confidence > 0.5:
+                    entities.append({
+                        "type": entity_type,
+                        "text": span_text,
+                        "start_token": start,
+                        "end_token": end,
+                        "confidence": confidence
+                    })
+
+        # Resolve overlapping spans (keep highest confidence)
+        return self._resolve_overlaps(entities)
+
+    def _resolve_overlaps(self, entities: list[dict]) -> list[dict]:
+        """Remove overlapping entities, keeping highest confidence"""
+        entities = sorted(entities, key=lambda x: -x["confidence"])
+        selected = []
+
+        for entity in entities:
+            overlap = False
+            for selected_entity in selected:
+                if (entity["start_token"] < selected_entity["end_token"] and
+                    entity["end_token"] > selected_entity["start_token"]):
+                    overlap = True
+                    break
+
+            if not overlap:
+                selected.append(entity)
+
+        return selected
+```
+
+### Voice-Specific NER Challenges
+
+**Handling Homophones and ASR Errors**:
+
+```python
+class VoiceAwareNER:
+    def __init__(self, base_ner, phonetic_matcher):
+        self.ner = base_ner
+        self.phonetic_matcher = phonetic_matcher
+
+        # Known entity database
+        self.known_entities = {
+            "LOCATION": ["New York", "Los Angeles", "Chicago"],
+            "ORGANIZATION": ["Apple", "Microsoft", "Amazon"],
+            "PERSON": []  # Dynamic
+        }
+
+    def extract_with_correction(self, text: str, asr_confidence: float = 1.0) -> list[dict]:
+        """Extract entities with ASR error correction"""
+
+        # Standard extraction
+        entities = self.ner.extract(text)
+
+        # If low ASR confidence, try phonetic matching
+        if asr_confidence < 0.8:
+            entities = self._phonetic_correction(text, entities)
+
+        return entities
+
+    def _phonetic_correction(self, text: str, entities: list[dict]) -> list[dict]:
+        """Correct entities using phonetic similarity"""
+        corrected = []
+
+        for entity in entities:
+            # Try to match against known entities
+            if entity["type"] in self.known_entities:
+                best_match = self.phonetic_matcher.find_best_match(
+                    entity["text"],
+                    self.known_entities[entity["type"]]
+                )
+
+                if best_match and best_match["score"] > 0.8:
+                    entity["text"] = best_match["match"]
+                    entity["original_text"] = entity["text"]
+                    entity["correction_confidence"] = best_match["score"]
+
+            corrected.append(entity)
+
+        return corrected
+```
+
+## Slot Filling in Voice
+
+Slot filling extracts specific pieces of information required to complete a user's request. Unlike general NER, slot filling is task-specific and guided by the detected intent.
+
+### Slot Schema Definition
+
+```python
+from dataclasses import dataclass
+from typing import Optional, Any
+from enum import Enum
+
+class SlotType(Enum):
+    STRING = "string"
+    NUMBER = "number"
+    DATE = "date"
+    TIME = "time"
+    DURATION = "duration"
+    ENUM = "enum"
+    BOOLEAN = "boolean"
+    ENTITY = "entity"
+
+@dataclass
+class SlotDefinition:
+    name: str
+    type: SlotType
+    required: bool = True
+    default: Any = None
+    validation_regex: Optional[str] = None
+    enum_values: Optional[list[str]] = None
+    prompt: str = ""  # Question to ask if slot is missing
+
+# Example: Flight booking slots
+FLIGHT_BOOKING_SLOTS = {
+    "origin": SlotDefinition(
+        name="origin",
+        type=SlotType.ENTITY,
+        required=True,
+        prompt="Where will you be flying from?"
+    ),
+    "destination": SlotDefinition(
+        name="destination",
+        type=SlotType.ENTITY,
+        required=True,
+        prompt="Where would you like to fly to?"
+    ),
+    "departure_date": SlotDefinition(
+        name="departure_date",
+        type=SlotType.DATE,
+        required=True,
+        prompt="What date would you like to depart?"
+    ),
+    "return_date": SlotDefinition(
+        name="return_date",
+        type=SlotType.DATE,
+        required=False,
+        prompt="When would you like to return? Or is this a one-way trip?"
+    ),
+    "cabin_class": SlotDefinition(
+        name="cabin_class",
+        type=SlotType.ENUM,
+        required=False,
+        default="economy",
+        enum_values=["economy", "business", "first"],
+        prompt="Would you prefer economy, business, or first class?"
+    ),
+    "passengers": SlotDefinition(
+        name="passengers",
+        type=SlotType.NUMBER,
+        required=True,
+        default=1,
+        prompt="How many passengers will be traveling?"
+    )
+}
+```
+
+### Joint Intent and Slot Filling
+
+Modern approaches jointly predict intents and slots:
+
+```python
+class JointIntentSlotModel:
+    """
+    Joint model for intent classification and slot filling
+    Based on BERT + slot attention architecture
+    """
+
+    def __init__(self, model_path: str):
+        self.model = self._load_model(model_path)
+        self.intent_labels = self._load_intent_labels()
+        self.slot_labels = self._load_slot_labels()
+
+    def predict(self, utterance: str) -> dict:
+        """
+        Returns:
+        {
+            "intent": "book_flight",
+            "intent_confidence": 0.95,
+            "slots": {
+                "origin": {"value": "New York", "confidence": 0.92},
+                "destination": {"value": "Los Angeles", "confidence": 0.89}
+            }
+        }
+        """
+        # Tokenize
+        tokens = self._tokenize(utterance)
+
+        # Forward pass
+        intent_logits, slot_logits = self.model(tokens)
+
+        # Decode intent
+        intent_probs = softmax(intent_logits)
+        intent_idx = argmax(intent_probs)
+        intent = self.intent_labels[intent_idx]
+
+        # Decode slots (BIO tagging)
+        slot_preds = argmax(slot_logits, dim=-1)
+        slots = self._decode_slots(tokens, slot_preds)
+
+        return {
+            "intent": intent,
+            "intent_confidence": intent_probs[intent_idx],
+            "slots": slots
+        }
+
+    def _decode_slots(self, tokens: list[str], predictions: list[int]) -> dict:
+        """Decode BIO slot predictions"""
+        slots = {}
+        current_slot = None
+        current_value = []
+
+        for token, pred in zip(tokens, predictions):
+            label = self.slot_labels[pred]
+
+            if label.startswith("B-"):
+                # Save previous slot
+                if current_slot:
+                    slots[current_slot] = {
+                        "value": " ".join(current_value),
+                        "confidence": 0.9  # Simplified
+                    }
+
+                current_slot = label[2:]
+                current_value = [token]
+
+            elif label.startswith("I-") and current_slot:
+                current_value.append(token)
+
+            else:
+                if current_slot:
+                    slots[current_slot] = {
+                        "value": " ".join(current_value),
+                        "confidence": 0.9
+                    }
+                    current_slot = None
+                    current_value = []
+
+        # Don't forget last slot
+        if current_slot:
+            slots[current_slot] = {
+                "value": " ".join(current_value),
+                "confidence": 0.9
+            }
+
+        return slots
+```
+
+### Progressive Slot Filling
+
+Voice conversations naturally fill slots across multiple turns:
+
+```python
+class SlotFillingDialogue:
+    def __init__(self, slot_schema: dict[str, SlotDefinition]):
+        self.schema = slot_schema
+        self.filled_slots = {}
+
+    def process_utterance(self, utterance: str, extracted_slots: dict) -> dict:
+        """Process new utterance and update slot state"""
+
+        # Merge new slots with existing
+        for slot_name, slot_value in extracted_slots.items():
+            if slot_name in self.schema:
+                self.filled_slots[slot_name] = slot_value
+
+        # Check completion
+        missing_required = self._get_missing_required_slots()
+
+        if not missing_required:
+            return {
+                "status": "complete",
+                "slots": self.filled_slots,
+                "response": self._generate_confirmation()
+            }
+
+        # Prompt for next missing slot
+        next_slot = missing_required[0]
+        return {
+            "status": "incomplete",
+            "slots": self.filled_slots,
+            "missing": missing_required,
+            "response": self.schema[next_slot].prompt
+        }
+
+    def _get_missing_required_slots(self) -> list[str]:
+        """Get list of required slots not yet filled"""
+        missing = []
+        for name, definition in self.schema.items():
+            if definition.required and name not in self.filled_slots:
+                missing.append(name)
+        return missing
+
+    def _generate_confirmation(self) -> str:
+        """Generate confirmation of all slots"""
+        confirmations = []
+        for name, value in self.filled_slots.items():
+            confirmations.append(f"{name}: {value['value']}")
+        return "Let me confirm: " + ", ".join(confirmations) + ". Is that correct?"
+```
+
+## Custom Entity Types
+
+Voice AI applications often require domain-specific entity types beyond standard NER categories.
+
+### Defining Custom Entities
+
+```python
+from dataclasses import dataclass
+from typing import Callable, Optional
+
+@dataclass
+class CustomEntityType:
+    name: str
+    patterns: list[str]  # Regex patterns
+    examples: list[str]  # Training examples
+    normalizer: Optional[Callable] = None  # Value normalization function
+    validator: Optional[Callable] = None   # Validation function
+
+# Example: Order number entity
+ORDER_NUMBER = CustomEntityType(
+    name="order_number",
+    patterns=[
+        r"\b[A-Z]{2}\d{6,10}\b",  # AB123456
+        r"\border\s*(?:number|#|num)?\s*[:.]?\s*([A-Z0-9]{6,12})\b",
+    ],
+    examples=[
+        "AB123456",
+        "Order number XY789012",
+        "my order # is CD345678"
+    ],
+    normalizer=lambda x: x.upper().replace(" ", ""),
+    validator=lambda x: len(x) >= 6 and any(c.isdigit() for c in x)
+)
+
+# Example: Product SKU
+PRODUCT_SKU = CustomEntityType(
+    name="product_sku",
+    patterns=[
+        r"\b[A-Z]{3}-\d{4}-[A-Z]{2}\b",  # ABC-1234-XY
+        r"\bsku\s*[:.]?\s*([A-Z0-9-]{8,15})\b",
+    ],
+    examples=[
+        "SKU: ABC-1234-XY",
+        "product DEF-5678-ZZ"
+    ],
+    normalizer=lambda x: x.upper(),
+    validator=lambda x: "-" in x and len(x) >= 8
+)
+```
+
+### Custom Entity Extractor
+
+```python
+import re
+from typing import Optional
+
+class CustomEntityExtractor:
+    def __init__(self, entity_types: list[CustomEntityType]):
+        self.entity_types = {et.name: et for et in entity_types}
+        self._compile_patterns()
+
+    def _compile_patterns(self):
+        """Pre-compile regex patterns for efficiency"""
+        self.compiled_patterns = {}
+        for name, et in self.entity_types.items():
+            self.compiled_patterns[name] = [
+                re.compile(p, re.IGNORECASE) for p in et.patterns
+            ]
+
+    def extract(self, text: str) -> list[dict]:
+        """Extract all custom entities from text"""
+        entities = []
+
+        for entity_name, patterns in self.compiled_patterns.items():
+            entity_type = self.entity_types[entity_name]
+
+            for pattern in patterns:
+                for match in pattern.finditer(text):
+                    # Get the captured group if exists, else full match
+                    value = match.group(1) if match.groups() else match.group(0)
+
+                    # Normalize
+                    if entity_type.normalizer:
+                        value = entity_type.normalizer(value)
+
+                    # Validate
+                    if entity_type.validator and not entity_type.validator(value):
+                        continue
+
+                    entities.append({
+                        "type": entity_name,
+                        "value": value,
+                        "original": match.group(0),
+                        "start": match.start(),
+                        "end": match.end()
+                    })
+
+        return entities
+
+    def extract_single(self, text: str, entity_name: str) -> Optional[dict]:
+        """Extract a specific entity type"""
+        entities = self.extract(text)
+        for entity in entities:
+            if entity["type"] == entity_name:
+                return entity
+        return None
+```
+
+### Training Custom NER Models
+
+When patterns are insufficient, train a custom NER model:
+
+```python
+from transformers import AutoModelForTokenClassification, Trainer, TrainingArguments
+
+def train_custom_ner(
+    training_data: list[dict],
+    entity_types: list[str],
+    base_model: str = "bert-base-uncased",
+    output_dir: str = "./custom_ner"
+):
+    """
+    Train custom NER model
+
+    training_data format:
+    [
+        {
+            "text": "Order AB123456 shipped",
+            "entities": [
+                {"start": 6, "end": 14, "label": "order_number"}
+            ]
+        }
+    ]
+    """
+
+    # Create label mapping (BIO format)
+    labels = ["O"]
+    for entity_type in entity_types:
+        labels.extend([f"B-{entity_type}", f"I-{entity_type}"])
+
+    label2id = {label: i for i, label in enumerate(labels)}
+    id2label = {i: label for label, i in label2id.items()}
+
+    # Prepare dataset
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    dataset = prepare_ner_dataset(training_data, tokenizer, label2id)
+
+    # Load model
+    model = AutoModelForTokenClassification.from_pretrained(
+        base_model,
+        num_labels=len(labels),
+        id2label=id2label,
+        label2id=label2id
+    )
+
+    # Training arguments
+    training_args = TrainingArguments(
+        output_dir=output_dir,
+        num_train_epochs=10,
+        per_device_train_batch_size=16,
+        learning_rate=2e-5,
+        weight_decay=0.01,
+        evaluation_strategy="epoch",
+        save_strategy="epoch",
+        load_best_model_at_end=True
+    )
+
+    # Train
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=dataset["train"],
+        eval_dataset=dataset["validation"],
+        tokenizer=tokenizer
+    )
+
+    trainer.train()
+    trainer.save_model(output_dir)
+
+    return model, tokenizer
+```
+
+## Fuzzy Matching for Speech Errors
+
+ASR systems frequently introduce errors that affect entity recognition. Fuzzy matching helps recover correct entities despite transcription mistakes.
+
+### Phonetic Similarity
+
+```python
+import jellyfish
+
+class PhoneticMatcher:
+    """Match entities using phonetic similarity"""
+
+    def __init__(self, entity_database: dict[str, list[str]]):
+        """
+        entity_database: {entity_type: [valid_values]}
+        """
+        self.database = entity_database
+        self._build_phonetic_index()
+
+    def _build_phonetic_index(self):
+        """Build phonetic representations for fast lookup"""
+        self.phonetic_index = {}
+
+        for entity_type, values in self.database.items():
+            self.phonetic_index[entity_type] = {}
+
+            for value in values:
+                # Multiple phonetic algorithms for robustness
+                soundex = jellyfish.soundex(value)
+                metaphone = jellyfish.metaphone(value)
+
+                # Index by both
+                for code in [soundex, metaphone]:
+                    if code not in self.phonetic_index[entity_type]:
+                        self.phonetic_index[entity_type][code] = []
+                    self.phonetic_index[entity_type][code].append(value)
+
+    def find_match(
+        self,
+        query: str,
+        entity_type: str,
+        threshold: float = 0.7
+    ) -> Optional[dict]:
+        """Find best matching entity using phonetic similarity"""
+
+        if entity_type not in self.database:
+            return None
+
+        # Try exact match first
+        if query in self.database[entity_type]:
+            return {"match": query, "score": 1.0, "method": "exact"}
+
+        # Phonetic lookup
+        query_soundex = jellyfish.soundex(query)
+        query_metaphone = jellyfish.metaphone(query)
+
+        candidates = set()
+        for code in [query_soundex, query_metaphone]:
+            if code in self.phonetic_index[entity_type]:
+                candidates.update(self.phonetic_index[entity_type][code])
+
+        # Score candidates
+        best_match = None
+        best_score = 0
+
+        for candidate in candidates:
+            score = jellyfish.jaro_winkler_similarity(query.lower(), candidate.lower())
+            if score > best_score:
+                best_score = score
+                best_match = candidate
+
+        # Check all values if no phonetic match found
+        if not best_match or best_score < threshold:
+            for value in self.database[entity_type]:
+                score = jellyfish.jaro_winkler_similarity(query.lower(), value.lower())
+                if score > best_score:
+                    best_score = score
+                    best_match = value
+
+        if best_match and best_score >= threshold:
+            return {
+                "match": best_match,
+                "score": best_score,
+                "method": "fuzzy"
+            }
+
+        return None
+```
+
+### Edit Distance with Context
+
+```python
+class ContextualFuzzyMatcher:
+    """Fuzzy matching that considers surrounding context"""
+
+    def __init__(self, entity_database: dict[str, list[str]]):
+        self.database = entity_database
+
+    def match_with_context(
+        self,
+        text: str,
+        potential_span: tuple[int, int],
+        entity_type: str,
+        context_weight: float = 0.3
+    ) -> Optional[dict]:
+        """
+        Match considering both the span and surrounding context
+        """
+        start, end = potential_span
+        query = text[start:end]
+
+        # Get context (words before and after)
+        before_context = text[max(0, start-30):start].strip()
+        after_context = text[end:end+30].strip()
+
+        best_match = None
+        best_score = 0
+
+        for candidate in self.database.get(entity_type, []):
+            # Base similarity score
+            base_score = self._similarity(query, candidate)
+
+            # Context boost (if context suggests this entity type)
+            context_score = self._context_score(
+                before_context, after_context, entity_type
+            )
+
+            # Combined score
+            final_score = (1 - context_weight) * base_score + context_weight * context_score
+
+            if final_score > best_score:
+                best_score = final_score
+                best_match = candidate
+
+        if best_match and best_score > 0.6:
+            return {
+                "match": best_match,
+                "score": best_score,
+                "original": query
+            }
+
+        return None
+
+    def _similarity(self, s1: str, s2: str) -> float:
+        """Compute string similarity"""
+        import jellyfish
+        return jellyfish.jaro_winkler_similarity(s1.lower(), s2.lower())
+
+    def _context_score(
+        self,
+        before: str,
+        after: str,
+        entity_type: str
+    ) -> float:
+        """Score based on contextual clues"""
+
+        # Context indicators for different entity types
+        indicators = {
+            "LOCATION": ["to", "from", "in", "at", "near", "city", "airport"],
+            "DATE": ["on", "by", "before", "after", "date", "day"],
+            "TIME": ["at", "around", "by", "time", "am", "pm"],
+            "PERSON": ["mr", "mrs", "ms", "dr", "name", "called"],
+            "MONEY": ["pay", "cost", "price", "total", "dollars", "$"]
+        }
+
+        context = f"{before} {after}".lower()
+        entity_indicators = indicators.get(entity_type, [])
+
+        matches = sum(1 for ind in entity_indicators if ind in context)
+        return min(1.0, matches / max(1, len(entity_indicators) * 0.3))
+```
+
+### Handling Common ASR Errors
+
+```python
+class ASRErrorCorrector:
+    """Correct common ASR errors in entity extraction"""
+
+    def __init__(self):
+        # Common ASR confusions
+        self.confusions = {
+            # Numbers
+            "to": "two", "too": "two",
+            "for": "four", "fore": "four",
+            "won": "one", "want": "one",
+            "ate": "eight",
+            "sex": "six",  # Common confusion
+            "tree": "three",
+            "tin": "ten",
+
+            # Letters in spelling
+            "bee": "b", "be": "b",
+            "see": "c", "sea": "c",
+            "jay": "j",
+            "kay": "k", "okay": "k",
+            "oh": "o",
+            "are": "r",
+            "you": "u",
+            "why": "y",
+            "double you": "w",
+
+            # Common words
+            "gonna": "going to",
+            "wanna": "want to",
+            "gotta": "got to",
+        }
+
+        # Number word to digit mapping
+        self.number_words = {
+            "zero": "0", "one": "1", "two": "2", "three": "3",
+            "four": "4", "five": "5", "six": "6", "seven": "7",
+            "eight": "8", "nine": "9", "ten": "10",
+            "eleven": "11", "twelve": "12"
+        }
+
+    def correct_for_entity(
+        self,
+        text: str,
+        expected_type: str
+    ) -> str:
+        """Apply corrections based on expected entity type"""
+
+        if expected_type in ["PHONE", "NUMBER", "CREDIT_CARD"]:
+            return self._correct_numbers(text)
+        elif expected_type == "DATE":
+            return self._correct_date(text)
+        elif expected_type == "SPELLING":
+            return self._correct_spelling(text)
+
+        return self._apply_general_corrections(text)
+
+    def _correct_numbers(self, text: str) -> str:
+        """Convert number words to digits"""
+        result = text.lower()
+
+        # Replace confusions
+        for wrong, right in self.confusions.items():
+            if right.isdigit():
+                result = re.sub(rf"\b{wrong}\b", right, result)
+
+        # Replace number words
+        for word, digit in self.number_words.items():
+            result = re.sub(rf"\b{word}\b", digit, result)
+
+        # Remove common filler words
+        result = re.sub(r"\b(um|uh|like)\b", "", result)
+
+        # Clean up spaces
+        result = " ".join(result.split())
+
+        return result
+
+    def _correct_spelling(self, text: str) -> str:
+        """Handle spelled-out letters"""
+        result = text.lower()
+
+        # Letter confusions
+        for wrong, right in self.confusions.items():
+            if len(right) == 1 and right.isalpha():
+                result = re.sub(rf"\b{wrong}\b", right, result)
+
+        # Remove spaces between letters (detecting spelling)
+        words = result.split()
+        if all(len(w) == 1 for w in words):
+            result = "".join(words)
+
+        return result.upper()
+
+    def _correct_date(self, text: str) -> str:
+        """Correct common date transcription errors"""
+        result = text.lower()
+
+        # Month name corrections
+        month_corrections = {
+            "january": ["jan you airy", "jan u ary"],
+            "february": ["feb you airy", "feb roo ary"],
+            "wednesday": ["wed nes day", "when's day"],
+        }
+
+        for correct, variants in month_corrections.items():
+            for variant in variants:
+                result = result.replace(variant, correct)
+
+        return result
+
+    def _apply_general_corrections(self, text: str) -> str:
+        """Apply general ASR corrections"""
+        result = text
+        for wrong, right in self.confusions.items():
+            result = re.sub(rf"\b{wrong}\b", right, result, flags=re.IGNORECASE)
+        return result
+```
+
+## Entity Validation
+
+Extracted entities must be validated before use to ensure data quality.
+
+### Validation Framework
+
+```python
+from abc import ABC, abstractmethod
+from typing import Optional, Any
+from datetime import datetime, date
+import re
+
+class EntityValidator(ABC):
+    @abstractmethod
+    def validate(self, value: Any) -> tuple[bool, Optional[str]]:
+        """
+        Returns (is_valid, error_message)
+        """
+        pass
+
+    @abstractmethod
+    def normalize(self, value: Any) -> Any:
+        """Normalize value to canonical form"""
+        pass
+
+class PhoneNumberValidator(EntityValidator):
+    def __init__(self, country_code: str = "US"):
+        self.country_code = country_code
+        self.patterns = {
+            "US": r"^\+?1?[-.\s]?\(?[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}$"
+        }
+
+    def validate(self, value: str) -> tuple[bool, Optional[str]]:
+        # Remove common ASR artifacts
+        cleaned = re.sub(r"[^\d+]", "", value)
+
+        pattern = self.patterns.get(self.country_code)
+        if pattern and re.match(pattern, value.replace(" ", "")):
+            return True, None
+
+        if len(cleaned) == 10 or (len(cleaned) == 11 and cleaned[0] == "1"):
+            return True, None
+
+        return False, f"Invalid phone number format: {value}"
+
+    def normalize(self, value: str) -> str:
+        digits = re.sub(r"[^\d]", "", value)
+        if len(digits) == 11 and digits[0] == "1":
+            digits = digits[1:]
+        if len(digits) == 10:
+            return f"+1-{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+        return value
+
+class DateValidator(EntityValidator):
+    def __init__(self):
+        self.relative_patterns = {
+            "today": 0,
+            "tomorrow": 1,
+            "day after tomorrow": 2,
+            "next week": 7,
+        }
+
+    def validate(self, value: str) -> tuple[bool, Optional[str]]:
+        # Check relative dates
+        if value.lower() in self.relative_patterns:
+            return True, None
+
+        # Try parsing common formats
+        formats = ["%Y-%m-%d", "%m/%d/%Y", "%B %d", "%B %d, %Y", "%d %B %Y"]
+        for fmt in formats:
+            try:
+                datetime.strptime(value, fmt)
+                return True, None
+            except ValueError:
+                continue
+
+        # Check for partial dates like "next Friday"
+        if any(day in value.lower() for day in
+               ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]):
+            return True, None
+
+        return False, f"Could not parse date: {value}"
+
+    def normalize(self, value: str) -> str:
+        # Convert to ISO format
+        value_lower = value.lower()
+
+        if value_lower in self.relative_patterns:
+            from datetime import timedelta
+            target = date.today() + timedelta(days=self.relative_patterns[value_lower])
+            return target.isoformat()
+
+        # Try parsing and converting
+        formats = ["%B %d", "%B %d, %Y", "%m/%d/%Y"]
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(value, fmt)
+                # Assume current year if not specified
+                if parsed.year == 1900:
+                    parsed = parsed.replace(year=date.today().year)
+                return parsed.date().isoformat()
+            except ValueError:
+                continue
+
+        return value
+
+class EmailValidator(EntityValidator):
+    def validate(self, value: str) -> tuple[bool, Optional[str]]:
+        # Handle common ASR transcriptions
+        normalized = self._normalize_asr_email(value)
+
+        pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+        if re.match(pattern, normalized):
+            return True, None
+
+        return False, f"Invalid email format: {value}"
+
+    def _normalize_asr_email(self, value: str) -> str:
+        """Convert spoken email to written form"""
+        result = value.lower()
+
+        # Common ASR email transcriptions
+        replacements = {
+            " at ": "@",
+            " dot ": ".",
+            " underscore ": "_",
+            " dash ": "-",
+        }
+
+        for spoken, written in replacements.items():
+            result = result.replace(spoken, written)
+
+        result = result.replace(" ", "")
+        return result
+
+    def normalize(self, value: str) -> str:
+        return self._normalize_asr_email(value)
+```
+
+### Validation Pipeline
+
+```python
+class EntityValidationPipeline:
+    def __init__(self):
+        self.validators = {
+            "phone": PhoneNumberValidator(),
+            "date": DateValidator(),
+            "email": EmailValidator(),
+        }
+
+    def validate_and_normalize(
+        self,
+        entities: list[dict]
+    ) -> list[dict]:
+        """Validate and normalize all entities"""
+        validated = []
+
+        for entity in entities:
+            entity_type = entity["type"].lower()
+
+            if entity_type in self.validators:
+                validator = self.validators[entity_type]
+                is_valid, error = validator.validate(entity["value"])
+
+                if is_valid:
+                    entity["normalized_value"] = validator.normalize(entity["value"])
+                    entity["validation_status"] = "valid"
+                else:
+                    entity["validation_status"] = "invalid"
+                    entity["validation_error"] = error
+            else:
+                entity["validation_status"] = "no_validator"
+
+            validated.append(entity)
+
+        return validated
+
+    def get_valid_entities(self, entities: list[dict]) -> list[dict]:
+        """Return only valid entities"""
+        validated = self.validate_and_normalize(entities)
+        return [e for e in validated if e.get("validation_status") == "valid"]
+```
+
+### Confidence-Based Validation
+
+```python
+class ConfidenceBasedValidator:
+    """Validate entities based on extraction confidence and validation rules"""
+
+    def __init__(
+        self,
+        validation_pipeline: EntityValidationPipeline,
+        high_confidence_threshold: float = 0.9,
+        low_confidence_threshold: float = 0.6
+    ):
+        self.pipeline = validation_pipeline
+        self.high_threshold = high_confidence_threshold
+        self.low_threshold = low_confidence_threshold
+
+    def validate_with_confidence(
+        self,
+        entity: dict
+    ) -> dict:
+        """
+        Returns validation result with action recommendation
+        """
+        confidence = entity.get("confidence", 0.5)
+
+        # Run format validation
+        validated = self.pipeline.validate_and_normalize([entity])[0]
+        is_format_valid = validated.get("validation_status") == "valid"
+
+        # Determine action
+        if confidence >= self.high_threshold and is_format_valid:
+            action = "accept"
+        elif confidence >= self.low_threshold and is_format_valid:
+            action = "confirm"
+        elif confidence >= self.low_threshold and not is_format_valid:
+            action = "clarify"
+        else:
+            action = "reject"
+
+        return {
+            **validated,
+            "confidence": confidence,
+            "action": action,
+            "confirmation_prompt": self._generate_prompt(entity, action)
+        }
+
+    def _generate_prompt(self, entity: dict, action: str) -> Optional[str]:
+        if action == "accept":
+            return None
+        elif action == "confirm":
+            return f"I heard {entity['value']} as your {entity['type']}. Is that correct?"
+        elif action == "clarify":
+            return f"I'm not sure I got your {entity['type']} correctly. Could you repeat that?"
+        else:
+            return f"I couldn't understand your {entity['type']}. Could you say it again clearly?"
+```
+
+## Next Steps
+
+- **[Intent Recognition](/topics/foundations/language-understanding/intent-recognition)** - Understand user goals
+- **[Dialogue State Tracking](/topics/foundations/language-understanding/dialogue-state)** - Maintain conversation context
+- **[Sentiment Analysis](/topics/foundations/language-understanding/sentiment-analysis)** - Detect emotional signals

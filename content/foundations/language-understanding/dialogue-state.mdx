@@ -1,0 +1,1218 @@
+---
+title: "Dialogue State Tracking for Voice AI"
+description: "Comprehensive guide to dialogue state tracking in voice AI systems, covering state representation, belief tracking, context carryover, state reset conditions, and multi-turn conversation management."
+category: "foundations"
+tags:
+  - dialogue-state
+  - conversation-management
+  - voice-ai
+  - context-tracking
+  - NLU
+relatedTopics:
+  - intent-recognition
+  - entity-extraction
+  - sentiment-analysis
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Dialogue State Tracking for Voice AI
+
+Dialogue State Tracking (DST) maintains a representation of the conversation's current state, enabling voice AI systems to understand context across multiple turns and provide coherent, contextually-appropriate responses.
+
+## State Representation
+
+The dialogue state captures all relevant information about the current conversation, including user goals, extracted information, and conversation history.
+
+### Core State Components
+
+```python
+from dataclasses import dataclass, field
+from typing import Optional, Any
+from enum import Enum
+from datetime import datetime
+
+class ConversationPhase(Enum):
+    GREETING = "greeting"
+    INFORMATION_GATHERING = "information_gathering"
+    CONFIRMATION = "confirmation"
+    EXECUTION = "execution"
+    CLOSING = "closing"
+    ERROR_RECOVERY = "error_recovery"
+
+@dataclass
+class SlotValue:
+    value: Any
+    confidence: float
+    source_turn: int
+    confirmed: bool = False
+    last_updated: datetime = field(default_factory=datetime.now)
+
+@dataclass
+class DialogueState:
+    # Session identification
+    session_id: str
+    turn_count: int = 0
+
+    # Intent tracking
+    current_intent: Optional[str] = None
+    intent_confidence: float = 0.0
+    intent_history: list[str] = field(default_factory=list)
+
+    # Slot tracking
+    slots: dict[str, SlotValue] = field(default_factory=dict)
+    required_slots: list[str] = field(default_factory=list)
+
+    # Conversation flow
+    phase: ConversationPhase = ConversationPhase.GREETING
+    last_system_action: Optional[str] = None
+    pending_confirmation: Optional[str] = None
+
+    # Context
+    entities_mentioned: list[dict] = field(default_factory=list)
+    user_preferences: dict[str, Any] = field(default_factory=dict)
+
+    # Error tracking
+    consecutive_errors: int = 0
+    clarification_attempts: int = 0
+
+    # Metadata
+    created_at: datetime = field(default_factory=datetime.now)
+    last_updated: datetime = field(default_factory=datetime.now)
+
+    def update_slot(self, slot_name: str, value: Any, confidence: float):
+        """Update a slot value"""
+        self.slots[slot_name] = SlotValue(
+            value=value,
+            confidence=confidence,
+            source_turn=self.turn_count,
+            confirmed=False
+        )
+        self.last_updated = datetime.now()
+
+    def confirm_slot(self, slot_name: str):
+        """Mark a slot as confirmed by user"""
+        if slot_name in self.slots:
+            self.slots[slot_name].confirmed = True
+
+    def get_missing_required_slots(self) -> list[str]:
+        """Get list of required slots not yet filled"""
+        return [
+            slot for slot in self.required_slots
+            if slot not in self.slots or self.slots[slot].value is None
+        ]
+
+    def get_unconfirmed_slots(self) -> list[str]:
+        """Get slots that need user confirmation"""
+        return [
+            slot for slot, value in self.slots.items()
+            if not value.confirmed and value.confidence < 0.9
+        ]
+
+    def is_complete(self) -> bool:
+        """Check if all required slots are filled"""
+        return len(self.get_missing_required_slots()) == 0
+```
+
+### State Serialization
+
+For persistence and debugging, states must be serializable:
+
+```python
+import json
+from datetime import datetime
+
+class DialogueStateEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, Enum):
+            return obj.value
+        if hasattr(obj, '__dataclass_fields__'):
+            return {k: getattr(obj, k) for k in obj.__dataclass_fields__}
+        return super().default(obj)
+
+class StateSerializer:
+    @staticmethod
+    def to_json(state: DialogueState) -> str:
+        return json.dumps(state, cls=DialogueStateEncoder, indent=2)
+
+    @staticmethod
+    def from_json(json_str: str) -> DialogueState:
+        data = json.loads(json_str)
+        # Reconstruct nested objects
+        data['phase'] = ConversationPhase(data['phase'])
+        data['slots'] = {
+            k: SlotValue(**v) for k, v in data.get('slots', {}).items()
+        }
+        return DialogueState(**data)
+
+    @staticmethod
+    def to_compact(state: DialogueState) -> dict:
+        """Compact representation for LLM context"""
+        return {
+            "intent": state.current_intent,
+            "slots": {k: v.value for k, v in state.slots.items()},
+            "missing": state.get_missing_required_slots(),
+            "phase": state.phase.value,
+            "turn": state.turn_count
+        }
+```
+
+### Domain-Specific State Schemas
+
+```python
+# Flight booking domain state
+FLIGHT_BOOKING_STATE_SCHEMA = {
+    "required_slots": ["origin", "destination", "departure_date", "passengers"],
+    "optional_slots": ["return_date", "cabin_class", "airline_preference"],
+    "confirmation_slots": ["origin", "destination", "departure_date"],  # Must confirm
+    "phases": [
+        {"name": "collect_route", "slots": ["origin", "destination"]},
+        {"name": "collect_dates", "slots": ["departure_date", "return_date"]},
+        {"name": "collect_details", "slots": ["passengers", "cabin_class"]},
+        {"name": "confirm_and_book", "slots": []}
+    ]
+}
+
+# Customer support domain state
+SUPPORT_STATE_SCHEMA = {
+    "required_slots": ["issue_type", "account_identifier"],
+    "optional_slots": ["order_number", "product_name", "urgency_level"],
+    "confirmation_slots": ["account_identifier"],
+    "phases": [
+        {"name": "identify_customer", "slots": ["account_identifier"]},
+        {"name": "understand_issue", "slots": ["issue_type"]},
+        {"name": "gather_details", "slots": ["order_number", "product_name"]},
+        {"name": "resolve_or_escalate", "slots": []}
+    ]
+}
+```
+
+## Belief State Tracking
+
+Belief state tracking maintains probability distributions over possible states, handling uncertainty inherent in voice interactions.
+
+### Probabilistic State Representation
+
+```python
+from typing import Dict, List, Tuple
+import numpy as np
+
+class BeliefState:
+    """Probabilistic representation of dialogue state"""
+
+    def __init__(self, slot_ontology: dict):
+        """
+        slot_ontology: {slot_name: [possible_values]}
+        """
+        self.slot_ontology = slot_ontology
+        self.beliefs = {}
+
+        # Initialize uniform beliefs
+        for slot, values in slot_ontology.items():
+            n = len(values) + 1  # +1 for "none" (slot not mentioned)
+            self.beliefs[slot] = {
+                "none": 1.0 / n,
+                **{v: 1.0 / n for v in values}
+            }
+
+    def update(self, slot: str, observations: dict[str, float]):
+        """
+        Update beliefs based on NLU output
+
+        observations: {value: probability} from NLU
+        """
+        if slot not in self.beliefs:
+            return
+
+        # Bayesian update
+        prior = self.beliefs[slot]
+        posterior = {}
+
+        for value, prior_prob in prior.items():
+            likelihood = observations.get(value, 0.1)  # Default likelihood
+            posterior[value] = prior_prob * likelihood
+
+        # Normalize
+        total = sum(posterior.values())
+        self.beliefs[slot] = {k: v / total for k, v in posterior.items()}
+
+    def get_most_likely(self, slot: str) -> Tuple[str, float]:
+        """Get most likely value and its probability"""
+        if slot not in self.beliefs:
+            return None, 0.0
+
+        beliefs = self.beliefs[slot]
+        best_value = max(beliefs, key=beliefs.get)
+        return best_value, beliefs[best_value]
+
+    def get_entropy(self, slot: str) -> float:
+        """Calculate entropy (uncertainty) for a slot"""
+        if slot not in self.beliefs:
+            return 0.0
+
+        probs = np.array(list(self.beliefs[slot].values()))
+        probs = probs[probs > 0]  # Avoid log(0)
+        return -np.sum(probs * np.log2(probs))
+
+    def needs_clarification(self, slot: str, threshold: float = 0.7) -> bool:
+        """Check if slot value is uncertain enough to need clarification"""
+        _, confidence = self.get_most_likely(slot)
+        return confidence < threshold
+
+    def to_deterministic(self) -> dict[str, str]:
+        """Convert to deterministic state (most likely values)"""
+        result = {}
+        for slot in self.beliefs:
+            value, confidence = self.get_most_likely(slot)
+            if value != "none" and confidence > 0.3:
+                result[slot] = value
+        return result
+```
+
+### Neural Belief Tracker
+
+```python
+import torch
+import torch.nn as nn
+
+class NeuralBeliefTracker(nn.Module):
+    """
+    Neural network for dialogue state tracking
+    Based on TRADE (Transferable Dialogue State Generator) architecture
+    """
+
+    def __init__(
+        self,
+        vocab_size: int,
+        hidden_size: int,
+        num_slots: int,
+        slot_value_vocab_sizes: list[int]
+    ):
+        super().__init__()
+
+        self.embedding = nn.Embedding(vocab_size, hidden_size)
+
+        # Utterance encoder
+        self.utterance_encoder = nn.GRU(
+            hidden_size, hidden_size,
+            bidirectional=True, batch_first=True
+        )
+
+        # Slot-specific decoders
+        self.slot_gates = nn.ModuleList([
+            nn.Linear(hidden_size * 2, 3)  # none, dontcare, generate
+            for _ in range(num_slots)
+        ])
+
+        self.slot_generators = nn.ModuleList([
+            nn.GRU(hidden_size, hidden_size, batch_first=True)
+            for _ in range(num_slots)
+        ])
+
+        self.slot_outputs = nn.ModuleList([
+            nn.Linear(hidden_size, vocab_size)
+            for _ in range(num_slots)
+        ])
+
+    def forward(
+        self,
+        utterance: torch.Tensor,
+        previous_state: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            utterance: [batch, seq_len] token IDs
+            previous_state: [batch, num_slots, hidden] previous state encoding
+
+        Returns:
+            slot_gates: [batch, num_slots, 3] gate predictions
+            slot_values: [batch, num_slots, max_value_len] generated values
+        """
+        # Encode utterance
+        embedded = self.embedding(utterance)
+        encoded, hidden = self.utterance_encoder(embedded)
+
+        # Combine with previous state
+        context = torch.cat([hidden[-2], hidden[-1]], dim=-1)
+
+        # Predict for each slot
+        all_gates = []
+        all_values = []
+
+        for slot_idx, (gate, generator, output) in enumerate(
+            zip(self.slot_gates, self.slot_generators, self.slot_outputs)
+        ):
+            # Gate prediction
+            gate_logits = gate(context)
+            all_gates.append(gate_logits)
+
+            # Value generation (simplified)
+            slot_hidden = previous_state[:, slot_idx:slot_idx+1, :]
+            gen_output, _ = generator(embedded, slot_hidden.transpose(0, 1))
+            value_logits = output(gen_output)
+            all_values.append(value_logits)
+
+        return torch.stack(all_gates, dim=1), torch.stack(all_values, dim=1)
+```
+
+### Belief Update Rules
+
+```python
+class BeliefUpdateRules:
+    """Rules for updating belief states based on different dialogue acts"""
+
+    def __init__(self, slot_ontology: dict):
+        self.ontology = slot_ontology
+
+    def update_from_inform(
+        self,
+        belief: BeliefState,
+        slot: str,
+        value: str,
+        confidence: float
+    ):
+        """User provides information"""
+        if value in self.ontology.get(slot, []):
+            # Shift probability mass to informed value
+            observation = {v: 0.1 for v in self.ontology[slot]}
+            observation[value] = confidence
+            observation["none"] = 1 - confidence
+            belief.update(slot, observation)
+
+    def update_from_confirm(
+        self,
+        belief: BeliefState,
+        slot: str,
+        confirmed: bool
+    ):
+        """User confirms or denies a value"""
+        current_value, _ = belief.get_most_likely(slot)
+
+        if confirmed:
+            # Boost confirmed value
+            observation = {v: 0.05 for v in self.ontology.get(slot, [])}
+            observation[current_value] = 0.95
+            belief.update(slot, observation)
+        else:
+            # Reduce denied value, distribute to others
+            n = len(self.ontology.get(slot, []))
+            observation = {v: 1.0 / n for v in self.ontology.get(slot, [])}
+            observation[current_value] = 0.01
+            belief.update(slot, observation)
+
+    def update_from_correction(
+        self,
+        belief: BeliefState,
+        slot: str,
+        old_value: str,
+        new_value: str,
+        confidence: float
+    ):
+        """User corrects a previously stated value"""
+        # Strongly prefer new value, strongly demote old
+        observation = {v: 0.1 for v in self.ontology.get(slot, [])}
+        observation[old_value] = 0.01
+        observation[new_value] = confidence
+        belief.update(slot, observation)
+
+    def apply_decay(self, belief: BeliefState, decay_factor: float = 0.95):
+        """Apply temporal decay to uncertain beliefs"""
+        for slot in belief.beliefs:
+            for value in belief.beliefs[slot]:
+                if value != "none":
+                    # Decay towards prior
+                    current = belief.beliefs[slot][value]
+                    prior = 1.0 / (len(belief.beliefs[slot]) + 1)
+                    belief.beliefs[slot][value] = current * decay_factor + prior * (1 - decay_factor)
+```
+
+## Context Carryover
+
+Context carryover ensures information from previous turns remains accessible and relevant in subsequent interactions.
+
+### Reference Resolution
+
+```python
+class ReferenceResolver:
+    """Resolve pronouns and references to previously mentioned entities"""
+
+    def __init__(self):
+        self.entity_history = []  # Stack of mentioned entities
+        self.pronoun_map = {
+            "it": ["thing", "item", "product", "order"],
+            "that": ["thing", "item", "product", "order", "date", "time"],
+            "there": ["location", "place", "city", "airport"],
+            "then": ["date", "time"],
+            "he": ["person"],
+            "she": ["person"],
+            "they": ["person", "company", "organization"],
+        }
+
+    def add_entity(self, entity: dict):
+        """Add entity to history for future reference"""
+        self.entity_history.append({
+            **entity,
+            "turn": len(self.entity_history),
+            "recency_score": 1.0
+        })
+
+    def resolve_reference(
+        self,
+        reference: str,
+        context: str = ""
+    ) -> Optional[dict]:
+        """Resolve a reference to a previously mentioned entity"""
+
+        reference_lower = reference.lower()
+
+        # Check if it's a pronoun
+        if reference_lower in self.pronoun_map:
+            valid_types = self.pronoun_map[reference_lower]
+            candidates = [
+                e for e in reversed(self.entity_history)
+                if e.get("type", "").lower() in valid_types
+            ]
+            if candidates:
+                return candidates[0]
+
+        # Check for definite references ("the flight", "the order")
+        if reference_lower.startswith("the "):
+            entity_type = reference_lower[4:]  # Remove "the "
+            candidates = [
+                e for e in reversed(self.entity_history)
+                if entity_type in e.get("type", "").lower() or
+                   entity_type in e.get("value", "").lower()
+            ]
+            if candidates:
+                return candidates[0]
+
+        # Check for "same" references
+        if "same" in reference_lower:
+            # Look for recently mentioned entity of similar type
+            if self.entity_history:
+                return self.entity_history[-1]
+
+        return None
+
+    def decay_recency(self, decay: float = 0.9):
+        """Apply recency decay to all entities"""
+        for entity in self.entity_history:
+            entity["recency_score"] *= decay
+
+    def get_salient_entities(self, top_k: int = 3) -> list[dict]:
+        """Get most salient (recent/important) entities"""
+        sorted_entities = sorted(
+            self.entity_history,
+            key=lambda e: e["recency_score"],
+            reverse=True
+        )
+        return sorted_entities[:top_k]
+```
+
+### Context Window Management
+
+```python
+class ContextWindowManager:
+    """Manage conversation context for LLM prompts"""
+
+    def __init__(
+        self,
+        max_turns: int = 10,
+        max_tokens: int = 2000,
+        tokenizer = None
+    ):
+        self.max_turns = max_turns
+        self.max_tokens = max_tokens
+        self.tokenizer = tokenizer
+        self.history = []
+
+    def add_turn(self, user_utterance: str, system_response: str, metadata: dict = None):
+        """Add a conversation turn"""
+        self.history.append({
+            "user": user_utterance,
+            "system": system_response,
+            "metadata": metadata or {},
+            "timestamp": datetime.now()
+        })
+
+        # Trim if exceeds max turns
+        if len(self.history) > self.max_turns:
+            self.history = self.history[-self.max_turns:]
+
+    def get_context_for_llm(self, state: DialogueState) -> str:
+        """Build context string for LLM prompt"""
+        context_parts = []
+
+        # Add state summary
+        context_parts.append(self._format_state_summary(state))
+
+        # Add relevant history (most recent first, then trim)
+        history_text = self._format_history()
+        context_parts.append(history_text)
+
+        # Check token count and trim if needed
+        full_context = "\n".join(context_parts)
+        if self.tokenizer:
+            tokens = self.tokenizer.encode(full_context)
+            if len(tokens) > self.max_tokens:
+                full_context = self._trim_to_tokens(context_parts)
+
+        return full_context
+
+    def _format_state_summary(self, state: DialogueState) -> str:
+        """Format current state for context"""
+        lines = ["Current State:"]
+        lines.append(f"  Intent: {state.current_intent}")
+        lines.append(f"  Phase: {state.phase.value}")
+
+        if state.slots:
+            lines.append("  Slots:")
+            for name, slot_value in state.slots.items():
+                confirmed = "confirmed" if slot_value.confirmed else "unconfirmed"
+                lines.append(f"    - {name}: {slot_value.value} ({confirmed})")
+
+        missing = state.get_missing_required_slots()
+        if missing:
+            lines.append(f"  Missing: {', '.join(missing)}")
+
+        return "\n".join(lines)
+
+    def _format_history(self) -> str:
+        """Format conversation history"""
+        lines = ["Conversation History:"]
+        for i, turn in enumerate(self.history):
+            lines.append(f"Turn {i + 1}:")
+            lines.append(f"  User: {turn['user']}")
+            lines.append(f"  System: {turn['system']}")
+        return "\n".join(lines)
+
+    def _trim_to_tokens(self, parts: list[str]) -> str:
+        """Trim context to fit token limit"""
+        # Keep state summary, trim history from oldest
+        state_summary = parts[0]
+        history_turns = self.history.copy()
+
+        while history_turns:
+            trimmed_history = self._format_history_from_turns(history_turns)
+            full_text = state_summary + "\n" + trimmed_history
+            tokens = self.tokenizer.encode(full_text)
+
+            if len(tokens) <= self.max_tokens:
+                return full_text
+
+            # Remove oldest turn
+            history_turns = history_turns[1:]
+
+        return state_summary
+
+    def _format_history_from_turns(self, turns: list) -> str:
+        """Format specific turns"""
+        lines = ["Conversation History:"]
+        for i, turn in enumerate(turns):
+            lines.append(f"  User: {turn['user']}")
+            lines.append(f"  System: {turn['system']}")
+        return "\n".join(lines)
+```
+
+### Cross-Turn Entity Linking
+
+```python
+class CrossTurnEntityLinker:
+    """Link entities across conversation turns"""
+
+    def __init__(self):
+        self.entity_mentions = {}  # entity_id -> list of mentions
+        self.mention_to_entity = {}  # mention_text -> entity_id
+        self.next_entity_id = 0
+
+    def process_turn(
+        self,
+        extracted_entities: list[dict],
+        turn_id: int
+    ) -> list[dict]:
+        """Process entities from a turn, linking to existing entities"""
+        linked_entities = []
+
+        for entity in extracted_entities:
+            linked_entity = self._link_or_create(entity, turn_id)
+            linked_entities.append(linked_entity)
+
+        return linked_entities
+
+    def _link_or_create(self, entity: dict, turn_id: int) -> dict:
+        """Link entity to existing or create new"""
+        entity_text = entity["value"].lower()
+        entity_type = entity["type"]
+
+        # Check for exact match
+        if entity_text in self.mention_to_entity:
+            entity_id = self.mention_to_entity[entity_text]
+            self.entity_mentions[entity_id].append({
+                "turn": turn_id,
+                **entity
+            })
+            return {**entity, "entity_id": entity_id, "is_new": False}
+
+        # Check for similar existing entities
+        for existing_text, existing_id in self.mention_to_entity.items():
+            if self._is_same_entity(entity_text, existing_text, entity_type):
+                self.entity_mentions[existing_id].append({
+                    "turn": turn_id,
+                    **entity
+                })
+                # Also map new text to same entity
+                self.mention_to_entity[entity_text] = existing_id
+                return {**entity, "entity_id": existing_id, "is_new": False}
+
+        # Create new entity
+        new_id = self.next_entity_id
+        self.next_entity_id += 1
+        self.entity_mentions[new_id] = [{"turn": turn_id, **entity}]
+        self.mention_to_entity[entity_text] = new_id
+
+        return {**entity, "entity_id": new_id, "is_new": True}
+
+    def _is_same_entity(
+        self,
+        text1: str,
+        text2: str,
+        entity_type: str
+    ) -> bool:
+        """Determine if two mentions refer to same entity"""
+        # Exact match
+        if text1 == text2:
+            return True
+
+        # Abbreviation match for locations
+        if entity_type == "LOCATION":
+            abbreviations = {
+                "ny": "new york", "nyc": "new york city",
+                "la": "los angeles", "sf": "san francisco"
+            }
+            text1_expanded = abbreviations.get(text1, text1)
+            text2_expanded = abbreviations.get(text2, text2)
+            if text1_expanded == text2_expanded:
+                return True
+
+        # Substring match for names
+        if entity_type == "PERSON":
+            if text1 in text2 or text2 in text1:
+                return True
+
+        return False
+
+    def get_entity_history(self, entity_id: int) -> list[dict]:
+        """Get all mentions of an entity"""
+        return self.entity_mentions.get(entity_id, [])
+
+    def get_canonical_form(self, entity_id: int) -> Optional[str]:
+        """Get the canonical (most complete) form of an entity"""
+        mentions = self.entity_mentions.get(entity_id, [])
+        if not mentions:
+            return None
+
+        # Return longest mention as canonical
+        return max(mentions, key=lambda m: len(m["value"]))["value"]
+```
+
+## State Reset Conditions
+
+Proper state management requires knowing when to reset or partially clear the dialogue state.
+
+### Reset Triggers
+
+```python
+from enum import Enum
+from typing import Callable
+
+class ResetType(Enum):
+    FULL = "full"           # Complete state reset
+    INTENT = "intent"       # Reset intent and slots, keep context
+    SLOTS = "slots"         # Reset slots only
+    ERROR = "error"         # Reset error counters
+    SOFT = "soft"           # Soft reset - decay confidence
+
+class StateResetManager:
+    """Manage dialogue state resets"""
+
+    def __init__(self):
+        self.reset_triggers = {
+            # Explicit user requests
+            "start_over": ResetType.FULL,
+            "cancel": ResetType.INTENT,
+            "never_mind": ResetType.INTENT,
+            "forget_it": ResetType.INTENT,
+
+            # Intent changes
+            "new_topic": ResetType.INTENT,
+
+            # Error thresholds
+            "max_errors": ResetType.ERROR,
+        }
+
+    def check_reset_triggers(
+        self,
+        state: DialogueState,
+        current_intent: str,
+        user_utterance: str
+    ) -> Optional[ResetType]:
+        """Check if any reset conditions are met"""
+
+        utterance_lower = user_utterance.lower()
+
+        # Check explicit reset phrases
+        reset_phrases = {
+            "start over": ResetType.FULL,
+            "begin again": ResetType.FULL,
+            "let's start fresh": ResetType.FULL,
+            "cancel": ResetType.INTENT,
+            "never mind": ResetType.INTENT,
+            "forget it": ResetType.INTENT,
+            "actually": ResetType.SOFT,  # Often indicates correction
+        }
+
+        for phrase, reset_type in reset_phrases.items():
+            if phrase in utterance_lower:
+                return reset_type
+
+        # Check for major intent change
+        if (state.current_intent and
+            current_intent != state.current_intent and
+            state.phase != ConversationPhase.GREETING):
+            # Check if it's a related or completely different intent
+            if not self._are_intents_related(state.current_intent, current_intent):
+                return ResetType.INTENT
+
+        # Check error threshold
+        if state.consecutive_errors >= 3:
+            return ResetType.ERROR
+
+        # Check clarification exhaustion
+        if state.clarification_attempts >= 5:
+            return ResetType.FULL
+
+        return None
+
+    def _are_intents_related(self, intent1: str, intent2: str) -> bool:
+        """Check if two intents are related (e.g., book_flight and modify_flight)"""
+        related_groups = [
+            {"book_flight", "modify_flight", "cancel_flight", "check_flight_status"},
+            {"book_hotel", "modify_hotel", "cancel_hotel"},
+            {"check_order", "track_order", "return_order", "cancel_order"},
+        ]
+
+        for group in related_groups:
+            if intent1 in group and intent2 in group:
+                return True
+
+        return False
+
+    def apply_reset(
+        self,
+        state: DialogueState,
+        reset_type: ResetType
+    ) -> DialogueState:
+        """Apply the appropriate reset to the state"""
+
+        if reset_type == ResetType.FULL:
+            return DialogueState(session_id=state.session_id)
+
+        elif reset_type == ResetType.INTENT:
+            state.current_intent = None
+            state.intent_confidence = 0.0
+            state.slots = {}
+            state.required_slots = []
+            state.phase = ConversationPhase.GREETING
+            state.pending_confirmation = None
+            return state
+
+        elif reset_type == ResetType.SLOTS:
+            state.slots = {}
+            state.phase = ConversationPhase.INFORMATION_GATHERING
+            return state
+
+        elif reset_type == ResetType.ERROR:
+            state.consecutive_errors = 0
+            state.clarification_attempts = 0
+            return state
+
+        elif reset_type == ResetType.SOFT:
+            # Decay confidence on all slots
+            for slot in state.slots.values():
+                slot.confidence *= 0.8
+                slot.confirmed = False
+            return state
+
+        return state
+```
+
+### Timeout-Based Resets
+
+```python
+from datetime import datetime, timedelta
+
+class TimeoutManager:
+    """Handle state timeouts and session expiry"""
+
+    def __init__(
+        self,
+        session_timeout: timedelta = timedelta(minutes=30),
+        turn_timeout: timedelta = timedelta(minutes=5),
+        slot_timeout: timedelta = timedelta(minutes=10)
+    ):
+        self.session_timeout = session_timeout
+        self.turn_timeout = turn_timeout
+        self.slot_timeout = slot_timeout
+
+    def check_timeouts(self, state: DialogueState) -> dict:
+        """Check for various timeout conditions"""
+        now = datetime.now()
+        results = {
+            "session_expired": False,
+            "turn_timeout": False,
+            "stale_slots": []
+        }
+
+        # Session timeout
+        if now - state.created_at > self.session_timeout:
+            results["session_expired"] = True
+            return results
+
+        # Turn timeout
+        if now - state.last_updated > self.turn_timeout:
+            results["turn_timeout"] = True
+
+        # Stale slots
+        for slot_name, slot_value in state.slots.items():
+            if now - slot_value.last_updated > self.slot_timeout:
+                if not slot_value.confirmed:
+                    results["stale_slots"].append(slot_name)
+
+        return results
+
+    def handle_timeouts(
+        self,
+        state: DialogueState,
+        timeout_results: dict
+    ) -> tuple[DialogueState, Optional[str]]:
+        """Handle detected timeouts, return updated state and message"""
+
+        if timeout_results["session_expired"]:
+            return DialogueState(session_id=state.session_id), \
+                   "It looks like we've been away for a while. Let's start fresh."
+
+        if timeout_results["turn_timeout"]:
+            message = "Are you still there? " + self._get_context_reminder(state)
+            return state, message
+
+        if timeout_results["stale_slots"]:
+            # Re-confirm stale slots
+            slot_name = timeout_results["stale_slots"][0]
+            slot_value = state.slots[slot_name]
+            message = f"Just to confirm, you said {slot_name} is {slot_value.value}. Is that still correct?"
+            state.pending_confirmation = slot_name
+            return state, message
+
+        return state, None
+
+    def _get_context_reminder(self, state: DialogueState) -> str:
+        """Generate context reminder for timeout recovery"""
+        if state.current_intent:
+            if state.phase == ConversationPhase.INFORMATION_GATHERING:
+                missing = state.get_missing_required_slots()
+                if missing:
+                    return f"We were working on your {state.current_intent}. I still need your {missing[0]}."
+            elif state.phase == ConversationPhase.CONFIRMATION:
+                return f"We were about to confirm your {state.current_intent}. Ready to proceed?"
+
+        return "What would you like help with?"
+```
+
+## Multi-Turn Conversations
+
+Managing complex multi-turn dialogues requires sophisticated state tracking and flow control.
+
+### Turn Management
+
+```python
+class TurnManager:
+    """Manage multi-turn conversation flow"""
+
+    def __init__(self, state: DialogueState):
+        self.state = state
+
+    def process_turn(
+        self,
+        nlu_result: dict,
+        previous_action: str
+    ) -> dict:
+        """Process a single conversation turn"""
+
+        self.state.turn_count += 1
+
+        # Extract components
+        intent = nlu_result.get("intent")
+        entities = nlu_result.get("entities", [])
+        confidence = nlu_result.get("intent_confidence", 0.0)
+
+        # Update state based on previous action
+        self._handle_previous_action_response(nlu_result, previous_action)
+
+        # Update intent
+        if intent and confidence > 0.5:
+            if self._should_update_intent(intent, confidence):
+                self.state.current_intent = intent
+                self.state.intent_confidence = confidence
+                self.state.intent_history.append(intent)
+
+        # Update slots
+        for entity in entities:
+            slot_name = self._entity_to_slot(entity["type"])
+            if slot_name:
+                self.state.update_slot(
+                    slot_name,
+                    entity["value"],
+                    entity.get("confidence", 0.8)
+                )
+
+        # Determine next action
+        next_action = self._determine_next_action()
+
+        return {
+            "state": self.state,
+            "next_action": next_action,
+            "response_type": self._get_response_type(next_action)
+        }
+
+    def _should_update_intent(self, new_intent: str, confidence: float) -> bool:
+        """Determine if we should update the current intent"""
+        if not self.state.current_intent:
+            return True
+
+        # Higher confidence than current
+        if confidence > self.state.intent_confidence + 0.1:
+            return True
+
+        # Same intent (reinforcement)
+        if new_intent == self.state.current_intent:
+            self.state.intent_confidence = min(1.0, self.state.intent_confidence + 0.1)
+            return False
+
+        return False
+
+    def _handle_previous_action_response(
+        self,
+        nlu_result: dict,
+        previous_action: str
+    ):
+        """Handle response to previous system action"""
+
+        if previous_action == "confirm_slot" and self.state.pending_confirmation:
+            # Check for affirmative/negative response
+            affirmative_signals = ["yes", "correct", "right", "that's right", "yep"]
+            negative_signals = ["no", "wrong", "incorrect", "that's wrong", "nope"]
+
+            utterance = nlu_result.get("utterance", "").lower()
+
+            if any(signal in utterance for signal in affirmative_signals):
+                self.state.confirm_slot(self.state.pending_confirmation)
+            elif any(signal in utterance for signal in negative_signals):
+                # Remove the incorrect slot, will re-ask
+                if self.state.pending_confirmation in self.state.slots:
+                    del self.state.slots[self.state.pending_confirmation]
+
+            self.state.pending_confirmation = None
+
+    def _entity_to_slot(self, entity_type: str) -> Optional[str]:
+        """Map entity type to slot name"""
+        mapping = {
+            "LOCATION": "destination",
+            "GPE": "destination",
+            "DATE": "date",
+            "TIME": "time",
+            "PERSON": "passenger_name",
+            "CARDINAL": "quantity",
+            "MONEY": "amount",
+        }
+        return mapping.get(entity_type)
+
+    def _determine_next_action(self) -> str:
+        """Determine the next system action"""
+
+        # Check for missing required slots
+        missing = self.state.get_missing_required_slots()
+        if missing:
+            self.state.phase = ConversationPhase.INFORMATION_GATHERING
+            return f"request_slot:{missing[0]}"
+
+        # Check for unconfirmed important slots
+        unconfirmed = self.state.get_unconfirmed_slots()
+        if unconfirmed and self.state.phase != ConversationPhase.CONFIRMATION:
+            self.state.phase = ConversationPhase.CONFIRMATION
+            self.state.pending_confirmation = unconfirmed[0]
+            return f"confirm_slot:{unconfirmed[0]}"
+
+        # All slots filled and confirmed
+        if self.state.is_complete():
+            self.state.phase = ConversationPhase.EXECUTION
+            return "execute_intent"
+
+        return "clarify"
+
+    def _get_response_type(self, action: str) -> str:
+        """Determine response type based on action"""
+        if action.startswith("request_slot"):
+            return "question"
+        elif action.startswith("confirm_slot"):
+            return "confirmation"
+        elif action == "execute_intent":
+            return "action"
+        else:
+            return "clarification"
+```
+
+### Subdialogue Management
+
+```python
+class SubdialogueManager:
+    """Handle nested subdialogues within main conversation"""
+
+    def __init__(self):
+        self.dialogue_stack = []  # Stack of active subdialogues
+        self.main_state = None
+
+    def push_subdialogue(
+        self,
+        subdialogue_type: str,
+        context: dict
+    ) -> DialogueState:
+        """Start a subdialogue, pushing main state to stack"""
+
+        if self.main_state is None:
+            raise ValueError("No main state to push")
+
+        # Save current state
+        self.dialogue_stack.append({
+            "type": subdialogue_type,
+            "parent_state": self.main_state,
+            "context": context
+        })
+
+        # Create subdialogue state
+        sub_state = DialogueState(
+            session_id=self.main_state.session_id,
+            turn_count=self.main_state.turn_count
+        )
+        sub_state.current_intent = subdialogue_type
+
+        return sub_state
+
+    def pop_subdialogue(self) -> Optional[DialogueState]:
+        """Complete subdialogue and return to parent"""
+
+        if not self.dialogue_stack:
+            return self.main_state
+
+        completed = self.dialogue_stack.pop()
+        parent_state = completed["parent_state"]
+
+        # Optionally transfer information back to parent
+        return parent_state
+
+    def is_in_subdialogue(self) -> bool:
+        """Check if currently in a subdialogue"""
+        return len(self.dialogue_stack) > 0
+
+    def get_subdialogue_type(self) -> Optional[str]:
+        """Get current subdialogue type"""
+        if self.dialogue_stack:
+            return self.dialogue_stack[-1]["type"]
+        return None
+
+# Example subdialogue types
+SUBDIALOGUE_TRIGGERS = {
+    "help": "help_subdialogue",
+    "repeat": "repeat_subdialogue",
+    "explain": "explanation_subdialogue",
+    "who are you": "introduction_subdialogue",
+}
+```
+
+## State Tracking Metrics
+
+```python
+class DialogueStateMetrics:
+    """Track metrics for dialogue state tracking performance"""
+
+    def __init__(self):
+        self.metrics = {
+            "slot_accuracy": [],
+            "intent_accuracy": [],
+            "turn_efficiency": [],
+            "completion_rate": 0,
+            "reset_count": 0,
+            "error_recovery_success": []
+        }
+
+    def record_turn(
+        self,
+        predicted_state: DialogueState,
+        ground_truth: dict,
+        turn_count: int
+    ):
+        """Record metrics for a single turn"""
+
+        # Slot accuracy (joint goal accuracy)
+        predicted_slots = {k: v.value for k, v in predicted_state.slots.items()}
+        gt_slots = ground_truth.get("slots", {})
+
+        slot_correct = predicted_slots == gt_slots
+        self.metrics["slot_accuracy"].append(1.0 if slot_correct else 0.0)
+
+        # Intent accuracy
+        intent_correct = predicted_state.current_intent == ground_truth.get("intent")
+        self.metrics["intent_accuracy"].append(1.0 if intent_correct else 0.0)
+
+    def calculate_joint_goal_accuracy(self) -> float:
+        """Calculate joint goal accuracy (all slots correct per turn)"""
+        if not self.metrics["slot_accuracy"]:
+            return 0.0
+        return sum(self.metrics["slot_accuracy"]) / len(self.metrics["slot_accuracy"])
+
+    def calculate_slot_f1(
+        self,
+        predicted_slots: dict,
+        ground_truth_slots: dict
+    ) -> dict:
+        """Calculate per-slot F1 score"""
+        all_slots = set(predicted_slots.keys()) | set(ground_truth_slots.keys())
+
+        tp = fp = fn = 0
+        for slot in all_slots:
+            pred = predicted_slots.get(slot)
+            gt = ground_truth_slots.get(slot)
+
+            if pred == gt and pred is not None:
+                tp += 1
+            elif pred is not None and gt is None:
+                fp += 1
+            elif pred is None and gt is not None:
+                fn += 1
+            elif pred != gt:
+                fp += 1
+                fn += 1
+
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+        return {"precision": precision, "recall": recall, "f1": f1}
+```
+
+## Next Steps
+
+- **[Intent Recognition](/topics/foundations/language-understanding/intent-recognition)** - Detect user goals
+- **[Entity Extraction](/topics/foundations/language-understanding/entity-extraction)** - Extract slot values
+- **[Sentiment Analysis](/topics/foundations/language-understanding/sentiment-analysis)** - Monitor emotional context

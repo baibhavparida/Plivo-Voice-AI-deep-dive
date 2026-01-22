@@ -1,0 +1,781 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-01-21",
+  "description": "Voice AI Knowledge Repository Taxonomy based on IBM Think model",
+  "categories": [
+    {
+      "id": "welcome",
+      "title": "Welcome",
+      "slug": "welcome",
+      "description": "Introduction to the Voice AI Knowledge Repository and getting oriented",
+      "parentId": null,
+      "order": 1,
+      "tags": ["introduction", "overview", "getting-started"],
+      "icon": "home"
+    },
+    {
+      "id": "welcome-introduction",
+      "title": "Introduction",
+      "slug": "introduction",
+      "description": "Welcome to the Voice AI Knowledge Repository - your comprehensive guide to building intelligent voice applications",
+      "parentId": "welcome",
+      "order": 1,
+      "tags": ["introduction", "overview", "welcome"]
+    },
+    {
+      "id": "welcome-why-voice-ai",
+      "title": "Why Voice AI Matters",
+      "slug": "why-voice-ai",
+      "description": "Understanding the transformative impact of voice AI on businesses and user experiences",
+      "parentId": "welcome",
+      "order": 2,
+      "tags": ["importance", "benefits", "transformation", "business-value"]
+    },
+    {
+      "id": "welcome-market-landscape",
+      "title": "Market Landscape",
+      "slug": "market-landscape",
+      "description": "Current state of the voice AI market, key players, trends, and future projections",
+      "parentId": "welcome",
+      "order": 3,
+      "tags": ["market", "trends", "industry", "competition", "analysis"]
+    },
+    {
+      "id": "welcome-how-to-use",
+      "title": "How to Use This Guide",
+      "slug": "how-to-use",
+      "description": "Navigation tips and recommended learning paths for different roles and experience levels",
+      "parentId": "welcome",
+      "order": 4,
+      "tags": ["navigation", "guide", "learning-path", "documentation"]
+    },
+    {
+      "id": "foundations",
+      "title": "Foundations",
+      "slug": "foundations",
+      "description": "Core technologies and fundamental concepts that power voice AI systems",
+      "parentId": null,
+      "order": 2,
+      "tags": ["fundamentals", "core", "technology", "basics"],
+      "icon": "layers"
+    },
+    {
+      "id": "foundations-stt",
+      "title": "Speech Recognition (STT)",
+      "slug": "speech-recognition",
+      "description": "Speech-to-Text technologies that convert spoken language into written text",
+      "parentId": "foundations",
+      "order": 1,
+      "tags": ["stt", "speech-recognition", "asr", "transcription"]
+    },
+    {
+      "id": "foundations-stt-overview",
+      "title": "STT Overview",
+      "slug": "overview",
+      "description": "Introduction to speech recognition technology, history, and current state of the art",
+      "parentId": "foundations-stt",
+      "order": 1,
+      "tags": ["overview", "introduction", "stt", "basics"]
+    },
+    {
+      "id": "foundations-stt-acoustic-models",
+      "title": "Acoustic Models",
+      "slug": "acoustic-modeling",
+      "description": "Deep dive into acoustic modeling techniques including deep neural networks and transformers",
+      "parentId": "foundations-stt",
+      "order": 2,
+      "tags": ["acoustic-models", "neural-networks", "deep-learning", "audio-processing"]
+    },
+    {
+      "id": "foundations-stt-language-models",
+      "title": "Language Models",
+      "slug": "language-models",
+      "description": "Understanding language models in ASR including n-gram models and neural language models",
+      "parentId": "foundations-stt",
+      "order": 3,
+      "tags": ["language-models", "n-gram", "neural-lm", "vocabulary"]
+    },
+    {
+      "id": "foundations-stt-streaming-batch",
+      "title": "Streaming vs Batch",
+      "slug": "streaming-vs-batch",
+      "description": "Comparing real-time streaming recognition with batch processing approaches",
+      "parentId": "foundations-stt",
+      "order": 4,
+      "tags": ["streaming", "batch", "real-time", "latency", "throughput"]
+    },
+    {
+      "id": "foundations-stt-providers",
+      "title": "Provider Comparison",
+      "slug": "provider-comparison",
+      "description": "Comprehensive comparison of STT providers including Google, AWS, Azure, Deepgram, and AssemblyAI",
+      "parentId": "foundations-stt",
+      "order": 5,
+      "tags": ["providers", "comparison", "google", "aws", "azure", "deepgram", "assemblyai"]
+    },
+    {
+      "id": "foundations-stt-optimization",
+      "title": "STT Optimization",
+      "slug": "optimization",
+      "description": "Techniques for improving speech recognition accuracy, latency, and cost efficiency",
+      "parentId": "foundations-stt",
+      "order": 6,
+      "tags": ["optimization", "accuracy", "latency", "performance", "tuning"]
+    },
+    {
+      "id": "foundations-tts",
+      "title": "Speech Synthesis (TTS)",
+      "slug": "speech-synthesis",
+      "description": "Text-to-Speech technologies that convert written text into natural-sounding speech",
+      "parentId": "foundations",
+      "order": 2,
+      "tags": ["tts", "speech-synthesis", "voice-generation", "audio-output"]
+    },
+    {
+      "id": "foundations-tts-overview",
+      "title": "TTS Overview",
+      "slug": "overview",
+      "description": "Introduction to speech synthesis technology, evolution from concatenative to neural approaches",
+      "parentId": "foundations-tts",
+      "order": 1,
+      "tags": ["overview", "introduction", "tts", "basics"]
+    },
+    {
+      "id": "foundations-tts-neural",
+      "title": "Neural TTS",
+      "slug": "neural-tts",
+      "description": "Modern neural text-to-speech architectures including Tacotron, WaveNet, and VITS",
+      "parentId": "foundations-tts",
+      "order": 2,
+      "tags": ["neural-tts", "tacotron", "wavenet", "vits", "deep-learning"]
+    },
+    {
+      "id": "foundations-tts-voice-cloning",
+      "title": "Voice Cloning",
+      "slug": "voice-cloning",
+      "description": "Technologies and ethics of voice cloning, speaker adaptation, and custom voice creation",
+      "parentId": "foundations-tts",
+      "order": 3,
+      "tags": ["voice-cloning", "speaker-adaptation", "custom-voice", "ethics"]
+    },
+    {
+      "id": "foundations-tts-ssml",
+      "title": "SSML",
+      "slug": "ssml",
+      "description": "Speech Synthesis Markup Language for controlling pronunciation, prosody, and speech characteristics",
+      "parentId": "foundations-tts",
+      "order": 4,
+      "tags": ["ssml", "markup", "prosody", "pronunciation", "speech-control"]
+    },
+    {
+      "id": "foundations-tts-providers",
+      "title": "Provider Comparison",
+      "slug": "provider-comparison",
+      "description": "Comprehensive comparison of TTS providers including ElevenLabs, Google, AWS Polly, and Azure",
+      "parentId": "foundations-tts",
+      "order": 5,
+      "tags": ["providers", "comparison", "elevenlabs", "google", "aws-polly", "azure"]
+    },
+    {
+      "id": "foundations-tts-optimization",
+      "title": "TTS Optimization",
+      "slug": "optimization",
+      "description": "Techniques for optimizing speech synthesis quality, latency, and naturalness",
+      "parentId": "foundations-tts",
+      "order": 6,
+      "tags": ["optimization", "quality", "latency", "naturalness", "performance"]
+    },
+    {
+      "id": "foundations-nlu",
+      "title": "Language Understanding (NLU)",
+      "slug": "language-understanding",
+      "description": "Natural Language Understanding for interpreting user intent and extracting meaning",
+      "parentId": "foundations",
+      "order": 3,
+      "tags": ["nlu", "natural-language-understanding", "intent", "semantics"]
+    },
+    {
+      "id": "foundations-nlu-intent",
+      "title": "Intent Recognition",
+      "slug": "intent-recognition",
+      "description": "Techniques for classifying user intentions from natural language input",
+      "parentId": "foundations-nlu",
+      "order": 1,
+      "tags": ["intent", "classification", "user-intent", "nlp"]
+    },
+    {
+      "id": "foundations-nlu-entities",
+      "title": "Entity Extraction",
+      "slug": "entity-extraction",
+      "description": "Named entity recognition and slot filling for extracting structured data from utterances",
+      "parentId": "foundations-nlu",
+      "order": 2,
+      "tags": ["entities", "ner", "slot-filling", "extraction"]
+    },
+    {
+      "id": "foundations-nlu-dialogue-state",
+      "title": "Dialogue State",
+      "slug": "dialogue-state",
+      "description": "Managing conversation context and tracking dialogue state across turns",
+      "parentId": "foundations-nlu",
+      "order": 3,
+      "tags": ["dialogue-state", "context", "conversation-tracking", "dst"]
+    },
+    {
+      "id": "foundations-nlu-sentiment",
+      "title": "Sentiment Analysis",
+      "slug": "sentiment-analysis",
+      "description": "Detecting emotional tone, sentiment, and user satisfaction from speech and text",
+      "parentId": "foundations-nlu",
+      "order": 4,
+      "tags": ["sentiment", "emotion", "tone", "satisfaction", "analysis"]
+    },
+    {
+      "id": "foundations-nlg",
+      "title": "Language Generation (NLG)",
+      "slug": "language-generation",
+      "description": "Natural Language Generation for creating human-like responses and dialogue",
+      "parentId": "foundations",
+      "order": 4,
+      "tags": ["nlg", "natural-language-generation", "response-generation", "text-generation"]
+    },
+    {
+      "id": "foundations-nlg-templates",
+      "title": "Response Templates",
+      "slug": "response-templates",
+      "description": "Template-based response generation with variable substitution and conditional logic",
+      "parentId": "foundations-nlg",
+      "order": 1,
+      "tags": ["templates", "responses", "variable-substitution", "structured-output"]
+    },
+    {
+      "id": "foundations-nlg-dynamic",
+      "title": "Dynamic Generation",
+      "slug": "dynamic-generation",
+      "description": "LLM-powered dynamic response generation for flexible and contextual conversations",
+      "parentId": "foundations-nlg",
+      "order": 2,
+      "tags": ["dynamic", "llm", "generation", "contextual", "flexible"]
+    },
+    {
+      "id": "foundations-nlg-persona",
+      "title": "Persona Consistency",
+      "slug": "persona-consistency",
+      "description": "Maintaining consistent voice, tone, and personality across all agent responses",
+      "parentId": "foundations-nlg",
+      "order": 3,
+      "tags": ["persona", "consistency", "voice", "tone", "personality", "brand"]
+    },
+    {
+      "id": "infrastructure",
+      "title": "Infrastructure",
+      "slug": "infrastructure",
+      "description": "Technical infrastructure components for building production voice AI systems",
+      "parentId": null,
+      "order": 3,
+      "tags": ["infrastructure", "architecture", "systems", "engineering"],
+      "icon": "server"
+    },
+    {
+      "id": "infrastructure-audio",
+      "title": "Audio Pipeline",
+      "slug": "audio-pipeline",
+      "description": "Audio processing pipeline components for capturing and enhancing voice input",
+      "parentId": "infrastructure",
+      "order": 1,
+      "tags": ["audio", "pipeline", "processing", "signal"]
+    },
+    {
+      "id": "infrastructure-audio-signal",
+      "title": "Signal Processing",
+      "slug": "signal-processing",
+      "description": "Digital signal processing fundamentals for audio including sampling, encoding, and filtering",
+      "parentId": "infrastructure-audio",
+      "order": 1,
+      "tags": ["signal-processing", "dsp", "sampling", "encoding", "filtering"]
+    },
+    {
+      "id": "infrastructure-audio-noise",
+      "title": "Noise Cancellation",
+      "slug": "noise-cancellation",
+      "description": "Techniques for removing background noise and improving audio clarity",
+      "parentId": "infrastructure-audio",
+      "order": 2,
+      "tags": ["noise-cancellation", "noise-reduction", "audio-enhancement", "clarity"]
+    },
+    {
+      "id": "infrastructure-audio-echo",
+      "title": "Echo Cancellation",
+      "slug": "echo-cancellation",
+      "description": "Acoustic echo cancellation for full-duplex voice communication",
+      "parentId": "infrastructure-audio",
+      "order": 3,
+      "tags": ["echo-cancellation", "aec", "full-duplex", "feedback"]
+    },
+    {
+      "id": "infrastructure-audio-vad",
+      "title": "Voice Activity Detection",
+      "slug": "vad",
+      "description": "Detecting speech presence and managing turn-taking in conversations",
+      "parentId": "infrastructure-audio",
+      "order": 4,
+      "tags": ["vad", "voice-activity", "speech-detection", "turn-taking", "endpointing"]
+    },
+    {
+      "id": "infrastructure-telephony",
+      "title": "Telephony",
+      "slug": "telephony",
+      "description": "Telephony integration for connecting voice AI to phone networks",
+      "parentId": "infrastructure",
+      "order": 2,
+      "tags": ["telephony", "phone", "pstn", "voip", "calling"]
+    },
+    {
+      "id": "infrastructure-telephony-sip",
+      "title": "SIP Protocol",
+      "slug": "sip-protocol",
+      "description": "Session Initiation Protocol for establishing and managing voice calls",
+      "parentId": "infrastructure-telephony",
+      "order": 1,
+      "tags": ["sip", "protocol", "session", "signaling", "voip"]
+    },
+    {
+      "id": "infrastructure-telephony-webrtc",
+      "title": "WebRTC",
+      "slug": "webrtc",
+      "description": "Web Real-Time Communication for browser-based voice applications",
+      "parentId": "infrastructure-telephony",
+      "order": 2,
+      "tags": ["webrtc", "browser", "real-time", "peer-to-peer", "web"]
+    },
+    {
+      "id": "infrastructure-telephony-pstn",
+      "title": "PSTN Integration",
+      "slug": "pstn-integration",
+      "description": "Connecting voice AI to traditional phone networks via PSTN gateways",
+      "parentId": "infrastructure-telephony",
+      "order": 3,
+      "tags": ["pstn", "phone-network", "gateway", "trunk", "traditional"]
+    },
+    {
+      "id": "infrastructure-telephony-routing",
+      "title": "Call Routing",
+      "slug": "call-routing",
+      "description": "Intelligent call routing, IVR integration, and call transfer mechanisms",
+      "parentId": "infrastructure-telephony",
+      "order": 4,
+      "tags": ["routing", "ivr", "transfer", "queue", "distribution"]
+    },
+    {
+      "id": "infrastructure-streaming",
+      "title": "Streaming",
+      "slug": "streaming",
+      "description": "Real-time streaming infrastructure for low-latency voice communication",
+      "parentId": "infrastructure",
+      "order": 3,
+      "tags": ["streaming", "real-time", "low-latency", "communication"]
+    },
+    {
+      "id": "infrastructure-streaming-overview",
+      "title": "Streaming Overview",
+      "slug": "overview",
+      "description": "Introduction to real-time streaming infrastructure for voice AI systems",
+      "parentId": "infrastructure-streaming",
+      "order": 1,
+      "tags": ["streaming", "overview", "real-time", "infrastructure"]
+    },
+    {
+      "id": "infrastructure-streaming-websocket",
+      "title": "WebSocket Protocols",
+      "slug": "websocket-protocols",
+      "description": "WebSocket-based streaming for bidirectional real-time audio communication",
+      "parentId": "infrastructure-streaming",
+      "order": 2,
+      "tags": ["websocket", "bidirectional", "real-time", "protocol"]
+    },
+    {
+      "id": "infrastructure-streaming-grpc",
+      "title": "gRPC",
+      "slug": "grpc-streaming",
+      "description": "gRPC streaming for high-performance voice AI service communication",
+      "parentId": "infrastructure-streaming",
+      "order": 3,
+      "tags": ["grpc", "protobuf", "streaming", "high-performance", "rpc"]
+    },
+    {
+      "id": "infrastructure-streaming-buffer",
+      "title": "Buffer Management",
+      "slug": "buffer-management",
+      "description": "Audio buffer management strategies for smooth playback and minimal latency",
+      "parentId": "infrastructure-streaming",
+      "order": 4,
+      "tags": ["buffer", "jitter", "playback", "memory", "management"]
+    },
+    {
+      "id": "infrastructure-streaming-latency",
+      "title": "Latency Optimization",
+      "slug": "latency-optimization",
+      "description": "Techniques for minimizing end-to-end latency in voice AI systems",
+      "parentId": "infrastructure-streaming",
+      "order": 5,
+      "tags": ["latency", "optimization", "performance", "real-time", "delay"]
+    },
+    {
+      "id": "llm-integration",
+      "title": "LLM Integration",
+      "slug": "llm-integration",
+      "description": "Integrating Large Language Models for intelligent voice AI conversations",
+      "parentId": null,
+      "order": 4,
+      "tags": ["llm", "language-models", "ai", "gpt", "claude", "integration"],
+      "icon": "brain"
+    },
+    {
+      "id": "llm-model-selection",
+      "title": "Model Selection",
+      "slug": "model-selection",
+      "description": "Choosing the right LLM for your voice AI use case based on performance, cost, and capabilities",
+      "parentId": "llm-integration",
+      "order": 1,
+      "tags": ["model-selection", "comparison", "evaluation", "benchmarks"]
+    },
+    {
+      "id": "llm-prompt-engineering",
+      "title": "Prompt Engineering",
+      "slug": "prompt-engineering",
+      "description": "Crafting effective prompts for voice AI agents including system prompts and few-shot examples",
+      "parentId": "llm-integration",
+      "order": 2,
+      "tags": ["prompts", "prompt-engineering", "system-prompt", "few-shot", "instructions"]
+    },
+    {
+      "id": "llm-function-calling",
+      "title": "Function Calling",
+      "slug": "function-calling",
+      "description": "Enabling LLMs to call external functions and APIs for task execution",
+      "parentId": "llm-integration",
+      "order": 3,
+      "tags": ["function-calling", "tools", "api", "actions", "execution"]
+    },
+    {
+      "id": "llm-context-management",
+      "title": "Context Management",
+      "slug": "context-management",
+      "description": "Managing conversation history, context windows, and memory in voice AI systems",
+      "parentId": "llm-integration",
+      "order": 4,
+      "tags": ["context", "memory", "history", "context-window", "conversation"]
+    },
+    {
+      "id": "llm-speech-to-speech",
+      "title": "Speech-to-Speech Models",
+      "slug": "speech-to-speech",
+      "description": "End-to-end speech-to-speech models that bypass text intermediaries for natural conversations",
+      "parentId": "llm-integration",
+      "order": 5,
+      "tags": ["speech-to-speech", "end-to-end", "audio-llm", "multimodal", "direct"]
+    },
+    {
+      "id": "agent-architecture",
+      "title": "Agent Architecture",
+      "slug": "agent-architecture",
+      "description": "Design patterns and architectures for building robust voice AI agents",
+      "parentId": null,
+      "order": 5,
+      "tags": ["architecture", "design", "agents", "patterns", "structure"],
+      "icon": "git-branch"
+    },
+    {
+      "id": "agent-design-patterns",
+      "title": "Design Patterns",
+      "slug": "design-patterns",
+      "description": "Common architectural patterns for voice AI agents including reactive and deliberative designs",
+      "parentId": "agent-architecture",
+      "order": 1,
+      "tags": ["design-patterns", "architecture", "reactive", "deliberative", "hybrid"]
+    },
+    {
+      "id": "agent-state-machines",
+      "title": "State Machines",
+      "slug": "state-machines",
+      "description": "Finite state machines and statecharts for managing conversation flow",
+      "parentId": "agent-architecture",
+      "order": 2,
+      "tags": ["state-machine", "fsm", "statecharts", "flow", "transitions"]
+    },
+    {
+      "id": "agent-multi-agent",
+      "title": "Multi-Agent Systems",
+      "slug": "multi-agent-systems",
+      "description": "Coordinating multiple specialized agents for complex voice AI workflows",
+      "parentId": "agent-architecture",
+      "order": 3,
+      "tags": ["multi-agent", "coordination", "specialization", "collaboration", "distributed"]
+    },
+    {
+      "id": "agent-orchestration",
+      "title": "Orchestration Frameworks",
+      "slug": "orchestration-frameworks",
+      "description": "Frameworks and tools for orchestrating voice AI agent components and workflows",
+      "parentId": "agent-architecture",
+      "order": 4,
+      "tags": ["orchestration", "frameworks", "workflow", "coordination", "langchain", "langgraph"]
+    },
+    {
+      "id": "agent-error-handling",
+      "title": "Error Handling",
+      "slug": "error-handling",
+      "description": "Strategies for graceful error recovery, fallbacks, and maintaining conversation flow",
+      "parentId": "agent-architecture",
+      "order": 5,
+      "tags": ["error-handling", "fallback", "recovery", "resilience", "graceful-degradation"]
+    },
+    {
+      "id": "enterprise",
+      "title": "Enterprise",
+      "slug": "enterprise",
+      "description": "Enterprise considerations for deploying voice AI at scale",
+      "parentId": null,
+      "order": 6,
+      "tags": ["enterprise", "production", "scale", "business"],
+      "icon": "building"
+    },
+    {
+      "id": "enterprise-security",
+      "title": "Security & Compliance",
+      "slug": "security-compliance",
+      "description": "Security best practices and regulatory compliance for voice AI systems",
+      "parentId": "enterprise",
+      "order": 1,
+      "tags": ["security", "compliance", "privacy", "gdpr", "hipaa", "pci", "regulations"]
+    },
+    {
+      "id": "enterprise-scalability",
+      "title": "Scalability",
+      "slug": "scalability",
+      "description": "Scaling voice AI systems to handle high concurrency and growing demand",
+      "parentId": "enterprise",
+      "order": 2,
+      "tags": ["scalability", "performance", "concurrency", "load-balancing", "horizontal-scaling"]
+    },
+    {
+      "id": "enterprise-analytics",
+      "title": "Analytics",
+      "slug": "analytics",
+      "description": "Monitoring, analytics, and insights for voice AI performance and business outcomes",
+      "parentId": "enterprise",
+      "order": 3,
+      "tags": ["analytics", "monitoring", "metrics", "kpis", "insights", "dashboards"]
+    },
+    {
+      "id": "enterprise-cost",
+      "title": "Cost Optimization",
+      "slug": "cost-optimization",
+      "description": "Strategies for optimizing voice AI costs including provider selection and resource management",
+      "parentId": "enterprise",
+      "order": 4,
+      "tags": ["cost", "optimization", "pricing", "budget", "roi", "efficiency"]
+    },
+    {
+      "id": "implementation",
+      "title": "Implementation",
+      "slug": "implementation",
+      "description": "Practical guides and references for implementing voice AI solutions",
+      "parentId": null,
+      "order": 7,
+      "tags": ["implementation", "development", "coding", "practical"],
+      "icon": "code"
+    },
+    {
+      "id": "implementation-getting-started",
+      "title": "Getting Started",
+      "slug": "getting-started",
+      "description": "Quick start guides for building your first voice AI application",
+      "parentId": "implementation",
+      "order": 1,
+      "tags": ["getting-started", "quickstart", "tutorial", "beginner", "setup"]
+    },
+    {
+      "id": "implementation-sdk",
+      "title": "SDK Reference",
+      "slug": "sdk-reference",
+      "description": "Comprehensive SDK documentation for popular voice AI platforms",
+      "parentId": "implementation",
+      "order": 2,
+      "tags": ["sdk", "library", "reference", "documentation", "api-client"]
+    },
+    {
+      "id": "implementation-api",
+      "title": "API Reference",
+      "slug": "api-reference",
+      "description": "REST and streaming API documentation for voice AI services",
+      "parentId": "implementation",
+      "order": 3,
+      "tags": ["api", "rest", "endpoints", "reference", "documentation"]
+    },
+    {
+      "id": "implementation-examples",
+      "title": "Code Examples",
+      "slug": "code-examples",
+      "description": "Working code examples and sample applications for common voice AI patterns",
+      "parentId": "implementation",
+      "order": 4,
+      "tags": ["examples", "code", "samples", "snippets", "recipes"]
+    },
+    {
+      "id": "implementation-deployment",
+      "title": "Deployment",
+      "slug": "deployment",
+      "description": "Deployment guides for cloud, on-premise, and hybrid voice AI architectures",
+      "parentId": "implementation",
+      "order": 5,
+      "tags": ["deployment", "devops", "cloud", "kubernetes", "docker", "ci-cd"]
+    },
+    {
+      "id": "use-cases",
+      "title": "Use Cases",
+      "slug": "use-cases",
+      "description": "Industry-specific use cases and implementation patterns for voice AI",
+      "parentId": null,
+      "order": 8,
+      "tags": ["use-cases", "industry", "applications", "solutions"],
+      "icon": "briefcase"
+    },
+    {
+      "id": "use-cases-customer-service",
+      "title": "Customer Service",
+      "slug": "customer-service",
+      "description": "Voice AI for customer support, contact centers, and service automation",
+      "parentId": "use-cases",
+      "order": 1,
+      "tags": ["customer-service", "support", "contact-center", "help-desk", "automation"]
+    },
+    {
+      "id": "use-cases-healthcare",
+      "title": "Healthcare",
+      "slug": "healthcare",
+      "description": "Voice AI applications in healthcare including patient engagement and clinical workflows",
+      "parentId": "use-cases",
+      "order": 2,
+      "tags": ["healthcare", "medical", "patient", "clinical", "hipaa", "telehealth"]
+    },
+    {
+      "id": "use-cases-financial",
+      "title": "Financial Services",
+      "slug": "financial-services",
+      "description": "Voice AI for banking, insurance, and financial service applications",
+      "parentId": "use-cases",
+      "order": 3,
+      "tags": ["finance", "banking", "insurance", "fintech", "payments", "pci"]
+    },
+    {
+      "id": "use-cases-sales",
+      "title": "Sales",
+      "slug": "sales",
+      "description": "Voice AI for sales automation, lead qualification, and outbound campaigns",
+      "parentId": "use-cases",
+      "order": 4,
+      "tags": ["sales", "outbound", "lead-qualification", "sdr", "crm", "campaigns"]
+    },
+    {
+      "id": "use-cases-hospitality",
+      "title": "Hospitality",
+      "slug": "hospitality",
+      "description": "Voice AI for hotels, restaurants, and travel industry applications",
+      "parentId": "use-cases",
+      "order": 5,
+      "tags": ["hospitality", "hotels", "restaurants", "travel", "reservations", "concierge"]
+    },
+    {
+      "id": "resources",
+      "title": "Resources",
+      "slug": "resources",
+      "description": "Additional resources, references, and learning materials for voice AI",
+      "parentId": null,
+      "order": 9,
+      "tags": ["resources", "reference", "learning", "materials"],
+      "icon": "book-open"
+    },
+    {
+      "id": "resources-glossary",
+      "title": "Glossary",
+      "slug": "glossary",
+      "description": "Comprehensive glossary of voice AI terminology and acronyms",
+      "parentId": "resources",
+      "order": 1,
+      "tags": ["glossary", "terms", "definitions", "acronyms", "vocabulary"]
+    },
+    {
+      "id": "resources-benchmarks",
+      "title": "Benchmarks",
+      "slug": "benchmarks",
+      "description": "Performance benchmarks and evaluation metrics for voice AI systems",
+      "parentId": "resources",
+      "order": 2,
+      "tags": ["benchmarks", "performance", "evaluation", "metrics", "testing"]
+    },
+    {
+      "id": "resources-providers",
+      "title": "Provider Directory",
+      "slug": "provider-directory",
+      "description": "Directory of voice AI service providers, platforms, and tools",
+      "parentId": "resources",
+      "order": 3,
+      "tags": ["providers", "directory", "vendors", "platforms", "tools", "services"]
+    },
+    {
+      "id": "resources-research",
+      "title": "Research Papers",
+      "slug": "research-papers",
+      "description": "Curated collection of influential research papers in voice AI and conversational AI",
+      "parentId": "resources",
+      "order": 4,
+      "tags": ["research", "papers", "academic", "publications", "arxiv", "citations"]
+    }
+  ],
+  "metadata": {
+    "totalCategories": 9,
+    "totalTopics": 58,
+    "maxDepth": 3,
+    "structure": {
+      "welcome": {
+        "topicCount": 4,
+        "hasSubcategories": false
+      },
+      "foundations": {
+        "topicCount": 17,
+        "hasSubcategories": true,
+        "subcategories": ["stt", "tts", "nlu", "nlg"]
+      },
+      "infrastructure": {
+        "topicCount": 12,
+        "hasSubcategories": true,
+        "subcategories": ["audio", "telephony", "streaming"]
+      },
+      "llm-integration": {
+        "topicCount": 5,
+        "hasSubcategories": false
+      },
+      "agent-architecture": {
+        "topicCount": 5,
+        "hasSubcategories": false
+      },
+      "enterprise": {
+        "topicCount": 4,
+        "hasSubcategories": false
+      },
+      "implementation": {
+        "topicCount": 5,
+        "hasSubcategories": false
+      },
+      "use-cases": {
+        "topicCount": 5,
+        "hasSubcategories": false
+      },
+      "resources": {
+        "topicCount": 4,
+        "hasSubcategories": false
+      }
+    }
+  }
+}

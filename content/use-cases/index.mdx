@@ -1,0 +1,193 @@
+---
+title: "Use Cases"
+description: "Industry-specific use cases and implementation patterns for voice AI"
+---
+
+# Voice AI Use Cases
+
+Voice AI is transforming how businesses interact with customers across every industry. This section explores real-world applications, implementation patterns, and best practices for deploying voice AI in specific verticals.
+
+## Industry Use Cases
+
+### Customer Service
+
+Voice AI for support, contact centers, and service automation.
+
+- **[Customer Service](/topics/use-cases/customer-service)** - Handle inquiries, resolve issues, and reduce wait times
+
+### Healthcare
+
+Voice AI in medical settings with compliance considerations.
+
+- **[Healthcare](/topics/use-cases/healthcare)** - Patient engagement, appointment scheduling, HIPAA compliance
+
+### Financial Services
+
+Banking, insurance, and fintech voice AI applications.
+
+- **[Financial Services](/topics/use-cases/financial-services)** - Account services, fraud detection, PCI compliance
+
+### Sales
+
+Voice AI for outbound sales and lead qualification.
+
+- **[Sales](/topics/use-cases/sales)** - SDR automation, lead qualification, appointment setting
+
+### Hospitality
+
+Hotels, restaurants, and travel industry applications.
+
+- **[Hospitality](/topics/use-cases/hospitality)** - Reservations, concierge services, guest support
+
+## Use Case Matrix
+
+| Industry | Inbound | Outbound | Key Compliance | Typical ROI |
+|----------|---------|----------|----------------|-------------|
+| **Customer Service** | High | Medium | TCPA, GDPR | 40-60% cost reduction |
+| **Healthcare** | High | Medium | HIPAA, HITECH | 30-50% efficiency gain |
+| **Financial Services** | High | Low | PCI-DSS, SOX | 35-55% cost reduction |
+| **Sales** | Low | High | TCPA, DNC | 2-5x more conversations |
+| **Hospitality** | High | Medium | PCI (payments) | 50-70% call handling |
+
+## Common Voice AI Applications
+
+### Inbound Applications
+
+Voice AI handling incoming calls:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Inbound Voice AI                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   Incoming Call                                                  │
+│        │                                                         │
+│        ▼                                                         │
+│   ┌─────────────┐                                               │
+│   │   Greeting  │                                               │
+│   │   & Intent  │                                               │
+│   │  Detection  │                                               │
+│   └──────┬──────┘                                               │
+│          │                                                       │
+│    ┌─────┼─────┬─────────┬─────────┐                           │
+│    ▼     ▼     ▼         ▼         ▼                           │
+│ ┌─────┐ ┌─────┐ ┌───────┐ ┌───────┐ ┌────────┐                │
+│ │ FAQ │ │Track│ │Account│ │Support│ │Transfer│                │
+│ │     │ │Order│ │ Info  │ │ Ticket│ │to Human│                │
+│ └─────┘ └─────┘ └───────┘ └───────┘ └────────┘                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Common inbound use cases:**
+- FAQ and information requests
+- Order status and tracking
+- Account inquiries and changes
+- Appointment scheduling
+- Technical support triage
+- Payment processing
+- Complaint handling
+
+### Outbound Applications
+
+Voice AI making proactive calls:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Outbound Voice AI                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   Campaign Trigger                                               │
+│   (List, Event, Schedule)                                        │
+│        │                                                         │
+│        ▼                                                         │
+│   ┌─────────────┐                                               │
+│   │  Dial Out   │                                               │
+│   │  & Verify   │                                               │
+│   │   Contact   │                                               │
+│   └──────┬──────┘                                               │
+│          │                                                       │
+│    ┌─────┼─────┬─────────┬─────────┐                           │
+│    ▼     ▼     ▼         ▼         ▼                           │
+│ ┌─────┐ ┌─────┐ ┌───────┐ ┌───────┐ ┌────────┐                │
+│ │Appt │ │Lead │ │Payment│ │Survey │ │ Alert  │                │
+│ │Remnd│ │Qual │ │Remind │ │Collect│ │Notific │                │
+│ └─────┘ └─────┘ └───────┘ └───────┘ └────────┘                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Common outbound use cases:**
+- Appointment reminders and confirmations
+- Lead qualification and sales outreach
+- Payment reminders and collections
+- Survey and feedback collection
+- Service notifications and alerts
+- Re-engagement campaigns
+
+## Success Metrics by Use Case
+
+| Use Case | Primary Metric | Target | Secondary Metrics |
+|----------|----------------|--------|-------------------|
+| **Customer Service** | Containment rate | 60-80% | CSAT, AHT, FCR |
+| **Appointment Booking** | Booking rate | 40-60% | No-show reduction |
+| **Lead Qualification** | Qualification rate | 15-30% | Cost per qualified lead |
+| **Collections** | Promise-to-pay rate | 20-40% | Collection rate |
+| **Surveys** | Completion rate | 30-50% | Response quality |
+
+## Implementation Considerations
+
+### By Industry
+
+| Industry | Key Considerations |
+|----------|-------------------|
+| **Healthcare** | HIPAA compliance, patient verification, PHI handling |
+| **Finance** | PCI compliance, identity verification, fraud prevention |
+| **Sales** | TCPA compliance, DNC lists, consent management |
+| **Hospitality** | Multi-language support, payment handling, personalization |
+| **General** | Accessibility, fallback to human, data privacy |
+
+### By Use Case Type
+
+| Type | Key Considerations |
+|------|-------------------|
+| **Inbound** | Accurate intent detection, quick resolution, seamless transfers |
+| **Outbound** | Compliance, consent, optimal calling times, rejection handling |
+| **Hybrid** | Context preservation, channel switching, unified customer view |
+
+## ROI Calculator Factors
+
+When building a business case for voice AI:
+
+**Cost Savings:**
+- Agent time reduction
+- After-hours coverage without overtime
+- Reduced training costs
+- Lower attrition impact
+
+**Revenue Impact:**
+- Increased conversion rates
+- More calls handled per day
+- Faster lead response time
+- Improved customer retention
+
+**Quality Improvements:**
+- Consistent service quality
+- 24/7 availability
+- Reduced human error
+- Better compliance adherence
+
+## Getting Started
+
+1. **Choose your use case** - Start with high-volume, structured interactions
+2. **Read the industry guide** - [Customer Service](/topics/use-cases/customer-service), [Healthcare](/topics/use-cases/healthcare), etc.
+3. **Review compliance needs** - Check [Security & Compliance](/topics/enterprise/security-compliance)
+4. **Start building** - See [Getting Started](/topics/implementation/getting-started)
+
+## Next Steps
+
+After understanding use cases:
+
+- **[Implementation](/topics/implementation)** - Build your voice AI solution
+- **[Enterprise](/topics/enterprise)** - Scale and secure your deployment
+- **[Resources](/topics/resources)** - Benchmarks and provider comparisons

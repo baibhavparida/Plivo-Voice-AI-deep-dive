@@ -1,0 +1,518 @@
+---
+title: "Acoustic Echo Cancellation (AEC)"
+description: "Deep dive into echo cancellation algorithms, echo path modeling, double-talk detection, and neural AEC for voice AI"
+category: "infrastructure"
+tags: ["echo-cancellation", "aec", "double-talk", "adaptive-filter", "nlms", "neural-aec"]
+relatedTopics: ["signal-processing", "noise-cancellation", "vad", "barge-in-handling"]
+---
+
+# Acoustic Echo Cancellation (AEC)
+
+Acoustic echo cancellation is essential for voice AI systems, particularly in speakerphone or hands-free scenarios where the microphone captures audio played through nearby speakers.
+
+## Understanding Echo
+
+### Acoustic Echo
+
+Acoustic echo occurs when the microphone captures audio played through nearby speakers:
+
+```
+Far-end Audio (TTS) --> Speaker --> Room --> Microphone --> Near-end Input
+                              |                    |
+                              +-- Echo Path -------+
+```
+
+**Echo Path Components:**
+1. **Direct path:** Shortest acoustic path from speaker to microphone
+2. **Early reflections:** First-order reflections (< 50ms)
+3. **Late reflections:** Higher-order reflections forming reverberant tail
+
+**Typical Echo Path Characteristics:**
+
+| Parameter | Typical Range |
+|-----------|---------------|
+| Echo path length | 50-500ms |
+| Filter length | 1024-8192 taps @ 16kHz |
+| Echo Return Loss (ERL) | 10-20 dB |
+| Target ERLE | 30-40 dB |
+
+### Line Echo (Electrical Echo)
+
+Line echo occurs in telecommunication systems due to impedance mismatches at hybrid circuits (2-wire to 4-wire conversions).
+
+**Characteristics:**
+- Typically shorter delay than acoustic echo
+- More predictable (linear)
+- Common in PSTN gateways
+
+### Echo Impact on Voice AI
+
+Echo presents severe challenges for voice AI:
+- **Self-interruption:** Agent's own voice triggers STT
+- **False VAD activation:** Echo detected as user speech
+- **Feedback loops:** In severe cases, audio oscillation
+- **Barge-in failures:** Cannot distinguish user from echo
+
+## Echo Path Modeling
+
+### Echo Path Characteristics
+
+**Components:**
+1. **Direct path:** Line-of-sight acoustic coupling
+2. **Early reflections:** First-order room reflections
+3. **Reverberant tail:** Diffuse reverberation
+
+**Challenges:**
+- **Time-variance:** Path changes with movement
+- **Nonlinearity:** Speaker/amplifier distortion
+- **Reverberation:** Long impulse responses
+
+### Room Impulse Response
+
+The room impulse response (RIR) characterizes how sound propagates from speaker to microphone:
+
+```
+y(n) = h(n) * x(n) + s(n) + v(n)
+```
+
+Where:
+- `y(n)` = microphone signal
+- `h(n)` = echo path impulse response
+- `x(n)` = far-end (reference) signal
+- `s(n)` = near-end (user) speech
+- `v(n)` = background noise
+
+## Adaptive Filter Algorithms
+
+### Normalized Least Mean Square (NLMS)
+
+NLMS is the most popular algorithm for AEC due to its balance of simplicity and performance.
+
+**Update Equation:**
+
+```
+w(n+1) = w(n) + mu * e(n) * x(n) / (||x(n)||^2 + delta)
+```
+
+Where:
+- `w(n)` = filter weights
+- `mu` = step size (0 < mu < 2)
+- `e(n)` = error signal
+- `x(n)` = reference signal
+- `delta` = regularization constant
+
+**Advantages:**
+- Low computational complexity: O(N)
+- Straightforward implementation
+- Stable with proper step size
+
+**Disadvantages:**
+- Slower convergence than RLS
+- Sensitive to step size selection
+- Limited tracking of fast changes
+
+### Recursive Least Squares (RLS)
+
+RLS provides faster convergence than NLMS at the cost of higher complexity.
+
+**Characteristics:**
+- Complexity: O(N^2) standard, O(N) for fast variants
+- Faster convergence than NLMS
+- Better tracking of time-varying systems
+
+**Variants:**
+- Fast RLS (O(N) complexity)
+- Exponentially Weighted RLS
+- QR-RLS for improved numerical stability
+
+### Proportionate Algorithms
+
+For sparse echo paths (common in telephony), proportionate algorithms converge faster:
+
+**Examples:**
+- PNLMS (Proportionate NLMS)
+- IPNLMS (Improved PNLMS)
+
+These algorithms allocate more adaptation to coefficients with larger magnitudes.
+
+## Double-Talk Detection
+
+### The Challenge
+
+Double-talk occurs when both near-end and far-end speakers are active simultaneously. Without proper detection, the adaptive filter may diverge.
+
+**During double-talk:**
+- Echo path estimate variance increases
+- Filter may converge to wrong solution
+- Audio quality degrades
+
+### Detection Algorithms
+
+#### Geigel Algorithm
+
+Compares maximum far-end signal over N samples to near-end signal:
+
+```
+Double-talk if: max|x(n)| < threshold * |d(n)|
+```
+
+Simple but poor performance; considered baseline.
+
+**Implementation:**
+
+```python
+class GeigelDoubleTalkDetector:
+    def __init__(self, threshold=0.5, window_length=128):
+        self.threshold = threshold
+        self.window_length = window_length
+        self.far_end_buffer = []
+
+    def detect(self, far_end_sample, near_end_sample):
+        self.far_end_buffer.append(abs(far_end_sample))
+        if len(self.far_end_buffer) > self.window_length:
+            self.far_end_buffer.pop(0)
+
+        max_far_end = max(self.far_end_buffer)
+        near_end_level = abs(near_end_sample)
+
+        if max_far_end > 0:
+            ratio = near_end_level / max_far_end
+            return ratio > self.threshold
+        return near_end_level > self.threshold
+```
+
+#### Cross-Correlation Based
+
+- Open-loop: Correlation between far-end and microphone
+- Closed-loop: Correlation between far-end and error
+- Normalized Cross-Correlation (NCC) for improved robustness
+
+#### Coherence-Based
+
+Measures coherence between signals at different points in the system.
+
+**General Framework:**
+1. Compute detection statistic eta
+2. Compare to threshold T
+3. If eta > T, declare double-talk and freeze adaptation
+
+### Two-Path Method
+
+Instead of detecting double-talk, use two parallel filters:
+
+```
+Far-end Signal
+     |
+     v
++----+----+
+|         |
+v         v
+Background    Foreground
+Filter        Filter
+(adapts)      (output)
+     |
+     +---> Copy when better
+```
+
+- **Foreground filter:** Used for echo cancellation output
+- **Background filter:** Continuously adapts
+- Copy background to foreground when background performs better
+
+### Subband Methods
+
+For subband/transform domain AEC:
+1. **Independent control:** DTD per frequency band
+2. **Collective decision:** Vote across bands, declare fullband DTD if threshold exceeded
+
+## Neural AEC
+
+Deep learning has significantly improved AEC performance, particularly for nonlinear echo components.
+
+### Hybrid Approaches
+
+A common strategy combines traditional adaptive filters with neural networks:
+
+```
+Far-end Signal --> Adaptive Filter --> Residual --> Neural Post-filter --> Clean Output
+                        |
+                   Linear Echo
+                    Estimate
+```
+
+1. Adaptive filter removes linear echo
+2. Neural network suppresses residual nonlinear components
+
+**Architectures:**
+- TDNN (Time-Delay Neural Network) + NLMS
+- RNN for residual echo suppression
+- CNN-RNN hybrids
+
+### Recent Research
+
+**EchoFree:** Ultra-lightweight AEC model supporting streaming inference:
+- Cascaded framework: linear filtering + neural post-filter
+- Uses Bark-scale features
+- Two-stage optimization with SSL loss
+- Superior performance with lower parameter count
+
+**NeuralKalman:** Learnable Kalman filter for AEC that estimates:
+- Transition factor
+- Nonlinear far-end distortion
+- Nonlinear transition function for echo path
+
+**ISCRN:** Multi-channel AEC using structured state-space module (S4D) for improved cepstrum processing.
+
+### Neural AEC Architecture
+
+```python
+class NeuralAEC:
+    """
+    Two-stage neural acoustic echo cancellation
+    Stage 1: Linear adaptive filter for coarse echo removal
+    Stage 2: Neural residual echo suppressor for fine removal
+    """
+    def __init__(self):
+        self.linear_aec = AdaptiveFilter(filter_length=512)
+        self.neural_suppressor = ResidualEchoSuppressorNet()
+
+    def process(self, mic_signal, reference_signal):
+        # Stage 1: Linear echo cancellation
+        linear_output = self.linear_aec.process(
+            mic_signal, reference_signal
+        )
+
+        # Stage 2: Neural residual suppression
+        clean_output = self.neural_suppressor.process(
+            linear_output,
+            reference_signal
+        )
+
+        return clean_output
+```
+
+## AEC for Barge-In Detection
+
+### The Signal Processing Problem
+
+When detecting barge-in (user speaking while system is speaking):
+
+```
+Microphone Input = User Speech + System Echo + Ambient Noise
+```
+
+The system must detect user speech while rejecting its own echo.
+
+### Without Echo Cancellation
+
+The system will either:
+- Detect its own speech as user input (false barge-in)
+- Miss legitimate user interruptions (missed barge-in)
+
+### AEC-Enabled Barge-In Detection
+
+```python
+class AECBargeInDetector:
+    def __init__(self):
+        self.aec = NeuralAEC()
+        self.vad = VoiceActivityDetector()
+        self.energy_threshold = -35  # dB
+
+    def process(self, mic_signal, reference_signal, system_speaking):
+        if not system_speaking:
+            return self.vad.is_speech(mic_signal)
+
+        # Apply AEC to remove system echo
+        cleaned = self.aec.process(mic_signal, reference_signal)
+
+        # Detect user speech in cleaned signal
+        energy = calculate_energy_db(cleaned)
+
+        if energy > self.energy_threshold:
+            # Confirm with VAD
+            return self.vad.is_speech(cleaned)
+
+        return False
+```
+
+### Echo Tail Handling
+
+Even after the system stops speaking, echo may persist:
+
+```python
+class EchoTailHandler:
+    def __init__(self, tail_duration_ms=200):
+        self.tail_duration_ms = tail_duration_ms
+        self.tts_stop_time = None
+
+    def process(self, audio_frame, timestamp):
+        if self.tts_stop_time is not None:
+            time_since_stop = timestamp - self.tts_stop_time
+            if time_since_stop < self.tail_duration_ms:
+                # Still in echo tail period
+                return self.apply_aggressive_suppression(audio_frame)
+        return audio_frame
+```
+
+## Implementation Patterns
+
+### Typical Pipeline Architecture
+
+```
+Microphone --> VAD/HPF --> AEC --> NS --> AGC --> STT
+                           ^
+                           |
+Far-end Reference ---------+
+```
+
+### AEC in the Processing Order
+
+Recommended preprocessing order:
+1. Sample rate conversion (if needed)
+2. High-pass filter (remove rumble)
+3. **AEC** (remove echo - needs reference)
+4. Noise suppression (remove noise)
+5. Dereverberation (optional)
+6. Noise gate (optional)
+7. AGC (normalize levels)
+
+AEC should run before noise suppression to prevent NS from trying to suppress echo as noise.
+
+### Reference Signal Alignment
+
+The far-end reference signal must be time-aligned with the echo in the microphone signal:
+
+```python
+class ReferenceAligner:
+    def __init__(self, max_delay_samples=1024):
+        self.max_delay = max_delay_samples
+        self.reference_buffer = deque(maxlen=max_delay_samples * 2)
+
+    def align(self, mic_signal, reference_signal):
+        # Buffer the reference
+        self.reference_buffer.extend(reference_signal)
+
+        # Find optimal delay via cross-correlation
+        correlation = np.correlate(
+            mic_signal,
+            list(self.reference_buffer),
+            mode='valid'
+        )
+        optimal_delay = np.argmax(correlation)
+
+        # Return aligned reference
+        return self.get_aligned_reference(optimal_delay)
+```
+
+## Performance Metrics
+
+### Echo Return Loss Enhancement (ERLE)
+
+ERLE measures how much echo is suppressed:
+
+```
+ERLE = 10 * log10(E[d^2(n)] / E[e^2(n)])
+```
+
+Where `d(n)` is the echo and `e(n)` is the residual after cancellation.
+
+**Target:** 30-40 dB ERLE
+
+### Echo Return Loss (ERL)
+
+ERL measures the acoustic attenuation between speaker and microphone:
+
+```
+ERL = 10 * log10(E[x^2(n)] / E[d^2(n)])
+```
+
+Typical values: 10-20 dB
+
+### Convergence Time
+
+Time for the adaptive filter to reach steady-state performance:
+
+| Algorithm | Typical Convergence |
+|-----------|-------------------|
+| NLMS | 0.5-2 seconds |
+| RLS | 0.1-0.5 seconds |
+| Neural | Pre-trained (immediate) |
+
+## WebRTC Audio Processing Module
+
+WebRTC provides a reference implementation widely used in real-time communication:
+
+**Components:**
+- High-Pass Filter (HPF)
+- Automatic Gain Control (AGC)
+- Noise Suppression (NS)
+- Acoustic Echo Cancellation (AEC)
+- Echo Control Mobile (AECM)
+- Voice Activity Detection (VAD)
+
+**Processing Pipeline:**
+```
+Input -> HPF -> AGC -> AEC -> NS -> Output
+```
+
+**Technical Details:**
+- Fully thread-safe
+- Handles any sample rate < 384 kHz
+- Auto-reconfigures on format changes
+
+**Advantages:**
+- Free, open source
+- Reference implementation
+- Well-tested
+- GStreamer integration available
+
+## Provider Solutions
+
+### Krisp
+
+- Background noise removal + echo cancellation
+- Voice isolation for removing secondary voices
+- Available as SDK for client and server
+
+### Agora
+
+- AI Echo Cancellation
+- Integrated with noise suppression
+- Built-in interruption handling
+
+### NVIDIA Maxine
+
+- Room Echo Removal / Dereverb effect
+- GPU-accelerated processing
+- Combined with noise removal
+
+## Common Challenges and Solutions
+
+### Challenge: Time-Varying Echo Path
+
+**Problem:** People and objects move, changing the acoustic path.
+
+**Solution:** Use faster adaptation algorithms (RLS) or shorter filter lengths with regularization.
+
+### Challenge: Nonlinear Distortion
+
+**Problem:** Speakers and amplifiers introduce nonlinear distortion not captured by linear filters.
+
+**Solution:** Neural residual echo suppression or nonlinear adaptive algorithms.
+
+### Challenge: Echo from Multiple Sources
+
+**Problem:** Multiple speakers in the environment.
+
+**Solution:** Multi-channel AEC with source separation, or train neural AEC on multi-source data.
+
+### Challenge: Low SNR Conditions
+
+**Problem:** User speech is quiet relative to echo.
+
+**Solution:** Robust DTD, conservative adaptation, and neural post-filtering.
+
+### Challenge: Latency Constraints
+
+**Problem:** AEC adds latency to the audio pipeline.
+
+**Solution:** Use efficient algorithms (NLMS), optimize filter length, and consider GPU acceleration for neural approaches.

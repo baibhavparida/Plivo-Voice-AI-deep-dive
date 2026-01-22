@@ -1,0 +1,459 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-01-21",
+  "sections": [
+    {
+      "id": "welcome",
+      "title": "Welcome",
+      "slug": "/topics/welcome",
+      "icon": "Home",
+      "children": [
+        {
+          "id": "introduction",
+          "title": "Introduction",
+          "slug": "/topics/welcome/introduction"
+        },
+        {
+          "id": "why-voice-ai-matters",
+          "title": "Why Voice AI Matters",
+          "slug": "/topics/welcome/why-voice-ai-matters"
+        },
+        {
+          "id": "market-landscape",
+          "title": "Market Landscape",
+          "slug": "/topics/welcome/market-landscape"
+        },
+        {
+          "id": "how-to-use-this-guide",
+          "title": "How to Use This Guide",
+          "slug": "/topics/welcome/how-to-use-this-guide"
+        }
+      ]
+    },
+    {
+      "id": "foundations",
+      "title": "Foundations",
+      "slug": "/topics/foundations",
+      "icon": "BookOpen",
+      "children": [
+        {
+          "id": "speech-recognition",
+          "title": "Speech Recognition (STT)",
+          "slug": "/topics/foundations/speech-recognition",
+          "children": [
+            {
+              "id": "stt-overview",
+              "title": "STT Overview",
+              "slug": "/topics/foundations/speech-recognition/stt-overview"
+            },
+            {
+              "id": "acoustic-models",
+              "title": "Acoustic Models",
+              "slug": "/topics/foundations/speech-recognition/acoustic-models"
+            },
+            {
+              "id": "language-models",
+              "title": "Language Models",
+              "slug": "/topics/foundations/speech-recognition/language-models"
+            },
+            {
+              "id": "streaming-vs-batch",
+              "title": "Streaming vs Batch",
+              "slug": "/topics/foundations/speech-recognition/streaming-vs-batch"
+            },
+            {
+              "id": "stt-provider-comparison",
+              "title": "Provider Comparison",
+              "slug": "/topics/foundations/speech-recognition/stt-provider-comparison"
+            },
+            {
+              "id": "stt-optimization",
+              "title": "STT Optimization",
+              "slug": "/topics/foundations/speech-recognition/stt-optimization"
+            }
+          ]
+        },
+        {
+          "id": "speech-synthesis",
+          "title": "Speech Synthesis (TTS)",
+          "slug": "/topics/foundations/speech-synthesis",
+          "children": [
+            {
+              "id": "tts-overview",
+              "title": "TTS Overview",
+              "slug": "/topics/foundations/speech-synthesis/tts-overview"
+            },
+            {
+              "id": "neural-tts",
+              "title": "Neural TTS",
+              "slug": "/topics/foundations/speech-synthesis/neural-tts"
+            },
+            {
+              "id": "voice-cloning",
+              "title": "Voice Cloning",
+              "slug": "/topics/foundations/speech-synthesis/voice-cloning"
+            },
+            {
+              "id": "ssml",
+              "title": "SSML",
+              "slug": "/topics/foundations/speech-synthesis/ssml"
+            },
+            {
+              "id": "tts-provider-comparison",
+              "title": "Provider Comparison",
+              "slug": "/topics/foundations/speech-synthesis/tts-provider-comparison"
+            },
+            {
+              "id": "tts-optimization",
+              "title": "TTS Optimization",
+              "slug": "/topics/foundations/speech-synthesis/tts-optimization"
+            }
+          ]
+        },
+        {
+          "id": "language-understanding",
+          "title": "Language Understanding (NLU)",
+          "slug": "/topics/foundations/language-understanding",
+          "children": [
+            {
+              "id": "intent-recognition",
+              "title": "Intent Recognition",
+              "slug": "/topics/foundations/language-understanding/intent-recognition"
+            },
+            {
+              "id": "entity-extraction",
+              "title": "Entity Extraction",
+              "slug": "/topics/foundations/language-understanding/entity-extraction"
+            },
+            {
+              "id": "dialogue-state",
+              "title": "Dialogue State",
+              "slug": "/topics/foundations/language-understanding/dialogue-state"
+            },
+            {
+              "id": "sentiment-analysis",
+              "title": "Sentiment Analysis",
+              "slug": "/topics/foundations/language-understanding/sentiment-analysis"
+            }
+          ]
+        },
+        {
+          "id": "language-generation",
+          "title": "Language Generation (NLG)",
+          "slug": "/topics/foundations/language-generation",
+          "children": [
+            {
+              "id": "response-templates",
+              "title": "Response Templates",
+              "slug": "/topics/foundations/language-generation/response-templates"
+            },
+            {
+              "id": "dynamic-generation",
+              "title": "Dynamic Generation",
+              "slug": "/topics/foundations/language-generation/dynamic-generation"
+            },
+            {
+              "id": "persona-consistency",
+              "title": "Persona Consistency",
+              "slug": "/topics/foundations/language-generation/persona-consistency"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "infrastructure",
+      "title": "Infrastructure",
+      "slug": "/topics/infrastructure",
+      "icon": "Server",
+      "children": [
+        {
+          "id": "audio-pipeline",
+          "title": "Audio Pipeline",
+          "slug": "/topics/infrastructure/audio-pipeline",
+          "children": [
+            {
+              "id": "signal-processing",
+              "title": "Signal Processing",
+              "slug": "/topics/infrastructure/audio-pipeline/signal-processing"
+            },
+            {
+              "id": "noise-cancellation",
+              "title": "Noise Cancellation",
+              "slug": "/topics/infrastructure/audio-pipeline/noise-cancellation"
+            },
+            {
+              "id": "echo-cancellation",
+              "title": "Echo Cancellation",
+              "slug": "/topics/infrastructure/audio-pipeline/echo-cancellation"
+            },
+            {
+              "id": "voice-activity-detection",
+              "title": "Voice Activity Detection",
+              "slug": "/topics/infrastructure/audio-pipeline/voice-activity-detection"
+            }
+          ]
+        },
+        {
+          "id": "telephony",
+          "title": "Telephony",
+          "slug": "/topics/infrastructure/telephony",
+          "children": [
+            {
+              "id": "sip-protocol",
+              "title": "SIP Protocol",
+              "slug": "/topics/infrastructure/telephony/sip-protocol"
+            },
+            {
+              "id": "webrtc",
+              "title": "WebRTC",
+              "slug": "/topics/infrastructure/telephony/webrtc"
+            },
+            {
+              "id": "pstn-integration",
+              "title": "PSTN Integration",
+              "slug": "/topics/infrastructure/telephony/pstn-integration"
+            },
+            {
+              "id": "call-routing",
+              "title": "Call Routing",
+              "slug": "/topics/infrastructure/telephony/call-routing"
+            }
+          ]
+        },
+        {
+          "id": "streaming",
+          "title": "Streaming",
+          "slug": "/topics/infrastructure/streaming",
+          "children": [
+            {
+              "id": "websocket-protocols",
+              "title": "WebSocket Protocols",
+              "slug": "/topics/infrastructure/streaming/websocket-protocols"
+            },
+            {
+              "id": "grpc-streaming",
+              "title": "gRPC",
+              "slug": "/topics/infrastructure/streaming/grpc-streaming"
+            },
+            {
+              "id": "buffer-management",
+              "title": "Buffer Management",
+              "slug": "/topics/infrastructure/streaming/buffer-management"
+            },
+            {
+              "id": "latency-optimization",
+              "title": "Latency Optimization",
+              "slug": "/topics/infrastructure/streaming/latency-optimization"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "llm-integration",
+      "title": "LLM Integration",
+      "slug": "/topics/llm-integration",
+      "icon": "Brain",
+      "children": [
+        {
+          "id": "model-selection",
+          "title": "Model Selection",
+          "slug": "/topics/llm-integration/model-selection"
+        },
+        {
+          "id": "prompt-engineering",
+          "title": "Prompt Engineering",
+          "slug": "/topics/llm-integration/prompt-engineering"
+        },
+        {
+          "id": "function-calling",
+          "title": "Function Calling",
+          "slug": "/topics/llm-integration/function-calling"
+        },
+        {
+          "id": "context-management",
+          "title": "Context Management",
+          "slug": "/topics/llm-integration/context-management"
+        },
+        {
+          "id": "speech-to-speech-models",
+          "title": "Speech-to-Speech Models",
+          "slug": "/topics/llm-integration/speech-to-speech-models"
+        }
+      ]
+    },
+    {
+      "id": "agent-architecture",
+      "title": "Agent Architecture",
+      "slug": "/topics/agent-architecture",
+      "icon": "GitBranch",
+      "children": [
+        {
+          "id": "design-patterns",
+          "title": "Design Patterns",
+          "slug": "/topics/agent-architecture/design-patterns"
+        },
+        {
+          "id": "state-machines",
+          "title": "State Machines",
+          "slug": "/topics/agent-architecture/state-machines"
+        },
+        {
+          "id": "multi-agent-systems",
+          "title": "Multi-Agent Systems",
+          "slug": "/topics/agent-architecture/multi-agent-systems"
+        },
+        {
+          "id": "orchestration-frameworks",
+          "title": "Orchestration Frameworks",
+          "slug": "/topics/agent-architecture/orchestration-frameworks"
+        },
+        {
+          "id": "error-handling",
+          "title": "Error Handling",
+          "slug": "/topics/agent-architecture/error-handling"
+        }
+      ]
+    },
+    {
+      "id": "enterprise",
+      "title": "Enterprise",
+      "slug": "/topics/enterprise",
+      "icon": "Building",
+      "children": [
+        {
+          "id": "security-compliance",
+          "title": "Security & Compliance",
+          "slug": "/topics/enterprise/security-compliance"
+        },
+        {
+          "id": "scalability",
+          "title": "Scalability",
+          "slug": "/topics/enterprise/scalability"
+        },
+        {
+          "id": "analytics",
+          "title": "Analytics",
+          "slug": "/topics/enterprise/analytics"
+        },
+        {
+          "id": "cost-optimization",
+          "title": "Cost Optimization",
+          "slug": "/topics/enterprise/cost-optimization"
+        }
+      ]
+    },
+    {
+      "id": "implementation",
+      "title": "Implementation",
+      "slug": "/topics/implementation",
+      "icon": "Code",
+      "children": [
+        {
+          "id": "getting-started",
+          "title": "Getting Started",
+          "slug": "/topics/implementation/getting-started"
+        },
+        {
+          "id": "sdk-reference",
+          "title": "SDK Reference",
+          "slug": "/topics/implementation/sdk-reference"
+        },
+        {
+          "id": "api-reference",
+          "title": "API Reference",
+          "slug": "/topics/implementation/api-reference"
+        },
+        {
+          "id": "code-examples",
+          "title": "Code Examples",
+          "slug": "/topics/implementation/code-examples"
+        },
+        {
+          "id": "deployment",
+          "title": "Deployment",
+          "slug": "/topics/implementation/deployment"
+        }
+      ]
+    },
+    {
+      "id": "use-cases",
+      "title": "Use Cases",
+      "slug": "/topics/use-cases",
+      "icon": "Briefcase",
+      "children": [
+        {
+          "id": "customer-service",
+          "title": "Customer Service",
+          "slug": "/topics/use-cases/customer-service"
+        },
+        {
+          "id": "healthcare",
+          "title": "Healthcare",
+          "slug": "/topics/use-cases/healthcare"
+        },
+        {
+          "id": "financial-services",
+          "title": "Financial Services",
+          "slug": "/topics/use-cases/financial-services"
+        },
+        {
+          "id": "sales",
+          "title": "Sales",
+          "slug": "/topics/use-cases/sales"
+        },
+        {
+          "id": "hospitality",
+          "title": "Hospitality",
+          "slug": "/topics/use-cases/hospitality"
+        }
+      ]
+    },
+    {
+      "id": "resources",
+      "title": "Resources",
+      "slug": "/topics/resources",
+      "icon": "Library",
+      "children": [
+        {
+          "id": "glossary",
+          "title": "Glossary",
+          "slug": "/topics/resources/glossary"
+        },
+        {
+          "id": "benchmarks",
+          "title": "Benchmarks",
+          "slug": "/topics/resources/benchmarks"
+        },
+        {
+          "id": "provider-directory",
+          "title": "Provider Directory",
+          "slug": "/topics/resources/provider-directory"
+        },
+        {
+          "id": "research-papers",
+          "title": "Research Papers",
+          "slug": "/topics/resources/research-papers"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "totalSections": 9,
+    "totalItems": 67,
+    "maxDepth": 3,
+    "iconLibrary": "lucide-react",
+    "availableIcons": [
+      "Home",
+      "BookOpen",
+      "Server",
+      "Brain",
+      "GitBranch",
+      "Building",
+      "Code",
+      "Briefcase",
+      "Library"
+    ]
+  }
+}

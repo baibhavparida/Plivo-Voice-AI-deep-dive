@@ -1,0 +1,1440 @@
+---
+title: "Hospitality Voice AI"
+description: "Comprehensive guide to implementing voice AI in hospitality settings, covering reservation management, concierge services, guest inquiries, multilingual support, and PMS integration"
+category: Use Cases
+tags:
+  - hospitality
+  - hotels
+  - reservations
+  - concierge
+  - multilingual
+related:
+  - customer-service
+  - sales
+lastUpdated: "2025-01-21"
+difficulty: intermediate
+---
+
+# Hospitality Voice AI
+
+Hospitality represents a natural fit for voice AI, where personalized guest experiences and 24/7 availability are essential. From reservation management to concierge services, voice AI enhances guest satisfaction while optimizing operational efficiency across hotels, resorts, restaurants, and travel services.
+
+## Hospitality Voice AI Landscape
+
+```
++-------------------------------------------------------------------------+
+|                  HOSPITALITY VOICE AI APPLICATIONS                       |
++-------------------------------------------------------------------------+
+|                                                                          |
+|  PRE-ARRIVAL          ON-PROPERTY           POST-STAY                   |
+|  +----------------+  +------------------+  +------------------+         |
+|  | Reservation    |  | Room Service     |  | Feedback         |         |
+|  | Management     |  | Ordering         |  | Collection       |         |
+|  +----------------+  +------------------+  +------------------+         |
+|  | Rate           |  | Concierge        |  | Loyalty Program  |         |
+|  | Inquiries      |  | Services         |  | Management       |         |
+|  +----------------+  +------------------+  +------------------+         |
+|  | Amenity &      |  | Maintenance      |  | Future           |         |
+|  | Policy Info    |  | Requests         |  | Booking          |         |
+|  +----------------+  +------------------+  +------------------+         |
+|  | Directions &   |  | Wake-up          |  | Lost & Found     |         |
+|  | Transportation |  | Calls            |  | Assistance       |         |
+|  +----------------+  +------------------+  +------------------+         |
+|                                                                          |
++-------------------------------------------------------------------------+
+```
+
+## Reservation Management
+
+Voice AI transforms the reservation process into a conversational experience, handling bookings, modifications, and cancellations with personalized service.
+
+### Reservation System Architecture
+
+```python
+class HotelReservationAgent:
+    """Voice AI agent for hotel reservation management"""
+
+    def __init__(self, config: HospitalityConfig):
+        self.pms = PMSIntegration(config.pms)
+        self.rate_engine = RateEngine(config.rates)
+        self.availability_service = AvailabilityService(config.inventory)
+        self.loyalty_service = LoyaltyService(config.loyalty)
+        self.nlp_engine = HospitalityNLP()
+
+    async def handle_reservation_call(
+        self,
+        call: InboundCall
+    ) -> ReservationResult:
+        """Handle inbound reservation inquiry"""
+
+        # Check for existing guest profile
+        guest = await self.lookup_guest(call.caller_id)
+
+        if guest:
+            await call.speak(
+                f"Thank you for calling {self.config.property_name}. "
+                f"Welcome back, {guest.preferred_name}! How may I assist you today?"
+            )
+        else:
+            await call.speak(
+                f"Thank you for calling {self.config.property_name}. "
+                f"My name is {self.config.assistant_name}. "
+                f"How may I help you with your travel plans?"
+            )
+
+        utterance = await call.listen()
+        intent = await self.nlp_engine.classify_intent(utterance)
+
+        if intent == ReservationIntent.NEW_BOOKING:
+            return await self.create_reservation(call, guest)
+        elif intent == ReservationIntent.MODIFY:
+            return await self.modify_reservation(call, guest)
+        elif intent == ReservationIntent.CANCEL:
+            return await self.cancel_reservation(call, guest)
+        elif intent == ReservationIntent.CHECK_RATES:
+            return await self.provide_rates(call, guest)
+        elif intent == ReservationIntent.INQUIRE:
+            return await self.answer_inquiry(call, guest, utterance)
+        else:
+            return await self.handle_general_inquiry(call, guest)
+
+    async def create_reservation(
+        self,
+        call: Call,
+        guest: Optional[GuestProfile]
+    ) -> ReservationResult:
+        """Create new hotel reservation"""
+
+        # Collect stay details
+        stay_details = await self.collect_stay_details(call)
+
+        # Check availability
+        available_rooms = await self.availability_service.search(
+            property_id=self.config.property_id,
+            check_in=stay_details.check_in,
+            check_out=stay_details.check_out,
+            guests=stay_details.guest_count,
+            rooms=stay_details.room_count
+        )
+
+        if not available_rooms:
+            return await self.handle_no_availability(call, stay_details, guest)
+
+        # Get best rate for guest
+        rates = await self.rate_engine.get_rates(
+            rooms=available_rooms,
+            stay_details=stay_details,
+            guest_profile=guest
+        )
+
+        # Present room options
+        selected_room, rate = await self.present_room_options(
+            call, available_rooms, rates, guest
+        )
+
+        # Collect guest information if new
+        if not guest:
+            guest = await self.collect_guest_info(call)
+
+        # Confirm booking details
+        confirmation = await self.confirm_booking(
+            call, stay_details, selected_room, rate, guest
+        )
+
+        if not confirmation.confirmed:
+            return ReservationResult(status="abandoned")
+
+        # Create reservation in PMS
+        reservation = await self.pms.create_reservation(
+            guest=guest,
+            room_type=selected_room,
+            rate=rate,
+            check_in=stay_details.check_in,
+            check_out=stay_details.check_out,
+            special_requests=stay_details.special_requests
+        )
+
+        # Send confirmation
+        await self.send_confirmation(guest, reservation)
+
+        await call.speak(
+            f"Wonderful! Your reservation is confirmed. Your confirmation "
+            f"number is {self.spell_out(reservation.confirmation_number)}. "
+            f"You'll receive a confirmation email at {guest.email} shortly. "
+            f"Is there anything else I can help you with?"
+        )
+
+        return ReservationResult(
+            status="confirmed",
+            reservation=reservation
+        )
+
+    async def collect_stay_details(
+        self,
+        call: Call
+    ) -> StayDetails:
+        """Collect stay details through conversation"""
+
+        stay = StayDetails()
+
+        # Check-in date
+        await call.speak(
+            "I'd be happy to help you make a reservation. "
+            "What date are you looking to check in?"
+        )
+
+        checkin_response = await call.listen()
+        stay.check_in = await self.nlp_engine.parse_date(checkin_response)
+
+        # Check-out date
+        await call.speak(
+            "And what date will you be checking out?"
+        )
+
+        checkout_response = await call.listen()
+        stay.check_out = await self.nlp_engine.parse_date(checkout_response)
+
+        # Validate dates
+        if stay.check_out <= stay.check_in:
+            await call.speak(
+                "I want to make sure I have that right. "
+                "Your check-out date needs to be after your check-in. "
+                "What date would you like to check out?"
+            )
+            checkout_response = await call.listen()
+            stay.check_out = await self.nlp_engine.parse_date(checkout_response)
+
+        # Number of guests and rooms
+        await call.speak(
+            "How many guests will be staying, and how many rooms do you need?"
+        )
+
+        guests_response = await call.listen()
+        guest_info = await self.nlp_engine.extract_guest_count(guests_response)
+        stay.guest_count = guest_info.adults
+        stay.child_count = guest_info.children
+        stay.room_count = guest_info.rooms or 1
+
+        # Room preferences
+        await call.speak(
+            "Do you have any preferences for your room? For example, "
+            "a king bed, two queens, a suite, or a specific view?"
+        )
+
+        preference_response = await call.listen()
+        stay.room_preferences = await self.nlp_engine.extract_room_preferences(
+            preference_response
+        )
+
+        # Calculate nights
+        stay.nights = (stay.check_out - stay.check_in).days
+
+        return stay
+
+    async def present_room_options(
+        self,
+        call: Call,
+        rooms: List[RoomType],
+        rates: Dict[str, Rate],
+        guest: Optional[GuestProfile]
+    ) -> Tuple[RoomType, Rate]:
+        """Present room options with rates"""
+
+        # Prioritize rooms based on guest preferences
+        sorted_rooms = self.prioritize_rooms(rooms, guest)
+
+        # Present top options
+        await call.speak(
+            f"I have {len(sorted_rooms)} room options available for your stay."
+        )
+
+        for i, room in enumerate(sorted_rooms[:3], 1):
+            rate = rates[room.code]
+            night_rate = rate.average_nightly_rate
+
+            # Apply loyalty discount language
+            rate_description = self.format_rate(rate, guest)
+
+            await call.speak(
+                f"Option {i}: Our {room.name}. It features {room.description_brief}. "
+                f"The rate is {rate_description} per night, "
+                f"totaling {self.format_currency(rate.total)} for your stay."
+            )
+
+            await asyncio.sleep(0.3)  # Brief pause between options
+
+        await call.speak(
+            "Which option appeals to you, or would you like more details "
+            "about any of these?"
+        )
+
+        response = await call.listen()
+        selection = await self.nlp_engine.match_room_selection(
+            response, sorted_rooms[:3]
+        )
+
+        if selection.wants_details:
+            return await self.provide_room_details(call, sorted_rooms, rates, guest)
+
+        return selection.room, rates[selection.room.code]
+
+    def format_rate(
+        self,
+        rate: Rate,
+        guest: Optional[GuestProfile]
+    ) -> str:
+        """Format rate for natural speech"""
+
+        base = self.format_currency(rate.average_nightly_rate)
+
+        if guest and guest.loyalty_tier:
+            if rate.loyalty_discount > 0:
+                return f"{base}, which includes your {guest.loyalty_tier} member discount"
+
+        if rate.is_promotional:
+            return f"{base}, our special {rate.promo_name} rate"
+
+        return base
+```
+
+### Intelligent Availability Management
+
+```python
+class AvailabilityService:
+    """Intelligent availability and inventory management"""
+
+    async def search(
+        self,
+        property_id: str,
+        check_in: date,
+        check_out: date,
+        guests: int,
+        rooms: int = 1
+    ) -> List[RoomType]:
+        """Search for available rooms"""
+
+        # Get base availability
+        inventory = await self.pms.get_inventory(
+            property_id=property_id,
+            start_date=check_in,
+            end_date=check_out
+        )
+
+        available_rooms = []
+
+        for room_type in inventory.room_types:
+            # Check availability across all nights
+            min_available = min([
+                inventory.get_available_count(room_type.code, d)
+                for d in self.date_range(check_in, check_out)
+            ])
+
+            if min_available >= rooms:
+                # Check occupancy restrictions
+                if room_type.max_occupancy >= guests:
+                    available_rooms.append(room_type)
+
+        return available_rooms
+
+    async def suggest_alternatives(
+        self,
+        property_id: str,
+        original_request: StayDetails
+    ) -> AlternativeSuggestions:
+        """Suggest alternatives when exact request unavailable"""
+
+        suggestions = AlternativeSuggestions()
+
+        # Try nearby dates
+        for offset in [1, -1, 2, -2]:
+            alt_checkin = original_request.check_in + timedelta(days=offset)
+            alt_checkout = original_request.check_out + timedelta(days=offset)
+
+            available = await self.search(
+                property_id=property_id,
+                check_in=alt_checkin,
+                check_out=alt_checkout,
+                guests=original_request.guest_count
+            )
+
+            if available:
+                suggestions.alternate_dates.append(
+                    DateAlternative(
+                        check_in=alt_checkin,
+                        check_out=alt_checkout,
+                        rooms=available
+                    )
+                )
+                break
+
+        # Try sister properties
+        sister_properties = await self.get_sister_properties(property_id)
+        for sister in sister_properties:
+            available = await self.search(
+                property_id=sister.id,
+                check_in=original_request.check_in,
+                check_out=original_request.check_out,
+                guests=original_request.guest_count
+            )
+
+            if available:
+                suggestions.alternate_properties.append(
+                    PropertyAlternative(
+                        property=sister,
+                        rooms=available
+                    )
+                )
+
+        # Try different room configurations
+        if original_request.room_count == 1 and original_request.guest_count > 2:
+            # Try two rooms instead
+            available = await self.search(
+                property_id=property_id,
+                check_in=original_request.check_in,
+                check_out=original_request.check_out,
+                guests=2,
+                rooms=2
+            )
+
+            if available:
+                suggestions.alternate_configurations.append(
+                    ConfigurationAlternative(
+                        rooms=2,
+                        room_types=available
+                    )
+                )
+
+        return suggestions
+```
+
+## Room Service and Concierge
+
+Voice AI provides 24/7 concierge and room service capabilities, handling orders and requests with contextual guest awareness.
+
+### Room Service System
+
+```python
+class RoomServiceAgent:
+    """Voice AI for room service ordering"""
+
+    def __init__(self, config: HospitalityConfig):
+        self.pms = PMSIntegration(config.pms)
+        self.menu_service = MenuService(config.menu)
+        self.order_service = OrderService(config.orders)
+        self.kitchen_integration = KitchenIntegration(config.kitchen)
+
+    async def handle_room_service_call(
+        self,
+        call: InRoomCall
+    ) -> OrderResult:
+        """Handle room service order from in-room phone"""
+
+        # Identify room and guest
+        room = await self.pms.get_room_by_extension(call.extension)
+        reservation = await self.pms.get_active_reservation(room.room_number)
+
+        await call.speak(
+            f"Good {self.get_time_greeting()}, "
+            f"{reservation.guest.preferred_name}. "
+            f"This is room service. How may I assist you?"
+        )
+
+        utterance = await call.listen()
+        intent = await self.nlp_engine.classify_room_service_intent(utterance)
+
+        if intent == RoomServiceIntent.PLACE_ORDER:
+            return await self.take_order(call, room, reservation)
+        elif intent == RoomServiceIntent.CHECK_MENU:
+            return await self.describe_menu(call, room, reservation)
+        elif intent == RoomServiceIntent.CHECK_ORDER_STATUS:
+            return await self.check_order_status(call, room, reservation)
+        elif intent == RoomServiceIntent.MODIFY_ORDER:
+            return await self.modify_order(call, room, reservation)
+        else:
+            # May be concierge request
+            return await self.route_to_concierge(call, room, reservation)
+
+    async def take_order(
+        self,
+        call: Call,
+        room: Room,
+        reservation: Reservation
+    ) -> OrderResult:
+        """Take room service order"""
+
+        # Get current menu based on time
+        current_menu = await self.menu_service.get_active_menu()
+
+        # Guest dietary preferences from profile
+        dietary_prefs = reservation.guest.dietary_preferences
+
+        order = RoomServiceOrder(
+            room_number=room.room_number,
+            reservation_id=reservation.id,
+            guest_id=reservation.guest.id
+        )
+
+        await call.speak(
+            "I'd be happy to take your order. What can I get for you?"
+        )
+
+        # Order collection loop
+        while True:
+            utterance = await call.listen()
+
+            # Check for order completion
+            if await self.nlp_engine.is_order_complete(utterance):
+                break
+
+            # Extract items from utterance
+            items = await self.nlp_engine.extract_menu_items(
+                utterance, current_menu
+            )
+
+            for item in items:
+                # Check availability
+                if not await self.menu_service.is_available(item.menu_item_id):
+                    await call.speak(
+                        f"I apologize, but {item.name} is currently unavailable. "
+                        f"May I suggest {item.alternative} instead?"
+                    )
+                    continue
+
+                # Check dietary conflicts
+                if dietary_prefs:
+                    conflicts = self.check_dietary_conflicts(item, dietary_prefs)
+                    if conflicts:
+                        await call.speak(
+                            f"I noticed {item.name} contains {conflicts[0]}. "
+                            f"Would you still like to order it?"
+                        )
+                        response = await call.listen()
+                        if not await self.nlp_engine.is_affirmative(response):
+                            continue
+
+                # Handle customizations
+                if item.customizations:
+                    item = await self.handle_customizations(call, item)
+
+                order.add_item(item)
+
+                await call.speak(
+                    f"I've added {item.name} to your order. "
+                    f"Anything else?"
+                )
+
+        # Review order
+        await self.review_order(call, order)
+
+        # Confirm and estimate delivery
+        delivery_estimate = await self.kitchen_integration.estimate_delivery(order)
+
+        await call.speak(
+            f"Your order total is {self.format_currency(order.total)}, "
+            f"which will be charged to your room. "
+            f"Your order should arrive in approximately "
+            f"{delivery_estimate.minutes} minutes. "
+            f"Is that all correct?"
+        )
+
+        response = await call.listen()
+        if not await self.nlp_engine.is_affirmative(response):
+            return await self.modify_order_before_submit(call, order)
+
+        # Submit order
+        submitted_order = await self.order_service.submit(order)
+
+        # Notify kitchen
+        await self.kitchen_integration.send_order(submitted_order)
+
+        await call.speak(
+            f"Your order has been placed. "
+            f"Your order number is {submitted_order.order_number}. "
+            f"Enjoy your {self.get_meal_name()}!"
+        )
+
+        return OrderResult(
+            status="confirmed",
+            order=submitted_order,
+            delivery_estimate=delivery_estimate
+        )
+
+    async def handle_customizations(
+        self,
+        call: Call,
+        item: OrderItem
+    ) -> OrderItem:
+        """Handle item customizations"""
+
+        if item.menu_item.required_choices:
+            for choice in item.menu_item.required_choices:
+                options = ", ".join(choice.options)
+                await call.speak(
+                    f"For your {item.name}, would you like {options}?"
+                )
+                response = await call.listen()
+                selected = await self.nlp_engine.match_option(
+                    response, choice.options
+                )
+                item.add_choice(choice.name, selected)
+
+        if item.menu_item.optional_modifications:
+            # Common modifications
+            await call.speak(
+                "Any special requests or modifications for that?"
+            )
+            response = await call.listen()
+
+            if not await self.nlp_engine.is_negative(response):
+                modifications = await self.nlp_engine.extract_modifications(
+                    response
+                )
+                for mod in modifications:
+                    item.add_modification(mod)
+
+        return item
+```
+
+### Concierge Service
+
+```python
+class VirtualConcierge:
+    """Voice AI virtual concierge service"""
+
+    def __init__(self, config: HospitalityConfig):
+        self.local_knowledge = LocalKnowledgeBase(config.local_kb)
+        self.reservation_systems = ExternalReservations(config.external)
+        self.transportation = TransportationService(config.transport)
+        self.pms = PMSIntegration(config.pms)
+
+    async def handle_concierge_request(
+        self,
+        call: Call,
+        room: Room,
+        reservation: Reservation
+    ) -> ConciergeResult:
+        """Handle concierge service request"""
+
+        await call.speak(
+            f"This is the concierge desk. "
+            f"How may I enhance your stay, {reservation.guest.preferred_name}?"
+        )
+
+        utterance = await call.listen()
+        request_type = await self.nlp_engine.classify_concierge_request(utterance)
+
+        if request_type == ConciergeRequest.RESTAURANT_RECOMMENDATION:
+            return await self.recommend_restaurant(call, reservation, utterance)
+        elif request_type == ConciergeRequest.RESTAURANT_RESERVATION:
+            return await self.make_restaurant_reservation(call, reservation, utterance)
+        elif request_type == ConciergeRequest.ACTIVITY_RECOMMENDATION:
+            return await self.recommend_activity(call, reservation, utterance)
+        elif request_type == ConciergeRequest.TRANSPORTATION:
+            return await self.arrange_transportation(call, reservation, utterance)
+        elif request_type == ConciergeRequest.TICKETS_EVENTS:
+            return await self.arrange_tickets(call, reservation, utterance)
+        elif request_type == ConciergeRequest.LOCAL_INFORMATION:
+            return await self.provide_local_info(call, reservation, utterance)
+        elif request_type == ConciergeRequest.HOTEL_AMENITY:
+            return await self.assist_amenity(call, reservation, utterance)
+        else:
+            return await self.general_assistance(call, reservation, utterance)
+
+    async def recommend_restaurant(
+        self,
+        call: Call,
+        reservation: Reservation,
+        initial_request: str
+    ) -> ConciergeResult:
+        """Provide personalized restaurant recommendations"""
+
+        # Extract preferences from request
+        preferences = await self.nlp_engine.extract_dining_preferences(
+            initial_request
+        )
+
+        # Enhance with guest profile data
+        if reservation.guest.dining_preferences:
+            preferences.merge(reservation.guest.dining_preferences)
+
+        # Search local knowledge base
+        recommendations = await self.local_knowledge.search_restaurants(
+            preferences=preferences,
+            location=self.config.property_location,
+            max_results=5
+        )
+
+        if not recommendations:
+            await call.speak(
+                "Let me learn a bit more about what you're looking for. "
+                "What cuisine are you in the mood for?"
+            )
+            cuisine_response = await call.listen()
+            preferences.cuisine = await self.nlp_engine.extract_cuisine(
+                cuisine_response
+            )
+            recommendations = await self.local_knowledge.search_restaurants(
+                preferences=preferences,
+                location=self.config.property_location
+            )
+
+        # Present recommendations
+        await call.speak(
+            f"I have {len(recommendations)} wonderful suggestions for you."
+        )
+
+        for i, restaurant in enumerate(recommendations[:3], 1):
+            distance = self.calculate_distance(
+                self.config.property_location,
+                restaurant.location
+            )
+
+            await call.speak(
+                f"{restaurant.name} is an excellent {restaurant.cuisine} restaurant "
+                f"about {self.format_distance(distance)} from the hotel. "
+                f"{restaurant.highlight}. "
+                f"Prices are {restaurant.price_description}."
+            )
+
+            await asyncio.sleep(0.3)
+
+        await call.speak(
+            "Would you like me to make a reservation at any of these, "
+            "or would you like other suggestions?"
+        )
+
+        response = await call.listen()
+        intent = await self.nlp_engine.classify_followup_intent(response)
+
+        if intent == FollowupIntent.MAKE_RESERVATION:
+            selected = await self.nlp_engine.match_restaurant(
+                response, recommendations
+            )
+            return await self.make_restaurant_reservation_for(
+                call, reservation, selected
+            )
+        elif intent == FollowupIntent.MORE_OPTIONS:
+            return await self.recommend_restaurant(call, reservation, response)
+        else:
+            await call.speak(
+                "Perfect. Enjoy your evening! Don't hesitate to call "
+                "if you need anything else."
+            )
+
+        return ConciergeResult(
+            status="completed",
+            recommendations=recommendations
+        )
+
+    async def arrange_transportation(
+        self,
+        call: Call,
+        reservation: Reservation,
+        request: str
+    ) -> ConciergeResult:
+        """Arrange transportation for guest"""
+
+        # Extract transportation details
+        details = await self.nlp_engine.extract_transport_details(request)
+
+        await call.speak(
+            f"I can arrange transportation to {details.destination or 'your destination'}. "
+            f"What time do you need to leave?"
+        )
+
+        if not details.departure_time:
+            time_response = await call.listen()
+            details.departure_time = await self.nlp_engine.parse_time(time_response)
+
+        # Get transportation options
+        options = await self.transportation.get_options(
+            pickup_location=self.config.property_address,
+            destination=details.destination,
+            departure_time=details.departure_time,
+            passengers=details.passengers or 1
+        )
+
+        # Present options
+        await call.speak(
+            "I have a few transportation options for you."
+        )
+
+        for option in options[:3]:
+            await call.speak(
+                f"A {option.vehicle_type} would be {self.format_currency(option.estimate)} "
+                f"and take approximately {option.duration_minutes} minutes."
+            )
+
+        await call.speak(
+            "Which would you prefer?"
+        )
+
+        response = await call.listen()
+        selected = await self.nlp_engine.match_transport_option(response, options)
+
+        # Book transportation
+        booking = await self.transportation.book(
+            option=selected,
+            guest=reservation.guest,
+            room_number=reservation.room_number
+        )
+
+        await call.speak(
+            f"Your {selected.vehicle_type} is confirmed for "
+            f"{details.departure_time.strftime('%I:%M %p')}. "
+            f"The driver will meet you at the main entrance. "
+            f"The fare of {self.format_currency(selected.estimate)} "
+            f"will be charged to your room."
+        )
+
+        return ConciergeResult(
+            status="confirmed",
+            booking=booking
+        )
+```
+
+## Guest Inquiries
+
+Voice AI handles the wide variety of guest inquiries efficiently while maintaining a personal touch.
+
+### Guest Inquiry Handler
+
+```python
+class GuestInquiryHandler:
+    """Handle diverse guest inquiries via voice AI"""
+
+    def __init__(self, config: HospitalityConfig):
+        self.knowledge_base = PropertyKnowledgeBase(config.property_kb)
+        self.pms = PMSIntegration(config.pms)
+        self.faq_engine = FAQEngine(config.faqs)
+
+    async def handle_inquiry(
+        self,
+        call: Call,
+        room: Optional[Room],
+        inquiry: str
+    ) -> InquiryResult:
+        """Handle guest inquiry"""
+
+        # Classify inquiry type
+        inquiry_type = await self.nlp_engine.classify_inquiry(inquiry)
+
+        handlers = {
+            InquiryType.AMENITY: self.handle_amenity_inquiry,
+            InquiryType.POLICY: self.handle_policy_inquiry,
+            InquiryType.WIFI: self.handle_wifi_inquiry,
+            InquiryType.CHECKOUT: self.handle_checkout_inquiry,
+            InquiryType.DIRECTIONS: self.handle_directions_inquiry,
+            InquiryType.HOURS: self.handle_hours_inquiry,
+            InquiryType.PARKING: self.handle_parking_inquiry,
+            InquiryType.POOL_SPA: self.handle_pool_spa_inquiry,
+            InquiryType.LAUNDRY: self.handle_laundry_inquiry,
+            InquiryType.BUSINESS_CENTER: self.handle_business_center_inquiry
+        }
+
+        handler = handlers.get(inquiry_type, self.handle_general_inquiry)
+        return await handler(call, room, inquiry)
+
+    async def handle_wifi_inquiry(
+        self,
+        call: Call,
+        room: Optional[Room],
+        inquiry: str
+    ) -> InquiryResult:
+        """Handle WiFi related inquiries"""
+
+        wifi_info = await self.knowledge_base.get_wifi_info()
+
+        if room:
+            # Get room-specific credentials
+            reservation = await self.pms.get_active_reservation(room.room_number)
+            credentials = await self.pms.get_wifi_credentials(reservation.id)
+
+            await call.speak(
+                f"Our WiFi network is called '{wifi_info.network_name}'. "
+                f"Your personal password is {self.spell_out(credentials.password)}. "
+                f"That's {credentials.password}. "
+                f"You can connect up to {wifi_info.max_devices} devices."
+            )
+
+            # Offer to send via text
+            await call.speak(
+                "Would you like me to send these details to your phone "
+                "via text message?"
+            )
+
+            response = await call.listen()
+            if await self.nlp_engine.is_affirmative(response):
+                await self.send_wifi_sms(reservation.guest.phone, credentials)
+                await call.speak("Done! You should receive the text shortly.")
+        else:
+            await call.speak(
+                f"Our WiFi network is '{wifi_info.network_name}'. "
+                f"You can get your personal password at the front desk "
+                f"or by calling from your room phone."
+            )
+
+        return InquiryResult(status="answered", type="wifi")
+
+    async def handle_checkout_inquiry(
+        self,
+        call: Call,
+        room: Optional[Room],
+        inquiry: str
+    ) -> InquiryResult:
+        """Handle checkout related inquiries"""
+
+        if room:
+            reservation = await self.pms.get_active_reservation(room.room_number)
+
+            await call.speak(
+                f"Checkout time is {self.config.checkout_time}. "
+                f"Your current balance is {self.format_currency(reservation.current_balance)}. "
+            )
+
+            # Check for express checkout eligibility
+            if reservation.guest.has_card_on_file:
+                await call.speak(
+                    "Since we have your card on file, you can use our "
+                    "express checkout. Simply leave your key cards in the room, "
+                    "and your receipt will be emailed to you."
+                )
+            else:
+                await call.speak(
+                    "Please stop by the front desk to settle your account "
+                    "when you're ready to leave."
+                )
+
+            # Ask about late checkout
+            await call.speak(
+                "Would you like to request a late checkout?"
+            )
+
+            response = await call.listen()
+            if await self.nlp_engine.is_affirmative(response):
+                late_checkout = await self.request_late_checkout(
+                    call, reservation
+                )
+                return InquiryResult(
+                    status="answered",
+                    type="checkout",
+                    action_taken="late_checkout_requested",
+                    result=late_checkout
+                )
+        else:
+            await call.speak(
+                f"Checkout time is {self.config.checkout_time}. "
+                f"Late checkout may be available upon request, "
+                f"subject to availability."
+            )
+
+        return InquiryResult(status="answered", type="checkout")
+
+    async def request_late_checkout(
+        self,
+        call: Call,
+        reservation: Reservation
+    ) -> LateCheckoutResult:
+        """Process late checkout request"""
+
+        # Check availability
+        availability = await self.pms.check_late_checkout_availability(
+            room_number=reservation.room_number,
+            requested_date=reservation.checkout_date
+        )
+
+        if availability.is_available:
+            options = []
+
+            if availability.free_extension_hours > 0:
+                options.append(
+                    f"a complimentary extension until "
+                    f"{(datetime.combine(date.today(), self.config.checkout_time) + timedelta(hours=availability.free_extension_hours)).strftime('%I:%M %p')}"
+                )
+
+            for option in availability.paid_options:
+                options.append(
+                    f"{option.until_time} for an additional "
+                    f"{self.format_currency(option.fee)}"
+                )
+
+            await call.speak(
+                f"I can offer you {' or '.join(options)}. "
+                f"Which would you prefer?"
+            )
+
+            response = await call.listen()
+            selected = await self.nlp_engine.match_checkout_option(
+                response, availability
+            )
+
+            # Apply late checkout
+            result = await self.pms.apply_late_checkout(
+                reservation_id=reservation.id,
+                option=selected
+            )
+
+            await call.speak(
+                f"You're all set for a {selected.until_time} checkout. "
+                f"Is there anything else I can help with?"
+            )
+
+            return LateCheckoutResult(
+                granted=True,
+                until_time=selected.until_time,
+                fee=selected.fee
+            )
+        else:
+            await call.speak(
+                "I apologize, but late checkout isn't available for your "
+                "departure date due to high occupancy. "
+                "Is there anything else I can help with?"
+            )
+
+            return LateCheckoutResult(granted=False)
+```
+
+## Multilingual Support
+
+Hospitality voice AI must serve guests in their preferred language for a truly welcoming experience.
+
+### Multilingual Voice System
+
+```python
+class MultilingualHospitalityAI:
+    """Multilingual voice AI for hospitality"""
+
+    def __init__(self, config: HospitalityConfig):
+        self.language_detector = LanguageDetector(config.languages)
+        self.translation_service = TranslationService(config.translation)
+        self.multilingual_tts = MultilingualTTS(config.tts)
+        self.multilingual_stt = MultilingualSTT(config.stt)
+
+        # Language-specific greeting configurations
+        self.greetings = config.localized_greetings
+
+    async def handle_call(
+        self,
+        call: InboundCall
+    ) -> None:
+        """Handle call with automatic language detection"""
+
+        # Check if caller has language preference on file
+        guest = await self.lookup_guest(call.caller_id)
+
+        if guest and guest.preferred_language:
+            language = guest.preferred_language
+        else:
+            # Detect language from initial greeting response
+            language = await self.detect_caller_language(call)
+
+        # Set up language-specific services
+        call.set_language(language)
+        call.set_tts_voice(self.get_voice_for_language(language))
+
+        # Greet in detected language
+        greeting = self.greetings.get(language, self.greetings['en'])
+        await call.speak(greeting)
+
+        # Route to appropriate handler
+        await self.route_call(call, language)
+
+    async def detect_caller_language(
+        self,
+        call: Call
+    ) -> str:
+        """Detect caller's language preference"""
+
+        # Offer language selection
+        await call.speak(
+            "Thank you for calling. For English, please say 'English'. "
+            "Para Espanol, diga 'Espanol'. "
+            "Pour Francais, dites 'Francais'. "
+            "Fur Deutsch, sagen Sie 'Deutsch'."
+        )
+
+        response = await call.listen(
+            language_hint="multi"  # Enable multi-language detection
+        )
+
+        # Detect language from response
+        detected = await self.language_detector.detect(response)
+
+        return detected.language_code
+
+    async def handle_multilingual_request(
+        self,
+        call: Call,
+        language: str,
+        request_handler: Callable
+    ) -> Any:
+        """Process request with full multilingual support"""
+
+        # Listen with language-specific STT
+        utterance = await call.listen(language=language)
+
+        # Process in native language or translate to English for processing
+        if language != 'en':
+            english_utterance = await self.translation_service.translate(
+                utterance,
+                source=language,
+                target='en'
+            )
+            result = await request_handler(english_utterance)
+
+            # Translate response back
+            localized_response = await self.translation_service.translate(
+                result.response_text,
+                source='en',
+                target=language
+            )
+            result.response_text = localized_response
+        else:
+            result = await request_handler(utterance)
+
+        # Speak response in guest's language
+        await call.speak(
+            result.response_text,
+            language=language
+        )
+
+        return result
+
+    def get_voice_for_language(self, language: str) -> VoiceConfig:
+        """Get appropriate TTS voice for language"""
+
+        voice_mapping = {
+            'en': VoiceConfig(
+                provider='elevenlabs',
+                voice_id='sarah_hospitality',
+                language='en-US'
+            ),
+            'es': VoiceConfig(
+                provider='elevenlabs',
+                voice_id='carmen_hospitality',
+                language='es-ES'
+            ),
+            'fr': VoiceConfig(
+                provider='elevenlabs',
+                voice_id='amelie_hospitality',
+                language='fr-FR'
+            ),
+            'de': VoiceConfig(
+                provider='elevenlabs',
+                voice_id='hans_hospitality',
+                language='de-DE'
+            ),
+            'zh': VoiceConfig(
+                provider='elevenlabs',
+                voice_id='mei_hospitality',
+                language='zh-CN'
+            ),
+            'ja': VoiceConfig(
+                provider='elevenlabs',
+                voice_id='yuki_hospitality',
+                language='ja-JP'
+            )
+        }
+
+        return voice_mapping.get(language, voice_mapping['en'])
+```
+
+## PMS Integration
+
+Property Management System integration is essential for contextual guest interactions.
+
+### PMS Integration Layer
+
+```python
+class PMSIntegration:
+    """Integration layer for Property Management Systems"""
+
+    def __init__(self, config: PMSConfig):
+        self.pms_client = self.init_pms_client(config)
+        self.cache = PMSCache(config.cache)
+
+    def init_pms_client(self, config: PMSConfig) -> PMSClient:
+        """Initialize PMS client based on system type"""
+
+        pms_clients = {
+            'opera': OperaPMSClient,
+            'protel': ProtelPMSClient,
+            'mews': MewsPMSClient,
+            'cloudbeds': CloudbedsPMSClient,
+            'apaleo': ApaleoPMSClient
+        }
+
+        client_class = pms_clients.get(config.pms_type)
+        return client_class(config)
+
+    async def get_guest_profile(
+        self,
+        identifier: str,
+        identifier_type: str = "phone"
+    ) -> Optional[GuestProfile]:
+        """Retrieve guest profile from PMS"""
+
+        # Check cache first
+        cache_key = f"guest:{identifier_type}:{identifier}"
+        cached = await self.cache.get(cache_key)
+        if cached:
+            return GuestProfile.from_cache(cached)
+
+        # Query PMS
+        if identifier_type == "phone":
+            profile = await self.pms_client.search_guest_by_phone(identifier)
+        elif identifier_type == "email":
+            profile = await self.pms_client.search_guest_by_email(identifier)
+        elif identifier_type == "loyalty_id":
+            profile = await self.pms_client.search_guest_by_loyalty(identifier)
+        else:
+            profile = await self.pms_client.get_guest(identifier)
+
+        if profile:
+            await self.cache.set(cache_key, profile.to_cache(), ttl=3600)
+
+        return profile
+
+    async def get_active_reservation(
+        self,
+        room_number: str
+    ) -> Optional[Reservation]:
+        """Get current active reservation for a room"""
+
+        return await self.pms_client.get_in_house_reservation(
+            room_number=room_number
+        )
+
+    async def create_reservation(
+        self,
+        guest: GuestProfile,
+        room_type: RoomType,
+        rate: Rate,
+        check_in: date,
+        check_out: date,
+        special_requests: Optional[str] = None
+    ) -> Reservation:
+        """Create new reservation in PMS"""
+
+        reservation_data = {
+            'guest_id': guest.id,
+            'room_type_code': room_type.code,
+            'rate_plan_code': rate.plan_code,
+            'arrival_date': check_in.isoformat(),
+            'departure_date': check_out.isoformat(),
+            'adults': guest.default_adults or 1,
+            'children': 0,
+            'special_requests': special_requests,
+            'source': 'VOICE_AI',
+            'market_segment': 'DIRECT'
+        }
+
+        # Add loyalty info if available
+        if guest.loyalty_id:
+            reservation_data['loyalty_id'] = guest.loyalty_id
+            reservation_data['loyalty_tier'] = guest.loyalty_tier
+
+        reservation = await self.pms_client.create_reservation(reservation_data)
+
+        # Clear related caches
+        await self.cache.delete(f"availability:{room_type.code}:{check_in}")
+
+        return reservation
+
+    async def post_charge(
+        self,
+        reservation_id: str,
+        charge: Charge
+    ) -> ChargeResult:
+        """Post charge to guest folio"""
+
+        return await self.pms_client.post_charge(
+            reservation_id=reservation_id,
+            amount=charge.amount,
+            description=charge.description,
+            revenue_center=charge.revenue_center,
+            reference=charge.reference
+        )
+```
+
+## Upselling and Promotions
+
+Voice AI can naturally incorporate upselling into conversations based on context and guest preferences.
+
+### Intelligent Upselling
+
+```python
+class IntelligentUpsellEngine:
+    """Context-aware upselling for hospitality voice AI"""
+
+    def __init__(self, config: UpsellConfig):
+        self.offer_engine = OfferEngine(config.offers)
+        self.personalization = PersonalizationEngine(config.personalization)
+        self.analytics = UpsellAnalytics(config.analytics)
+
+    async def get_contextual_upsells(
+        self,
+        context: InteractionContext
+    ) -> List[UpsellOffer]:
+        """Get relevant upsell offers based on context"""
+
+        offers = []
+
+        # Reservation upsells
+        if context.type == "reservation":
+            offers.extend(await self.get_reservation_upsells(context))
+
+        # Room service upsells
+        elif context.type == "room_service":
+            offers.extend(await self.get_dining_upsells(context))
+
+        # Concierge upsells
+        elif context.type == "concierge":
+            offers.extend(await self.get_experience_upsells(context))
+
+        # Personalize and rank
+        personalized_offers = await self.personalization.rank_offers(
+            offers,
+            context.guest_profile
+        )
+
+        return personalized_offers[:2]  # Limit to avoid overwhelming
+
+    async def get_reservation_upsells(
+        self,
+        context: InteractionContext
+    ) -> List[UpsellOffer]:
+        """Get upsells during reservation flow"""
+
+        offers = []
+
+        # Room upgrade
+        upgrade_available = await self.offer_engine.check_room_upgrade(
+            base_room=context.selected_room,
+            dates=context.stay_dates
+        )
+
+        if upgrade_available:
+            offers.append(UpsellOffer(
+                type="room_upgrade",
+                title=f"Upgrade to {upgrade_available.room_type.name}",
+                description=upgrade_available.value_proposition,
+                price_difference=upgrade_available.incremental_cost,
+                script=self.generate_upgrade_script(upgrade_available)
+            ))
+
+        # Package additions
+        if context.is_leisure_stay:
+            packages = await self.offer_engine.get_relevant_packages(
+                stay_dates=context.stay_dates,
+                guest_profile=context.guest_profile
+            )
+            for package in packages[:2]:
+                offers.append(UpsellOffer(
+                    type="package",
+                    title=package.name,
+                    description=package.description,
+                    price=package.price,
+                    script=self.generate_package_script(package)
+                ))
+
+        # Early check-in / late checkout
+        if context.arrival_time and context.arrival_time.hour < 15:
+            offers.append(UpsellOffer(
+                type="early_checkin",
+                title="Early Check-in",
+                description="Guarantee your room is ready when you arrive",
+                price=self.config.early_checkin_fee,
+                script="I noticed you may be arriving early. Would you like to guarantee early check-in for an additional {price}?"
+            ))
+
+        return offers
+
+    async def present_upsell(
+        self,
+        call: Call,
+        offer: UpsellOffer,
+        context: InteractionContext
+    ) -> UpsellResult:
+        """Present upsell offer naturally in conversation"""
+
+        # Use personalized script
+        script = offer.script.format(
+            guest_name=context.guest_profile.preferred_name if context.guest_profile else "there",
+            price=self.format_currency(offer.price or offer.price_difference),
+            value=offer.value_proposition
+        )
+
+        await call.speak(script)
+
+        response = await call.listen()
+        intent = await self.nlp_engine.classify_upsell_response(response)
+
+        if intent == UpsellResponse.ACCEPT:
+            # Apply upsell
+            result = await self.apply_upsell(offer, context)
+
+            await call.speak(
+                f"Wonderful! I've added that to your reservation. "
+                f"{offer.confirmation_message}"
+            )
+
+            # Track for analytics
+            await self.analytics.log_upsell(
+                offer=offer,
+                result="accepted",
+                context=context
+            )
+
+            return UpsellResult(accepted=True, offer=offer, result=result)
+
+        elif intent == UpsellResponse.INTERESTED:
+            # Provide more details
+            await call.speak(offer.detailed_description)
+            return await self.present_upsell(call, offer, context)
+
+        else:
+            # Track decline
+            await self.analytics.log_upsell(
+                offer=offer,
+                result="declined",
+                context=context
+            )
+
+            return UpsellResult(accepted=False, offer=offer)
+
+    def generate_upgrade_script(
+        self,
+        upgrade: RoomUpgradeOffer
+    ) -> str:
+        """Generate natural upgrade offer script"""
+
+        benefits = upgrade.room_type.key_benefits[:2]
+        benefits_text = " and ".join(benefits)
+
+        if upgrade.incremental_cost <= 30:
+            return (
+                f"I noticed our {upgrade.room_type.name} is available, which offers "
+                f"{benefits_text}. For just {self.format_currency(upgrade.incremental_cost)} "
+                f"more per night, would you like to upgrade?"
+            )
+        else:
+            return (
+                f"Would you like to enhance your stay with our {upgrade.room_type.name}? "
+                f"It features {benefits_text}. The upgrade is "
+                f"{self.format_currency(upgrade.incremental_cost)} per night."
+            )
+```
+
+## Summary
+
+Hospitality voice AI creates memorable guest experiences while optimizing operational efficiency. Key implementation considerations include:
+
+1. **Leverage PMS integration** for personalized, context-aware interactions that recognize returning guests
+2. **Support multilingual capabilities** to welcome international travelers in their preferred language
+3. **Design conversational flows** that feel like talking to a knowledgeable concierge, not a system
+4. **Integrate upselling naturally** based on guest preferences and stay context
+5. **Handle the full guest journey** from pre-arrival through post-stay follow-up
+6. **Maintain 24/7 availability** for room service, concierge, and guest inquiries
+
+The hospitality industry's focus on guest experience makes voice AI a natural fit, enabling properties to deliver consistent, personalized service at any hour while allowing staff to focus on high-touch interactions that benefit most from human warmth.

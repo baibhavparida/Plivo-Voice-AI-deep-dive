@@ -1,0 +1,666 @@
+---
+title: "Intent Recognition for Voice AI"
+description: "Comprehensive guide to intent recognition in voice AI systems, covering rule-based and ML approaches, multi-intent detection, confidence thresholds, and fallback handling strategies."
+category: "foundations"
+tags:
+  - intent-recognition
+  - NLU
+  - voice-ai
+  - machine-learning
+  - dialogue-systems
+relatedTopics:
+  - entity-extraction
+  - dialogue-state
+  - sentiment-analysis
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Intent Recognition for Voice AI
+
+Intent recognition is the process of determining what a user wants to accomplish from their spoken utterance. In voice AI systems, this component bridges the gap between raw transcribed text and actionable system responses.
+
+## What is Intent Recognition?
+
+Intent recognition (also called intent classification or intent detection) identifies the underlying goal or purpose behind a user's utterance. Unlike text-based systems, voice AI intent recognition must handle:
+
+- **ASR errors**: Misrecognized words that alter meaning
+- **Disfluencies**: Filled pauses ("um", "uh"), false starts, and corrections
+- **Incomplete utterances**: Users who stop mid-sentence or change direction
+- **Ambient noise artifacts**: Background sounds transcribed as words
+
+### Intent vs. Entity vs. Utterance
+
+| Component | Definition | Example |
+|-----------|------------|---------|
+| **Utterance** | The user's complete spoken input | "Book me a flight to New York tomorrow morning" |
+| **Intent** | The goal the user wants to achieve | `book_flight` |
+| **Entities** | Specific data points within the utterance | destination: "New York", date: "tomorrow morning" |
+
+### Voice-Specific Challenges
+
+```
+User says: "I want to... um... actually, can you book a hotel, no wait, a flight"
+
+Text system sees: "I want to um actually can you book a hotel no wait a flight"
+
+Required processing:
+1. Disfluency removal: "can you book a flight"
+2. Intent detection: book_flight (not book_hotel)
+3. Confidence assessment: Lower due to self-correction
+```
+
+## Rule-Based vs ML-Based Approaches
+
+### Rule-Based Intent Recognition
+
+Rule-based systems use predefined patterns, keywords, and regular expressions to match intents.
+
+**Pattern Matching Example**:
+
+```python
+class RuleBasedIntentClassifier:
+    def __init__(self):
+        self.intent_patterns = {
+            'book_flight': [
+                r'\b(book|reserve|get)\b.*\b(flight|plane|ticket)\b',
+                r'\b(fly|flying)\b.*\b(to|from)\b',
+                r'\bairfare\b',
+            ],
+            'check_status': [
+                r'\b(check|what|where)\b.*\b(status|flight)\b',
+                r'\b(track|tracking)\b.*\bflight\b',
+                r'\bis my flight\b',
+            ],
+            'cancel_booking': [
+                r'\b(cancel|refund)\b.*\b(flight|booking|reservation)\b',
+                r'\bdon\'t want\b.*\bflight\b',
+            ]
+        }
+
+    def classify(self, utterance: str) -> tuple[str, float]:
+        utterance_lower = utterance.lower()
+
+        for intent, patterns in self.intent_patterns.items():
+            for pattern in patterns:
+                if re.search(pattern, utterance_lower):
+                    return intent, 1.0  # Binary confidence
+
+        return 'unknown', 0.0
+```
+
+**Advantages**:
+- Fully interpretable and debuggable
+- No training data required
+- Deterministic behavior
+- Easy to add new intents quickly
+
+**Disadvantages**:
+- Poor generalization to unseen phrasings
+- Maintenance burden grows with intent count
+- Cannot handle ambiguity gracefully
+- Difficult to capture linguistic variation
+
+### ML-Based Intent Recognition
+
+Machine learning approaches learn patterns from labeled training data.
+
+**Common Architectures**:
+
+| Architecture | Description | Best For |
+|--------------|-------------|----------|
+| **Logistic Regression + TF-IDF** | Simple baseline, fast inference | Small intent sets (< 20) |
+| **CNN Text Classifier** | Convolutional filters capture n-gram patterns | Medium complexity |
+| **BiLSTM + Attention** | Sequential modeling with focus mechanism | Longer utterances |
+| **BERT/DistilBERT** | Pre-trained transformer, fine-tuned | High accuracy requirements |
+| **SetFit** | Few-shot learning with sentence transformers | Limited training data |
+
+**BERT-Based Classifier Example**:
+
+```python
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch
+
+class BERTIntentClassifier:
+    def __init__(self, model_path: str, intent_labels: list[str]):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        self.intent_labels = intent_labels
+        self.model.eval()
+
+    def classify(self, utterance: str) -> dict:
+        inputs = self.tokenizer(
+            utterance,
+            return_tensors="pt",
+            truncation=True,
+            max_length=128
+        )
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            probs = torch.softmax(outputs.logits, dim=-1)[0]
+
+        # Get top predictions
+        top_k = torch.topk(probs, k=3)
+
+        return {
+            'top_intent': self.intent_labels[top_k.indices[0]],
+            'confidence': top_k.values[0].item(),
+            'alternatives': [
+                {'intent': self.intent_labels[idx], 'confidence': conf.item()}
+                for idx, conf in zip(top_k.indices[1:], top_k.values[1:])
+            ]
+        }
+```
+
+### Hybrid Approach
+
+Production voice AI systems often combine both approaches:
+
+```python
+class HybridIntentClassifier:
+    def __init__(self, rule_classifier, ml_classifier):
+        self.rule_classifier = rule_classifier
+        self.ml_classifier = ml_classifier
+        self.high_confidence_intents = {'emergency', 'cancel', 'help'}
+
+    def classify(self, utterance: str) -> dict:
+        # Check rule-based first for critical intents
+        rule_intent, rule_conf = self.rule_classifier.classify(utterance)
+
+        if rule_intent in self.high_confidence_intents and rule_conf > 0:
+            return {'intent': rule_intent, 'confidence': 1.0, 'source': 'rules'}
+
+        # Fall back to ML for nuanced classification
+        ml_result = self.ml_classifier.classify(utterance)
+
+        # Boost confidence if both agree
+        if ml_result['top_intent'] == rule_intent:
+            ml_result['confidence'] = min(1.0, ml_result['confidence'] * 1.2)
+
+        return {**ml_result, 'source': 'ml'}
+```
+
+## Training Intent Classifiers
+
+### Data Collection Strategies
+
+**1. Seed Expansion**:
+Start with seed phrases and expand using:
+- Paraphrasing (manual or automated)
+- Synonym substitution
+- Template-based generation
+
+```python
+def expand_seed_phrases(seeds: list[str], templates: list[str]) -> list[str]:
+    """Expand seed phrases using templates"""
+    expanded = []
+
+    # Example templates for "book_flight" intent
+    # seeds = ["flight", "plane ticket", "airfare"]
+    # templates = ["I want to book a {}", "Can you get me a {}", "I need a {}"]
+
+    for seed in seeds:
+        for template in templates:
+            expanded.append(template.format(seed))
+
+    return expanded
+```
+
+**2. Production Log Mining**:
+Extract and label real user utterances from logs.
+
+**3. Active Learning**:
+Prioritize labeling utterances where the model is uncertain.
+
+```python
+def select_uncertain_samples(model, unlabeled_data: list[str], n: int = 100):
+    """Select samples with highest uncertainty for labeling"""
+    uncertainties = []
+
+    for utterance in unlabeled_data:
+        result = model.classify(utterance)
+        # Entropy-based uncertainty
+        probs = result['all_probabilities']
+        entropy = -sum(p * log(p) for p in probs if p > 0)
+        uncertainties.append((utterance, entropy))
+
+    # Return top N most uncertain
+    uncertainties.sort(key=lambda x: x[1], reverse=True)
+    return [u[0] for u in uncertainties[:n]]
+```
+
+### Training Best Practices
+
+**Data Quality Guidelines**:
+
+| Aspect | Recommendation |
+|--------|---------------|
+| **Samples per intent** | Minimum 50-100 for ML, 200+ for production |
+| **Class balance** | Keep ratio within 1:10 between smallest and largest |
+| **Negative examples** | Include out-of-scope utterances explicitly |
+| **Variation** | Cover different phrasings, lengths, and styles |
+
+**Voice-Specific Augmentation**:
+
+```python
+def voice_augment(utterance: str) -> list[str]:
+    """Generate voice-specific variations"""
+    augmented = [utterance]
+
+    # Simulate ASR errors (homophones)
+    homophones = {'to': 'two', 'for': 'four', 'their': 'there'}
+    for original, replacement in homophones.items():
+        if original in utterance.lower():
+            augmented.append(utterance.lower().replace(original, replacement))
+
+    # Add disfluencies
+    disfluencies = ['um ', 'uh ', 'like ', 'you know ']
+    words = utterance.split()
+    if len(words) > 3:
+        insert_pos = len(words) // 2
+        for d in disfluencies:
+            augmented.append(' '.join(words[:insert_pos] + [d.strip()] + words[insert_pos:]))
+
+    # Simulate partial utterances
+    if len(words) > 4:
+        augmented.append(' '.join(words[:-2]))  # Cut off last 2 words
+
+    return augmented
+```
+
+## Multi-Intent Detection
+
+Real conversations often contain multiple intents in a single utterance.
+
+### Detection Approaches
+
+**1. Multi-Label Classification**:
+
+```python
+class MultiIntentClassifier:
+    def __init__(self, model, threshold: float = 0.5):
+        self.model = model
+        self.threshold = threshold
+
+    def classify(self, utterance: str) -> list[dict]:
+        # Get probabilities for all intents
+        outputs = self.model.predict_proba(utterance)
+
+        # Return all intents above threshold
+        detected_intents = []
+        for intent, prob in outputs.items():
+            if prob >= self.threshold:
+                detected_intents.append({
+                    'intent': intent,
+                    'confidence': prob
+                })
+
+        return sorted(detected_intents, key=lambda x: -x['confidence'])
+```
+
+**2. Utterance Segmentation**:
+
+```python
+def segment_and_classify(utterance: str, classifier) -> list[dict]:
+    """Segment compound utterances and classify each segment"""
+
+    # Common conjunctions that signal new intents
+    splitters = [' and ', ' also ', ' plus ', ' but ', ' then ']
+
+    segments = [utterance]
+    for splitter in splitters:
+        new_segments = []
+        for seg in segments:
+            new_segments.extend(seg.split(splitter))
+        segments = new_segments
+
+    # Classify each segment
+    results = []
+    for segment in segments:
+        segment = segment.strip()
+        if len(segment) > 3:  # Skip very short segments
+            result = classifier.classify(segment)
+            results.append({
+                'segment': segment,
+                'intent': result['top_intent'],
+                'confidence': result['confidence']
+            })
+
+    return results
+```
+
+**Example Multi-Intent Handling**:
+
+```
+User: "Book a flight to Chicago and also reserve a hotel room"
+
+Segmentation result:
+  Segment 1: "Book a flight to Chicago" -> book_flight (0.95)
+  Segment 2: "reserve a hotel room" -> book_hotel (0.92)
+
+Dialogue system response:
+  "I can help with both. Let's start with your flight to Chicago.
+   What dates are you looking to travel?"
+```
+
+### Priority and Ordering
+
+When multiple intents are detected, establish handling priority:
+
+```python
+INTENT_PRIORITY = {
+    'emergency': 1,      # Handle immediately
+    'cancel': 2,         # Destructive actions need confirmation
+    'complaint': 3,      # Escalation triggers
+    'booking': 4,        # Transactional
+    'inquiry': 5,        # Informational
+    'greeting': 6,       # Social
+}
+
+def prioritize_intents(detected_intents: list[dict]) -> list[dict]:
+    """Sort intents by business priority"""
+    return sorted(
+        detected_intents,
+        key=lambda x: INTENT_PRIORITY.get(x['intent'], 99)
+    )
+```
+
+## Confidence Thresholds
+
+Confidence thresholds determine when the system acts autonomously versus seeking clarification.
+
+### Threshold Strategies
+
+```
+                    CONFIDENCE SPECTRUM
+    |----------|--------------|--------------|----------|
+    0         0.3            0.6            0.85        1.0
+    |          |              |              |          |
+    Reject   Clarify      Low Conf       High Conf   Certain
+             Ask user     Proceed with   Proceed
+             to rephrase  confirmation   directly
+```
+
+**Dynamic Threshold Implementation**:
+
+```python
+class ConfidenceHandler:
+    def __init__(self):
+        self.thresholds = {
+            'high_risk': {  # Financial, cancellation
+                'auto_proceed': 0.95,
+                'confirm': 0.75,
+                'clarify': 0.50,
+            },
+            'medium_risk': {  # Booking, updates
+                'auto_proceed': 0.85,
+                'confirm': 0.65,
+                'clarify': 0.40,
+            },
+            'low_risk': {  # Inquiries, FAQ
+                'auto_proceed': 0.70,
+                'confirm': 0.50,
+                'clarify': 0.30,
+            }
+        }
+
+    def get_action(self, intent: str, confidence: float) -> str:
+        risk_level = self._get_risk_level(intent)
+        thresholds = self.thresholds[risk_level]
+
+        if confidence >= thresholds['auto_proceed']:
+            return 'proceed'
+        elif confidence >= thresholds['confirm']:
+            return 'confirm'
+        elif confidence >= thresholds['clarify']:
+            return 'clarify'
+        else:
+            return 'fallback'
+
+    def _get_risk_level(self, intent: str) -> str:
+        high_risk = {'cancel', 'payment', 'transfer'}
+        medium_risk = {'book', 'modify', 'update'}
+
+        if intent in high_risk:
+            return 'high_risk'
+        elif intent in medium_risk:
+            return 'medium_risk'
+        return 'low_risk'
+```
+
+### Confidence Calibration
+
+Raw model probabilities are often poorly calibrated. Apply post-hoc calibration:
+
+```python
+from sklearn.calibration import CalibratedClassifierCV
+
+def calibrate_classifier(model, calibration_data, calibration_labels):
+    """Apply Platt scaling or isotonic regression"""
+    calibrated = CalibratedClassifierCV(
+        model,
+        method='sigmoid',  # Platt scaling
+        cv='prefit'
+    )
+    calibrated.fit(calibration_data, calibration_labels)
+    return calibrated
+```
+
+**Calibration Validation**:
+
+| Confidence Bin | Expected Accuracy | Actual Accuracy | Calibration |
+|----------------|-------------------|-----------------|-------------|
+| 0.9 - 1.0 | 95% | 93% | Good |
+| 0.8 - 0.9 | 85% | 78% | Overconfident |
+| 0.7 - 0.8 | 75% | 72% | Good |
+| 0.6 - 0.7 | 65% | 55% | Overconfident |
+
+## Fallback Handling
+
+When intent recognition fails, fallback strategies prevent conversation breakdown.
+
+### Fallback Hierarchy
+
+```python
+class FallbackHandler:
+    def __init__(self, clarification_generator, human_handoff):
+        self.clarification_generator = clarification_generator
+        self.human_handoff = human_handoff
+        self.fallback_count = 0
+        self.max_fallbacks = 3
+
+    def handle_fallback(self, utterance: str, context: dict) -> dict:
+        self.fallback_count += 1
+
+        # Level 1: Targeted clarification
+        if self.fallback_count == 1:
+            return self._targeted_clarification(utterance, context)
+
+        # Level 2: Option presentation
+        elif self.fallback_count == 2:
+            return self._present_options(context)
+
+        # Level 3: Human handoff
+        else:
+            return self._escalate_to_human(utterance, context)
+
+    def _targeted_clarification(self, utterance: str, context: dict) -> dict:
+        """Ask specific clarifying question"""
+        # Use partial understanding
+        partial_entities = context.get('extracted_entities', {})
+
+        if partial_entities:
+            return {
+                'response': f"I understood you mentioned {list(partial_entities.values())[0]}. "
+                           f"Could you tell me what you'd like to do with that?",
+                'action': 'clarify'
+            }
+
+        return {
+            'response': "I didn't quite catch that. Could you rephrase what you'd like to do?",
+            'action': 'clarify'
+        }
+
+    def _present_options(self, context: dict) -> dict:
+        """Present menu of common intents"""
+        recent_intents = context.get('session_intents', [])
+
+        return {
+            'response': "Let me help you with one of these options: "
+                       "checking your order status, making a new booking, "
+                       "or speaking with a representative. Which would you like?",
+            'action': 'present_options',
+            'options': ['check_status', 'new_booking', 'human_agent']
+        }
+
+    def _escalate_to_human(self, utterance: str, context: dict) -> dict:
+        """Transfer to human agent"""
+        return {
+            'response': "Let me connect you with a team member who can help.",
+            'action': 'handoff',
+            'handoff_context': {
+                'utterance_history': context.get('utterance_history', []),
+                'failed_utterance': utterance,
+                'session_id': context.get('session_id')
+            }
+        }
+```
+
+### Out-of-Scope Detection
+
+Explicitly detect when utterances fall outside the system's capabilities:
+
+```python
+class OutOfScopeDetector:
+    def __init__(self, in_scope_classifier, oos_threshold: float = 0.6):
+        self.classifier = in_scope_classifier
+        self.oos_threshold = oos_threshold
+
+    def is_out_of_scope(self, utterance: str) -> tuple[bool, float]:
+        """
+        Binary classifier trained on in-scope vs out-of-scope examples
+        Returns (is_oos, confidence)
+        """
+        result = self.classifier.classify(utterance)
+
+        # Method 1: Dedicated OOS class
+        if result['top_intent'] == 'out_of_scope':
+            return True, result['confidence']
+
+        # Method 2: Low max confidence across all intents
+        if result['confidence'] < self.oos_threshold:
+            return True, 1 - result['confidence']
+
+        return False, result['confidence']
+```
+
+## Voice-Specific Optimizations
+
+### Handling ASR Errors
+
+```python
+class ASRRobustClassifier:
+    def __init__(self, base_classifier, phonetic_index):
+        self.classifier = base_classifier
+        self.phonetic_index = phonetic_index
+
+    def classify_with_asr_correction(self, utterance: str, asr_alternatives: list[str] = None):
+        """
+        Use ASR n-best list for more robust classification
+        """
+        candidates = [utterance]
+
+        if asr_alternatives:
+            candidates.extend(asr_alternatives)
+
+        # Classify all candidates
+        results = []
+        for candidate in candidates:
+            result = self.classifier.classify(candidate)
+            results.append({
+                'utterance': candidate,
+                'intent': result['top_intent'],
+                'confidence': result['confidence']
+            })
+
+        # Return highest confidence result
+        return max(results, key=lambda x: x['confidence'])
+```
+
+### Streaming Intent Detection
+
+For real-time voice, detect intents before utterance completion:
+
+```python
+class StreamingIntentDetector:
+    def __init__(self, classifier, early_detection_threshold: float = 0.9):
+        self.classifier = classifier
+        self.early_threshold = early_detection_threshold
+        self.buffer = ""
+
+    def process_partial(self, partial_transcript: str) -> dict:
+        """Process streaming transcript for early intent detection"""
+        self.buffer = partial_transcript
+
+        result = self.classifier.classify(partial_transcript)
+
+        if result['confidence'] >= self.early_threshold:
+            return {
+                'status': 'early_detection',
+                'intent': result['top_intent'],
+                'confidence': result['confidence'],
+                'can_interrupt': True
+            }
+
+        return {
+            'status': 'accumulating',
+            'preliminary_intent': result['top_intent'],
+            'confidence': result['confidence'],
+            'can_interrupt': False
+        }
+```
+
+## Performance Metrics
+
+### Key Metrics for Intent Recognition
+
+| Metric | Formula | Target |
+|--------|---------|--------|
+| **Accuracy** | Correct / Total | > 90% |
+| **Precision** | TP / (TP + FP) per intent | > 85% |
+| **Recall** | TP / (TP + FN) per intent | > 85% |
+| **F1 Score** | 2 * (P * R) / (P + R) | > 85% |
+| **Fallback Rate** | Fallbacks / Total | < 10% |
+| **Confusion Rate** | Misclassifications between similar intents | < 5% |
+
+### Confusion Analysis
+
+```python
+def analyze_confusion(y_true, y_pred, intent_labels):
+    """Identify commonly confused intent pairs"""
+    from sklearn.metrics import confusion_matrix
+    import numpy as np
+
+    cm = confusion_matrix(y_true, y_pred, labels=intent_labels)
+
+    # Find off-diagonal high values (confusions)
+    confusions = []
+    for i, label_i in enumerate(intent_labels):
+        for j, label_j in enumerate(intent_labels):
+            if i != j and cm[i][j] > 0:
+                confusions.append({
+                    'true_intent': label_i,
+                    'predicted_intent': label_j,
+                    'count': cm[i][j],
+                    'rate': cm[i][j] / cm[i].sum()
+                })
+
+    return sorted(confusions, key=lambda x: -x['count'])
+```
+
+## Next Steps
+
+- **[Entity Extraction](/topics/foundations/language-understanding/entity-extraction)** - Extract specific data from recognized intents
+- **[Dialogue State Tracking](/topics/foundations/language-understanding/dialogue-state)** - Maintain context across turns
+- **[Sentiment Analysis](/topics/foundations/language-understanding/sentiment-analysis)** - Detect emotional signals in voice

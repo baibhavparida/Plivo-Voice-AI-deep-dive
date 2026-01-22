@@ -1,0 +1,445 @@
+---
+title: "Context Management for Voice Conversations"
+description: "Strategies for managing conversation history, context windows, memory systems, and RAG integration in voice AI agents"
+category: "llm-integration"
+tags: ["context-management", "conversation-history", "memory", "rag", "voice-ai", "summarization"]
+relatedTopics: ["prompt-engineering", "model-selection", "function-calling"]
+---
+
+# Context Management for Voice Conversations
+
+Voice conversations require careful balance between maintaining context and minimizing latency overhead. Unlike text chat, voice agents must process and respond in real-time, making efficient context management critical.
+
+## Strategy Comparison
+
+| Strategy | Token Usage | Information Retention | Latency Impact |
+|----------|-------------|----------------------|----------------|
+| Full History | O(n) | 100% | High |
+| Sliding Window | O(1) | Recent only | Low |
+| Summarization | O(log n) | ~91% | Medium |
+| Entity Extraction | O(k) | Key facts only | Low |
+| Hybrid | O(k + window) | 95%+ | Medium |
+
+## Sliding Window Context
+
+The simplest approach - keep only the most recent turns:
+
+```python
+class SlidingWindowContext:
+    """Maintain last N turns with efficient token usage."""
+
+    def __init__(self, max_turns: int = 10, max_tokens: int = 2000):
+        self.max_turns = max_turns
+        self.max_tokens = max_tokens
+        self.turns = []
+
+    def add_turn(self, role: str, content: str):
+        self.turns.append({"role": role, "content": content})
+        self._trim()
+
+    def _trim(self):
+        # Keep max_turns
+        while len(self.turns) > self.max_turns:
+            self.turns.pop(0)
+
+        # Also respect token limit
+        while self._count_tokens() > self.max_tokens and len(self.turns) > 2:
+            self.turns.pop(0)
+
+    def _count_tokens(self) -> int:
+        # Approximate: 1 token ~ 4 characters
+        return sum(len(t["content"]) // 4 for t in self.turns)
+
+    def get_messages(self) -> list:
+        return self.turns.copy()
+```
+
+**Use when:**
+- Conversations are short (under 10 turns)
+- Latency is critical
+- Context beyond recent turns rarely matters
+
+## Progressive Summarization
+
+Compress old context while preserving recent turns:
+
+```python
+class ProgressiveSummarizer:
+    """Summarize old context while preserving recent turns."""
+
+    def __init__(self, llm_client, window_size: int = 8):
+        self.llm = llm_client
+        self.window_size = window_size
+        self.summary = ""
+        self.recent_turns = []
+
+    async def add_turn(self, role: str, content: str):
+        self.recent_turns.append({"role": role, "content": content})
+
+        # Summarize when window exceeded
+        if len(self.recent_turns) > self.window_size * 2:
+            await self._summarize_old_turns()
+
+    async def _summarize_old_turns(self):
+        # Get turns to summarize (keep recent window)
+        to_summarize = self.recent_turns[:-self.window_size]
+
+        # Generate summary
+        summary_prompt = f"""
+        Previous summary: {self.summary}
+
+        New conversation turns:
+        {self._format_turns(to_summarize)}
+
+        Create a concise summary of key information, decisions, and context.
+        Focus on: customer intent, resolved issues, pending items, key entities.
+        """
+
+        self.summary = await self.llm.generate(summary_prompt)
+        self.recent_turns = self.recent_turns[-self.window_size:]
+
+    def build_context(self) -> str:
+        context_parts = []
+
+        if self.summary:
+            context_parts.append(f"[Conversation Summary]\n{self.summary}")
+
+        context_parts.append("[Recent Conversation]")
+        context_parts.append(self._format_turns(self.recent_turns))
+
+        return "\n\n".join(context_parts)
+```
+
+**Use when:**
+- Conversations are long (10+ turns)
+- Earlier context affects later responses
+- Acceptable to add ~200ms for summarization
+
+## Memory System Architecture
+
+Modern voice agents benefit from multi-layer memory:
+
+| Memory Type | Persistence | Content | Access Speed |
+|-------------|-------------|---------|--------------|
+| **Working Memory** | Session | Current context | Immediate |
+| **Short-Term** | Hours | Recent interactions | Fast |
+| **Long-Term** | Permanent | User preferences, history | Medium |
+| **Episodic** | Permanent | Specific conversations | Slow (indexed) |
+
+### Implementation
+
+```python
+class VoiceAgentMemory:
+    """Multi-layer memory system for voice agents."""
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        self.working_memory = {}
+        self.short_term = ShortTermStore(ttl_hours=24)
+        self.long_term = LongTermStore(user_id)
+        self.episodic = EpisodicMemory(user_id)
+
+    async def remember(self, key: str, value: any, memory_type: str = "working"):
+        """Store information in appropriate memory layer."""
+        if memory_type == "working":
+            self.working_memory[key] = value
+        elif memory_type == "short_term":
+            await self.short_term.set(key, value)
+        elif memory_type == "long_term":
+            await self.long_term.set(key, value)
+
+    async def recall(self, query: str) -> dict:
+        """Retrieve relevant memories across all layers."""
+        memories = {}
+
+        # Check working memory (exact match)
+        for key, value in self.working_memory.items():
+            if key.lower() in query.lower():
+                memories[f"working:{key}"] = value
+
+        # Check short-term (semantic search)
+        short_term_results = await self.short_term.search(query, top_k=3)
+        memories["short_term"] = short_term_results
+
+        # Check long-term (user preferences, facts)
+        user_profile = await self.long_term.get_profile()
+        memories["user_profile"] = user_profile
+
+        # Check episodic (similar past conversations)
+        similar_episodes = await self.episodic.search(query, top_k=2)
+        memories["past_conversations"] = similar_episodes
+
+        return memories
+
+    async def end_session(self):
+        """Persist important information from working memory."""
+        # Extract entities worth remembering
+        entities = self._extract_important_entities()
+
+        # Store in appropriate layers
+        for entity in entities:
+            if entity["importance"] > 0.8:
+                await self.long_term.set(entity["key"], entity["value"])
+            else:
+                await self.short_term.set(entity["key"], entity["value"])
+
+        # Store episode summary
+        episode_summary = await self._summarize_session()
+        await self.episodic.store(episode_summary)
+```
+
+## RAG Integration for Voice
+
+Retrieval-Augmented Generation enables voice agents to access large knowledge bases without consuming context window:
+
+```
++-------------------------------------------------------------+
+|                    VOICE RAG PIPELINE                        |
++-------------------------------------------------------------+
+|                                                             |
+|  User Speech: "What's the return policy for electronics?"   |
+|      |                                                      |
+|      v                                                      |
+|  [STT] -> "What's the return policy for electronics?"       |
+|      |                                                      |
+|      v                                                      |
+|  [Query Embedding] -> Vector representation                 |
+|      |                                                      |
+|      v                                                      |
+|  [Vector Search] -> Top 3 relevant policy documents         |
+|      |                                                      |
+|      v                                                      |
+|  [Context Assembly]                                         |
+|   - System prompt                                           |
+|   - Retrieved documents (ranked by relevance)               |
+|   - Conversation history (recent turns)                     |
+|   - User query                                              |
+|      |                                                      |
+|      v                                                      |
+|  [LLM Generation] -> Grounded response                      |
+|      |                                                      |
+|      v                                                      |
+|  [TTS] -> Audio response                                    |
+|                                                             |
++-------------------------------------------------------------+
+```
+
+### RAG Implementation
+
+```python
+from sentence_transformers import SentenceTransformer
+import chromadb
+
+class VoiceRAG:
+    def __init__(self, collection_name: str = "knowledge_base"):
+        self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
+        self.client = chromadb.PersistentClient(path="./chroma_db")
+        self.collection = self.client.get_or_create_collection(
+            name=collection_name,
+            metadata={"hnsw:space": "cosine"}
+        )
+
+    def index_documents(self, documents: list[dict]):
+        """Index documents for retrieval."""
+        embeddings = self.encoder.encode([d["content"] for d in documents])
+
+        self.collection.add(
+            embeddings=embeddings.tolist(),
+            documents=[d["content"] for d in documents],
+            metadatas=[{"source": d.get("source", "unknown")} for d in documents],
+            ids=[d["id"] for d in documents]
+        )
+
+    def retrieve(self, query: str, top_k: int = 3) -> list[str]:
+        """Retrieve relevant documents for query."""
+        query_embedding = self.encoder.encode(query)
+
+        results = self.collection.query(
+            query_embeddings=[query_embedding.tolist()],
+            n_results=top_k
+        )
+
+        return results["documents"][0]
+
+    def build_context(
+        self,
+        query: str,
+        conversation_history: list,
+        system_prompt: str
+    ) -> list[dict]:
+        """Build complete context for LLM."""
+
+        # Retrieve relevant knowledge
+        retrieved_docs = self.retrieve(query, top_k=3)
+
+        # Format retrieved context
+        knowledge_context = "\n\n".join([
+            f"[Document {i+1}]\n{doc}"
+            for i, doc in enumerate(retrieved_docs)
+        ])
+
+        # Build messages
+        messages = [
+            {
+                "role": "system",
+                "content": f"{system_prompt}\n\n## Relevant Knowledge\n{knowledge_context}"
+            }
+        ]
+
+        # Add conversation history
+        messages.extend(conversation_history)
+
+        # Add current query
+        messages.append({"role": "user", "content": query})
+
+        return messages
+```
+
+## Long-Context vs. Summarization Tradeoffs
+
+| Approach | Tokens Used | Accuracy | Latency | Cost |
+|----------|-------------|----------|---------|------|
+| Long Context (full) | 10,000+ | 100% | High | High |
+| Summarization | 500-1000 | ~91% | Low | Low |
+| RAG | 1000-2000 | 85-95% | Medium | Medium |
+| Hybrid | 2000-4000 | 95%+ | Medium | Medium |
+
+### Decision Framework
+
+```python
+def select_context_strategy(
+    conversation_length: int,  # turns
+    knowledge_required: bool,
+    latency_budget_ms: int,
+    accuracy_requirement: float  # 0-1
+) -> str:
+    """Select optimal context management strategy."""
+
+    # Short conversations: use full history
+    if conversation_length < 10:
+        return "full_history"
+
+    # Need external knowledge
+    if knowledge_required:
+        if accuracy_requirement > 0.95:
+            return "rag_with_long_context"
+        else:
+            return "rag_with_summarization"
+
+    # Latency critical
+    if latency_budget_ms < 500:
+        return "sliding_window"
+
+    # Accuracy critical
+    if accuracy_requirement > 0.95:
+        return "progressive_summarization"
+
+    # Default balanced approach
+    return "hybrid"
+```
+
+## Hybrid Memory System
+
+Combining multiple strategies for optimal results:
+
+```python
+class HybridContextManager:
+    """Combine sliding window, summarization, and RAG."""
+
+    def __init__(self, llm_client, rag_system):
+        self.llm = llm_client
+        self.rag = rag_system
+        self.short_term = []  # Last 8-10 exchanges
+        self.working_memory = {}  # Current session entities
+        self.summary = ""  # Compressed earlier context
+
+    def build_context(self, user_query: str) -> str:
+        """Build optimal context for LLM."""
+        context_parts = []
+
+        # 1. Retrieve relevant knowledge (RAG)
+        relevant_docs = self.rag.retrieve(user_query, top_k=3)
+        if relevant_docs:
+            context_parts.append(
+                "## Relevant Information\n" +
+                "\n".join(relevant_docs)
+            )
+
+        # 2. Add working memory (current session facts)
+        if self.working_memory:
+            facts = "\n".join([
+                f"- {k}: {v}"
+                for k, v in self.working_memory.items()
+            ])
+            context_parts.append(f"## Current Session Facts\n{facts}")
+
+        # 3. Add summary of earlier conversation
+        if self.summary:
+            context_parts.append(f"## Earlier Context\n{self.summary}")
+
+        # 4. Add recent conversation history
+        if self.short_term:
+            history = "\n".join([
+                f"{t['role']}: {t['content']}"
+                for t in self.short_term[-8:]
+            ])
+            context_parts.append(f"## Recent Conversation\n{history}")
+
+        return "\n\n".join(context_parts)
+
+    async def summarize_if_needed(self):
+        """Compress history if getting too long."""
+        if len(self.short_term) > 20:
+            # Summarize older turns
+            old_turns = self.short_term[:-10]
+            new_summary = await self.llm.summarize(old_turns)
+
+            # Merge with existing summary
+            if self.summary:
+                self.summary = await self.llm.generate(
+                    f"Merge these summaries:\n1. {self.summary}\n2. {new_summary}"
+                )
+            else:
+                self.summary = new_summary
+
+            # Keep only recent turns
+            self.short_term = self.short_term[-10:]
+```
+
+## Entity Extraction for Working Memory
+
+```python
+async def extract_entities(turn: str, llm_client) -> dict:
+    """Extract key entities from conversation turn."""
+
+    extraction_prompt = """
+    Extract key entities from this conversation turn.
+    Return JSON with:
+    - customer_name (if mentioned)
+    - order_id (if mentioned)
+    - product (if mentioned)
+    - date (if mentioned)
+    - issue_type (if mentioned)
+    - contact_info (if mentioned)
+
+    Turn: {turn}
+    """
+
+    response = await llm_client.generate(
+        extraction_prompt.format(turn=turn),
+        response_format={"type": "json_object"}
+    )
+
+    entities = json.loads(response)
+    return {k: v for k, v in entities.items() if v}
+```
+
+## Best Practices
+
+1. **Start simple** - Sliding window works for most short conversations
+2. **Monitor token usage** - Track context size impact on latency
+3. **Extract entities** - Store key facts separately from conversation flow
+4. **Summarize incrementally** - Don't wait until context overflows
+5. **Use RAG for knowledge** - Keep external info out of main context
+6. **Persist important data** - End-of-session save for returning users
+7. **Test recall accuracy** - Measure what information is retained

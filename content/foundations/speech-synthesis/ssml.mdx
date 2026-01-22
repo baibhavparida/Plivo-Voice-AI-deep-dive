@@ -1,0 +1,474 @@
+---
+title: SSML and Prosody Control
+description: Guide to Speech Synthesis Markup Language (SSML), prosody control, emotion and style transfer for fine-grained speech control
+category: Foundations
+tags:
+  - ssml
+  - prosody
+  - emotion
+  - style-transfer
+  - tts
+  - markup
+related:
+  - overview
+  - neural-tts
+  - optimization
+lastUpdated: "2025-01-21"
+difficulty: intermediate
+---
+
+## Introduction to SSML
+
+Speech Synthesis Markup Language (SSML) is a W3C standard XML-based markup language that provides fine-grained control over how text is converted to speech. SSML allows developers to control pronunciation, timing, pitch, rate, and other aspects of synthesized speech.
+
+<Callout type="info" title="Why SSML Matters">
+SSML bridges the gap between what you want to say and how you want it said. It gives you precise control over the audio output that text alone cannot provide.
+</Callout>
+
+## Common SSML Tags for Voice Agents
+
+### Basic Structure
+
+```xml
+<speak>
+    <!-- Your SSML content goes here -->
+</speak>
+```
+
+All SSML content must be wrapped in a `<speak>` root element.
+
+### Break (Pauses)
+
+Control pauses for natural rhythm:
+
+```xml
+<speak>
+    Welcome to our service.
+    <break time="500ms"/>
+    How can I help you today?
+</speak>
+```
+
+| Attribute | Values | Description |
+|-----------|--------|-------------|
+| time | Xms, Xs | Specific duration in milliseconds or seconds |
+| strength | none, x-weak, weak, medium, strong, x-strong | Relative pause strength |
+
+### Prosody Control
+
+The `<prosody>` tag controls speaking rate, pitch, and volume:
+
+```xml
+<speak>
+    <!-- Control speaking rate -->
+    <prosody rate="slow">Important information</prosody>
+
+    <!-- Adjust pitch -->
+    <prosody pitch="+10%">Excited response!</prosody>
+
+    <!-- Combine multiple attributes -->
+    <prosody rate="fast" pitch="-5%" volume="loud">
+        Urgent announcement!
+    </prosody>
+</speak>
+```
+
+### Prosody Tag Parameters
+
+| Attribute | Values | Effect |
+|-----------|--------|--------|
+| rate | x-slow, slow, medium, fast, x-fast, n% | Speaking speed |
+| pitch | x-low, low, medium, high, x-high, +/-n%, +/-nHz | Voice pitch |
+| volume | silent, x-soft, soft, medium, loud, x-loud, +/-ndB | Loudness |
+| range | x-low to x-high | Pitch variation range |
+
+### Phoneme (Pronunciation)
+
+Specify exact pronunciation using IPA or other phonetic alphabets:
+
+```xml
+<speak>
+    <phoneme alphabet="ipa" ph="tomeitou">tomato</phoneme>
+    <phoneme alphabet="x-sampa" ph='t@"meItoU'>tomato</phoneme>
+</speak>
+```
+
+### Say-As (Interpretation)
+
+Control how specific types of content are spoken:
+
+```xml
+<speak>
+    <!-- Date formats -->
+    <say-as interpret-as="date" format="mdy">01/20/2025</say-as>
+
+    <!-- Phone numbers -->
+    <say-as interpret-as="telephone">+1-555-123-4567</say-as>
+
+    <!-- Spell out -->
+    <say-as interpret-as="characters">API</say-as>
+
+    <!-- Cardinal numbers -->
+    <say-as interpret-as="cardinal">1234</say-as>
+
+    <!-- Ordinal numbers -->
+    <say-as interpret-as="ordinal">3</say-as>
+</speak>
+```
+
+| interpret-as | Description |
+|--------------|-------------|
+| characters | Spell out letter by letter |
+| cardinal | Read as number (one hundred) |
+| ordinal | Read as position (first, second) |
+| telephone | Phone number format |
+| date | Date with specified format |
+| time | Time format |
+| currency | Money format |
+| unit | Measurements |
+
+### Emphasis
+
+Add stress to words:
+
+```xml
+<speak>
+    This is <emphasis level="strong">critical</emphasis> information.
+    <emphasis level="moderate">Please</emphasis> confirm your details.
+</speak>
+```
+
+| Level | Effect |
+|-------|--------|
+| strong | Maximum emphasis |
+| moderate | Normal emphasis |
+| reduced | De-emphasized |
+| none | No emphasis |
+
+### Sub (Substitution)
+
+Replace text with alternate pronunciation:
+
+```xml
+<speak>
+    <sub alias="World Wide Web Consortium">W3C</sub>
+</speak>
+```
+
+### Audio (Embedded Audio)
+
+Insert audio files (provider support varies):
+
+```xml
+<speak>
+    <audio src="https://example.com/chime.mp3">
+        [Chime sound effect]
+    </audio>
+    Welcome back!
+</speak>
+```
+
+## Complete SSML Example
+
+```xml
+<speak>
+    <break time="300ms"/>
+
+    <prosody rate="95%" pitch="+5%">
+        Hello! Thank you for calling
+        <emphasis level="moderate">Acme Support</emphasis>.
+    </prosody>
+
+    <break time="500ms"/>
+
+    My name is <prosody rate="slow">Sarah</prosody>, and I'll be
+    assisting you today.
+
+    <break time="400ms"/>
+
+    For your reference, your ticket number is
+    <say-as interpret-as="characters">ABC</say-as>
+    <say-as interpret-as="cardinal">1234</say-as>.
+
+    <break time="300ms"/>
+
+    <prosody rate="slow" pitch="-5%">
+        How may I help you?
+    </prosody>
+</speak>
+```
+
+## Emotion and Style Transfer
+
+Beyond SSML, modern TTS systems offer various approaches to emotional and stylistic control.
+
+### Text-Based Emotion Inference
+
+ElevenLabs and similar providers interpret punctuation and descriptive text:
+
+```python
+# The model interprets emotional context from the text
+text = "I can't believe we won! This is amazing!"  # Triggers excited delivery
+text = "I'm so sorry for your loss."  # Triggers somber delivery
+text = "she said excitedly!"  # Stage direction affects delivery
+```
+
+<Callout type="info" title="Natural Emotion">
+Many modern TTS systems automatically infer appropriate emotion from text context, punctuation, and even explicit emotional descriptions.
+</Callout>
+
+### Explicit Style Tokens
+
+Some systems support prepending style tokens to input:
+
+```python
+# Prepend style indicator
+text = "<cheerful> Hello, how can I help you today?"
+text = "<professional> Your account balance is $1,234.56."
+text = "<empathetic> I understand this must be frustrating."
+```
+
+### Reference Audio Style
+
+Provide an emotional reference clip to transfer style:
+
+```python
+# Extract style from emotional reference
+style_vector = model.extract_style(emotional_audio)
+
+# Apply to neutral text
+emotional_speech = model.synthesize(
+    text="I'm sorry to hear that.",
+    style=style_vector,
+    intensity=0.8
+)
+```
+
+### VAD-Based Control (EmoSphere-TTS, EmoKnob)
+
+Continuous emotional control using Valence-Arousal-Dominance (VAD) coordinates:
+
+| Dimension | Description | Examples |
+|-----------|-------------|----------|
+| Valence | Positive/negative | Happy (+) vs. Sad (-) |
+| Arousal | Energy level | Excited (+) vs. Calm (-) |
+| Dominance | Control/power | Confident (+) vs. Submissive (-) |
+
+```python
+# Example VAD-based synthesis
+speech = model.synthesize(
+    text="Hello, how can I help?",
+    valence=0.8,    # Positive
+    arousal=0.6,    # Moderately energetic
+    dominance=0.5   # Neutral power
+)
+```
+
+## Provider-Specific Features
+
+### ElevenLabs
+
+**Stability and Similarity Sliders**:
+- **Stability**: Higher = more consistent, lower = more expressive
+- **Similarity**: How closely to match the original voice
+
+```python
+from elevenlabs import generate
+
+audio = generate(
+    text="Hello world!",
+    voice="Rachel",
+    model="eleven_monolingual_v1",
+    voice_settings={
+        "stability": 0.5,
+        "similarity_boost": 0.75
+    }
+)
+```
+
+### Azure Neural TTS
+
+Extensive SSML support including speaking styles:
+
+```xml
+<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis"
+       xmlns:mstts="https://www.w3.org/2001/mstts"
+       xml:lang="en-US">
+    <voice name="en-US-JennyNeural">
+        <mstts:express-as style="cheerful" styledegree="2">
+            That's wonderful news! I'm so happy for you!
+        </mstts:express-as>
+    </voice>
+</speak>
+```
+
+**Available Styles**:
+- cheerful, sad, angry, fearful
+- newscast, customer service
+- chat, assistant
+
+**Role-Playing**:
+
+```xml
+<mstts:express-as role="YoungAdultFemale">
+    This is a different character.
+</mstts:express-as>
+```
+
+### Google Cloud TTS
+
+Chirp 3: HD with style control:
+
+```xml
+<speak>
+    <google:style name="excited">
+        Congratulations on your achievement!
+    </google:style>
+</speak>
+```
+
+### OpenAI gpt-4o-mini-tts
+
+Instruction-following for natural style control:
+
+```python
+from openai import OpenAI
+
+client = OpenAI()
+
+response = client.audio.speech.create(
+    model="gpt-4o-mini-tts",
+    voice="alloy",
+    input="Hello! How can I help you today?",
+    instructions="Speak in a warm, friendly tone with moderate enthusiasm"
+)
+```
+
+## SSML Support Comparison
+
+| Provider | SSML Support | Emotion/Style | Notes |
+|----------|--------------|---------------|-------|
+| ElevenLabs | Limited | Text inference + sliders | Focuses on natural inference |
+| Cartesia | Basic | Limited | Speed-focused |
+| Amazon Polly | Full | Neural engine emotions | Most complete SSML |
+| Google Cloud | Full | Style tokens | Research-backed |
+| Azure | Full | Speaking styles + roles | Enterprise features |
+| OpenAI | Limited | Instruction following | Natural language control |
+
+## Best Practices
+
+### 1. Use Breaks for Natural Pacing
+
+```xml
+<speak>
+    <break time="200ms"/>
+    Welcome to our service.
+    <break time="400ms"/>
+    Let me help you with that.
+</speak>
+```
+
+### 2. Slow Down for Important Information
+
+```xml
+<speak>
+    Your confirmation number is
+    <prosody rate="slow">
+        <say-as interpret-as="characters">XYZ</say-as>
+        <say-as interpret-as="cardinal">789</say-as>
+    </prosody>
+</speak>
+```
+
+### 3. Match Emotion to Content
+
+```xml
+<speak>
+    <prosody pitch="-10%" rate="90%">
+        I understand this is frustrating.
+    </prosody>
+    <break time="500ms"/>
+    <prosody pitch="+5%">
+        Let me see what I can do to help.
+    </prosody>
+</speak>
+```
+
+### 4. Test Across Providers
+
+Different providers interpret SSML differently. Always test your markup with your specific provider.
+
+<Callout type="warning" title="Provider Variations">
+Not all SSML tags are supported by all providers. Always check your provider's documentation and test thoroughly.
+</Callout>
+
+### 5. Graceful Fallbacks
+
+```python
+def synthesize_with_fallback(text: str, ssml: str, provider):
+    """Try SSML first, fall back to plain text."""
+    try:
+        return provider.synthesize_ssml(ssml)
+    except SSMLNotSupportedError:
+        return provider.synthesize(text)
+```
+
+## Dynamic SSML Generation
+
+```python
+def generate_response_ssml(
+    greeting: str,
+    name: str,
+    message: str,
+    urgency: str = "normal"
+) -> str:
+    """Generate SSML for agent response."""
+
+    rate_map = {
+        "urgent": "fast",
+        "normal": "medium",
+        "calm": "slow"
+    }
+
+    return f"""
+<speak>
+    <prosody rate="{rate_map.get(urgency, 'medium')}">
+        {greeting}
+        <break time="300ms"/>
+        <emphasis level="moderate">{name}</emphasis>,
+        <break time="200ms"/>
+        {message}
+    </prosody>
+</speak>
+"""
+
+# Usage
+ssml = generate_response_ssml(
+    greeting="Hello",
+    name="John",
+    message="Your order has been shipped.",
+    urgency="normal"
+)
+```
+
+## Next Steps
+
+<RelatedTopics
+  topics={[
+    {
+      title: "TTS Optimization",
+      href: "/topics/foundations/speech-synthesis/optimization",
+      description: "Streaming synthesis and latency optimization"
+    },
+    {
+      title: "Provider Comparison",
+      href: "/topics/foundations/speech-synthesis/provider-comparison",
+      description: "Compare SSML support across providers"
+    },
+    {
+      title: "Neural TTS",
+      href: "/topics/foundations/speech-synthesis/neural-tts",
+      description: "Understanding the models that power TTS"
+    }
+  ]}
+/>

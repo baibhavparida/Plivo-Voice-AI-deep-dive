@@ -1,0 +1,1416 @@
+---
+title: "Voice AI SDK Reference"
+description: "Comprehensive guide to voice AI SDKs - installation, authentication, common operations, and best practices for Python, Node.js, and Go"
+category: "implementation"
+tags:
+  - sdk
+  - python
+  - nodejs
+  - go
+  - api
+  - integration
+relatedTopics:
+  - api-reference
+  - code-examples
+  - getting-started
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Voice AI SDK Reference
+
+This reference guide covers the available SDKs for building voice AI applications, including installation, authentication patterns, and common operations across Python, Node.js, and Go.
+
+## SDK Overview
+
+```
++------------------------------------------------------------------+
+|                    VOICE AI SDK ECOSYSTEM                         |
++------------------------------------------------------------------+
+|                                                                   |
+|  SPEECH-TO-TEXT SDKs                                              |
+|  +-------------------+  +-------------------+  +----------------+ |
+|  | Deepgram SDK      |  | AssemblyAI SDK    |  | Google Cloud   | |
+|  | Python, Node, Go  |  | Python, Node      |  | Speech SDK     | |
+|  +-------------------+  +-------------------+  +----------------+ |
+|                                                                   |
+|  LLM SDKs                                                         |
+|  +-------------------+  +-------------------+  +----------------+ |
+|  | OpenAI SDK        |  | Anthropic SDK     |  | LangChain      | |
+|  | Python, Node, Go  |  | Python, TypeScript|  | Python, JS     | |
+|  +-------------------+  +-------------------+  +----------------+ |
+|                                                                   |
+|  TEXT-TO-SPEECH SDKs                                              |
+|  +-------------------+  +-------------------+  +----------------+ |
+|  | ElevenLabs SDK    |  | Cartesia SDK      |  | PlayHT SDK     | |
+|  | Python, Node      |  | Python, Node      |  | Python, Node   | |
+|  +-------------------+  +-------------------+  +----------------+ |
+|                                                                   |
+|  TELEPHONY SDKs                                                   |
+|  +-------------------+  +-------------------+                     |
+|  | Plivo SDK         |  | Twilio SDK        |                     |
+|  | Python, Node, Go  |  | Python, Node      |                     |
+|  | PHP, Ruby, Java   |  | PHP, Ruby, Java   |                     |
+|  +-------------------+  +-------------------+                     |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+## Python SDK Reference
+
+### Installation
+
+Install the core dependencies for a complete voice AI stack:
+
+```bash
+# Core voice AI dependencies
+pip install openai anthropic deepgram-sdk elevenlabs
+
+# Telephony
+pip install plivo
+
+# Async and WebSocket support
+pip install websockets aiohttp httpx
+
+# Utilities
+pip install python-dotenv pydantic
+```
+
+For a production setup, create a `requirements.txt`:
+
+```text
+# requirements.txt
+openai>=1.12.0
+anthropic>=0.18.0
+deepgram-sdk>=3.0.0
+elevenlabs>=1.0.0
+plivo>=4.50.0
+websockets>=12.0
+aiohttp>=3.9.0
+httpx>=0.26.0
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+```
+
+### Authentication Patterns
+
+```python
+"""
+Authentication patterns for voice AI services
+"""
+
+import os
+from dataclasses import dataclass
+from dotenv import load_dotenv
+
+load_dotenv()
+
+@dataclass
+class VoiceAIConfig:
+    """Centralized configuration for voice AI services"""
+
+    # STT Configuration
+    deepgram_api_key: str
+    deepgram_model: str = "nova-2"
+
+    # LLM Configuration
+    openai_api_key: str
+    openai_model: str = "gpt-4-turbo-preview"
+
+    # TTS Configuration
+    elevenlabs_api_key: str
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+
+    # Telephony Configuration
+    plivo_auth_id: str = None
+    plivo_auth_token: str = None
+
+    @classmethod
+    def from_env(cls) -> "VoiceAIConfig":
+        """Load configuration from environment variables"""
+        return cls(
+            deepgram_api_key=os.getenv("DEEPGRAM_API_KEY"),
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
+            elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY"),
+            plivo_auth_id=os.getenv("PLIVO_AUTH_ID"),
+            plivo_auth_token=os.getenv("PLIVO_AUTH_TOKEN"),
+        )
+
+    def validate(self) -> bool:
+        """Validate required configuration is present"""
+        required = [
+            self.deepgram_api_key,
+            self.openai_api_key,
+            self.elevenlabs_api_key,
+        ]
+        return all(required)
+
+
+# Initialize clients with configuration
+class VoiceAIClients:
+    """Factory for creating authenticated API clients"""
+
+    def __init__(self, config: VoiceAIConfig):
+        self.config = config
+        self._openai = None
+        self._deepgram = None
+        self._plivo = None
+
+    @property
+    def openai(self):
+        """Lazy initialization of OpenAI client"""
+        if self._openai is None:
+            from openai import AsyncOpenAI
+            self._openai = AsyncOpenAI(api_key=self.config.openai_api_key)
+        return self._openai
+
+    @property
+    def deepgram(self):
+        """Lazy initialization of Deepgram client"""
+        if self._deepgram is None:
+            from deepgram import DeepgramClient
+            self._deepgram = DeepgramClient(self.config.deepgram_api_key)
+        return self._deepgram
+
+    @property
+    def plivo(self):
+        """Lazy initialization of Plivo client"""
+        if self._plivo is None and self.config.plivo_auth_id:
+            import plivo
+            self._plivo = plivo.RestClient(
+                auth_id=self.config.plivo_auth_id,
+                auth_token=self.config.plivo_auth_token
+            )
+        return self._plivo
+```
+
+### Common Operations
+
+#### Making Outbound Calls
+
+```python
+"""
+Outbound calling with Plivo
+"""
+
+import plivo
+from typing import Optional
+
+class OutboundCaller:
+    """Handles outbound call operations"""
+
+    def __init__(self, auth_id: str, auth_token: str):
+        self.client = plivo.RestClient(auth_id, auth_token)
+
+    def make_call(
+        self,
+        to_number: str,
+        from_number: str,
+        answer_url: str,
+        answer_method: str = "POST",
+        ring_timeout: int = 30,
+        machine_detection: bool = False,
+    ) -> dict:
+        """
+        Initiate an outbound call
+
+        Args:
+            to_number: Destination phone number (E.164 format)
+            from_number: Caller ID number
+            answer_url: Webhook URL for call handling
+            answer_method: HTTP method for webhook
+            ring_timeout: Seconds to wait for answer
+            machine_detection: Enable answering machine detection
+
+        Returns:
+            dict with call_uuid and request_id
+        """
+        params = {
+            "from_": from_number,
+            "to_": to_number,
+            "answer_url": answer_url,
+            "answer_method": answer_method,
+            "ring_timeout": ring_timeout,
+        }
+
+        if machine_detection:
+            params["machine_detection"] = "true"
+            params["machine_detection_time"] = 5000
+
+        response = self.client.calls.create(**params)
+
+        return {
+            "call_uuid": response.request_uuid,
+            "message": response.message
+        }
+
+    def end_call(self, call_uuid: str) -> bool:
+        """Terminate an active call"""
+        try:
+            self.client.calls.delete(call_uuid)
+            return True
+        except plivo.exceptions.ResourceNotFoundError:
+            return False
+
+    def transfer_call(
+        self,
+        call_uuid: str,
+        transfer_url: str,
+        legs: str = "aleg"
+    ) -> bool:
+        """Transfer an active call to a new URL"""
+        try:
+            self.client.calls.update(
+                call_uuid,
+                url=transfer_url,
+                legs=legs
+            )
+            return True
+        except Exception:
+            return False
+
+
+# Usage example
+caller = OutboundCaller(
+    auth_id="your_auth_id",
+    auth_token="your_auth_token"
+)
+
+result = caller.make_call(
+    to_number="+14155551234",
+    from_number="+14155550000",
+    answer_url="https://your-server.com/voice/answer"
+)
+print(f"Call initiated: {result['call_uuid']}")
+```
+
+#### Handling Inbound Calls
+
+```python
+"""
+Inbound call handling with voice AI integration
+"""
+
+from flask import Flask, request, Response
+import plivo
+
+app = Flask(__name__)
+
+@app.route("/voice/inbound", methods=["POST"])
+def handle_inbound():
+    """
+    Handle incoming calls and connect to voice AI
+
+    Expected form parameters from Plivo:
+    - CallUUID: Unique call identifier
+    - From: Caller's phone number
+    - To: Called number
+    - Direction: 'inbound' or 'outbound'
+    - CallStatus: Current call status
+    """
+    call_uuid = request.form.get("CallUUID")
+    from_number = request.form.get("From")
+    to_number = request.form.get("To")
+
+    print(f"Inbound call: {from_number} -> {to_number} ({call_uuid})")
+
+    # Build XML response
+    response = plivo.XML()
+
+    # Initial greeting
+    response.addSpeak(
+        "Thank you for calling. Please hold while I connect you to our assistant.",
+        voice="Polly.Amy",
+        language="en-US"
+    )
+
+    # Connect to WebSocket for bidirectional audio
+    stream = response.addStream(
+        f"wss://your-server.com/voice/stream/{call_uuid}",
+        bidirectional="true",
+        contentType="audio/x-l16;rate=8000",
+        audioTrack="inbound",
+        keepCallAlive="true"
+    )
+
+    return Response(str(response), mimetype="application/xml")
+
+
+@app.route("/voice/status", methods=["POST"])
+def call_status():
+    """Handle call status callbacks"""
+    call_uuid = request.form.get("CallUUID")
+    status = request.form.get("CallStatus")
+    duration = request.form.get("Duration")
+    hangup_cause = request.form.get("HangupCause")
+
+    print(f"Call {call_uuid} status: {status}")
+
+    if status == "completed":
+        print(f"Call ended after {duration}s, cause: {hangup_cause}")
+        # Trigger post-call processing (transcription, analytics, etc.)
+
+    return "", 200
+```
+
+#### Streaming Audio
+
+```python
+"""
+Bidirectional audio streaming with WebSockets
+"""
+
+import asyncio
+import json
+import base64
+import websockets
+from typing import AsyncIterator, Callable
+
+class AudioStreamHandler:
+    """Handles bidirectional audio streaming"""
+
+    def __init__(
+        self,
+        on_audio_received: Callable[[bytes], None],
+        sample_rate: int = 8000,
+        encoding: str = "linear16"
+    ):
+        self.on_audio_received = on_audio_received
+        self.sample_rate = sample_rate
+        self.encoding = encoding
+        self.audio_queue = asyncio.Queue()
+
+    async def handle_plivo_stream(self, websocket):
+        """
+        Handle Plivo's bidirectional stream protocol
+
+        Messages from Plivo:
+        - start: Stream initialized
+        - media: Audio data (base64 encoded)
+        - stop: Stream ended
+        """
+        try:
+            async for message in websocket:
+                data = json.loads(message)
+                event = data.get("event")
+
+                if event == "start":
+                    print(f"Stream started: {data.get('streamSid')}")
+
+                elif event == "media":
+                    # Decode incoming audio
+                    payload = data.get("media", {})
+                    audio_b64 = payload.get("payload")
+                    if audio_b64:
+                        audio_bytes = base64.b64decode(audio_b64)
+                        await self.on_audio_received(audio_bytes)
+
+                elif event == "stop":
+                    print("Stream stopped")
+                    break
+
+        except websockets.exceptions.ConnectionClosed:
+            print("WebSocket connection closed")
+
+    async def send_audio(
+        self,
+        websocket,
+        audio_stream: AsyncIterator[bytes]
+    ):
+        """Send audio back to the call"""
+        async for audio_chunk in audio_stream:
+            message = {
+                "event": "media",
+                "media": {
+                    "payload": base64.b64encode(audio_chunk).decode()
+                }
+            }
+            await websocket.send(json.dumps(message))
+
+    async def run(self, websocket, voice_agent):
+        """
+        Main stream handler connecting telephony to voice AI
+
+        Args:
+            websocket: The WebSocket connection
+            voice_agent: Your voice AI agent instance
+        """
+        # Buffer for accumulating audio
+        audio_buffer = bytearray()
+        silence_threshold = 0.5  # seconds
+        last_audio_time = asyncio.get_event_loop().time()
+
+        async def process_incoming():
+            nonlocal audio_buffer, last_audio_time
+
+            async for message in websocket:
+                data = json.loads(message)
+
+                if data.get("event") == "media":
+                    audio_b64 = data["media"]["payload"]
+                    audio_bytes = base64.b64decode(audio_b64)
+                    audio_buffer.extend(audio_bytes)
+                    last_audio_time = asyncio.get_event_loop().time()
+
+                elif data.get("event") == "stop":
+                    break
+
+        async def process_turns():
+            nonlocal audio_buffer
+
+            while True:
+                await asyncio.sleep(0.1)
+                current_time = asyncio.get_event_loop().time()
+
+                # Check for end of speech (silence detection)
+                if (len(audio_buffer) > 0 and
+                    current_time - last_audio_time > silence_threshold):
+
+                    # Process the accumulated audio
+                    audio_data = bytes(audio_buffer)
+                    audio_buffer = bytearray()
+
+                    # Get response from voice agent
+                    async for response_audio in voice_agent.process(audio_data):
+                        await self.send_audio(websocket, response_audio)
+
+        # Run both tasks concurrently
+        await asyncio.gather(
+            process_incoming(),
+            process_turns()
+        )
+```
+
+### Error Handling
+
+```python
+"""
+Comprehensive error handling for voice AI SDKs
+"""
+
+import asyncio
+from typing import TypeVar, Callable, Any
+from functools import wraps
+import logging
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar('T')
+
+class VoiceAIError(Exception):
+    """Base exception for voice AI operations"""
+    pass
+
+class STTError(VoiceAIError):
+    """Speech-to-text processing error"""
+    pass
+
+class LLMError(VoiceAIError):
+    """Language model error"""
+    pass
+
+class TTSError(VoiceAIError):
+    """Text-to-speech error"""
+    pass
+
+class TelephonyError(VoiceAIError):
+    """Telephony operation error"""
+    pass
+
+
+def retry_async(
+    max_attempts: int = 3,
+    delay: float = 1.0,
+    backoff: float = 2.0,
+    exceptions: tuple = (Exception,)
+):
+    """
+    Retry decorator for async functions
+
+    Args:
+        max_attempts: Maximum retry attempts
+        delay: Initial delay between retries (seconds)
+        backoff: Multiplier for delay after each retry
+        exceptions: Tuple of exceptions to catch
+    """
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        async def wrapper(*args, **kwargs) -> T:
+            current_delay = delay
+            last_exception = None
+
+            for attempt in range(max_attempts):
+                try:
+                    return await func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_attempts - 1:
+                        logger.warning(
+                            f"{func.__name__} failed (attempt {attempt + 1}/{max_attempts}): {e}"
+                        )
+                        await asyncio.sleep(current_delay)
+                        current_delay *= backoff
+
+            logger.error(f"{func.__name__} failed after {max_attempts} attempts")
+            raise last_exception
+
+        return wrapper
+    return decorator
+
+
+class ResilientVoiceClient:
+    """Voice AI client with built-in error handling and retries"""
+
+    def __init__(self, config):
+        self.config = config
+        self.clients = VoiceAIClients(config)
+
+    @retry_async(max_attempts=3, exceptions=(STTError,))
+    async def transcribe(self, audio: bytes) -> str:
+        """Transcribe audio with retry logic"""
+        try:
+            from deepgram import PrerecordedOptions
+
+            options = PrerecordedOptions(model="nova-2")
+            response = await asyncio.to_thread(
+                self.clients.deepgram.listen.prerecorded.v("1").transcribe_file,
+                {"buffer": audio, "mimetype": "audio/wav"},
+                options
+            )
+            return response.results.channels[0].alternatives[0].transcript
+
+        except Exception as e:
+            logger.error(f"STT error: {e}")
+            raise STTError(f"Transcription failed: {e}") from e
+
+    @retry_async(max_attempts=2, delay=0.5, exceptions=(LLMError,))
+    async def generate(self, prompt: str) -> str:
+        """Generate LLM response with retry logic"""
+        try:
+            response = await self.clients.openai.chat.completions.create(
+                model=self.config.openai_model,
+                messages=[{"role": "user", "content": prompt}],
+                timeout=30.0
+            )
+            return response.choices[0].message.content
+
+        except Exception as e:
+            logger.error(f"LLM error: {e}")
+            raise LLMError(f"Generation failed: {e}") from e
+
+    async def process_with_fallback(self, audio: bytes) -> bytes:
+        """
+        Process audio with fallback responses for errors
+        """
+        try:
+            transcript = await self.transcribe(audio)
+        except STTError:
+            # Return apology if STT fails
+            return await self._synthesize_fallback(
+                "I'm having trouble hearing you. Could you please repeat that?"
+            )
+
+        try:
+            response = await self.generate(transcript)
+        except LLMError:
+            # Return generic response if LLM fails
+            return await self._synthesize_fallback(
+                "I apologize, but I'm experiencing technical difficulties. "
+                "Please try again in a moment."
+            )
+
+        try:
+            return await self.synthesize(response)
+        except TTSError:
+            # Log error but return silence rather than crash
+            logger.error("TTS failed, returning silence")
+            return b""
+
+    async def _synthesize_fallback(self, text: str) -> bytes:
+        """Synthesize fallback message with minimal error handling"""
+        try:
+            return await self.synthesize(text)
+        except Exception:
+            return b""  # Return silence as last resort
+```
+
+## Node.js SDK Reference
+
+### Installation
+
+```bash
+# Core dependencies
+npm install openai @anthropic-ai/sdk @deepgram/sdk elevenlabs
+
+# Telephony
+npm install plivo
+
+# WebSocket and HTTP
+npm install ws axios
+
+# Utilities
+npm install dotenv zod
+```
+
+Create a `package.json`:
+
+```json
+{
+  "name": "voice-ai-agent",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "openai": "^4.28.0",
+    "@anthropic-ai/sdk": "^0.18.0",
+    "@deepgram/sdk": "^3.0.0",
+    "elevenlabs": "^1.0.0",
+    "plivo": "^4.50.0",
+    "ws": "^8.16.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.4.0",
+    "zod": "^3.22.0"
+  }
+}
+```
+
+### Authentication Patterns
+
+```typescript
+/**
+ * Configuration and authentication for voice AI services
+ */
+
+import { config } from 'dotenv';
+import { z } from 'zod';
+import OpenAI from 'openai';
+import { createClient as createDeepgramClient } from '@deepgram/sdk';
+import Plivo from 'plivo';
+
+config();
+
+// Configuration schema with validation
+const ConfigSchema = z.object({
+  deepgramApiKey: z.string().min(1),
+  openaiApiKey: z.string().min(1),
+  elevenlabsApiKey: z.string().min(1),
+  plivoAuthId: z.string().optional(),
+  plivoAuthToken: z.string().optional(),
+});
+
+type VoiceAIConfig = z.infer<typeof ConfigSchema>;
+
+export function loadConfig(): VoiceAIConfig {
+  const config = {
+    deepgramApiKey: process.env.DEEPGRAM_API_KEY,
+    openaiApiKey: process.env.OPENAI_API_KEY,
+    elevenlabsApiKey: process.env.ELEVENLABS_API_KEY,
+    plivoAuthId: process.env.PLIVO_AUTH_ID,
+    plivoAuthToken: process.env.PLIVO_AUTH_TOKEN,
+  };
+
+  return ConfigSchema.parse(config);
+}
+
+export class VoiceAIClients {
+  private config: VoiceAIConfig;
+  private _openai?: OpenAI;
+  private _deepgram?: ReturnType<typeof createDeepgramClient>;
+  private _plivo?: Plivo.Client;
+
+  constructor(config: VoiceAIConfig) {
+    this.config = config;
+  }
+
+  get openai(): OpenAI {
+    if (!this._openai) {
+      this._openai = new OpenAI({ apiKey: this.config.openaiApiKey });
+    }
+    return this._openai;
+  }
+
+  get deepgram() {
+    if (!this._deepgram) {
+      this._deepgram = createDeepgramClient(this.config.deepgramApiKey);
+    }
+    return this._deepgram;
+  }
+
+  get plivo(): Plivo.Client | undefined {
+    if (!this._plivo && this.config.plivoAuthId) {
+      this._plivo = new Plivo.Client(
+        this.config.plivoAuthId,
+        this.config.plivoAuthToken
+      );
+    }
+    return this._plivo;
+  }
+}
+```
+
+### Common Operations
+
+#### Making and Handling Calls
+
+```typescript
+/**
+ * Telephony operations with Plivo SDK
+ */
+
+import Plivo from 'plivo';
+import express from 'express';
+
+const app = express();
+app.use(express.urlencoded({ extended: true }));
+
+// Initialize Plivo client
+const plivoClient = new Plivo.Client(
+  process.env.PLIVO_AUTH_ID,
+  process.env.PLIVO_AUTH_TOKEN
+);
+
+// Make outbound call
+async function makeCall(
+  toNumber: string,
+  fromNumber: string,
+  answerUrl: string
+): Promise<string> {
+  const response = await plivoClient.calls.create({
+    from: fromNumber,
+    to: toNumber,
+    answerUrl: answerUrl,
+    answerMethod: 'POST',
+    ringTimeout: 30,
+  });
+
+  console.log(`Call initiated: ${response.requestUuid}`);
+  return response.requestUuid;
+}
+
+// Handle incoming calls
+app.post('/voice/incoming', (req, res) => {
+  const { CallUUID, From, To } = req.body;
+  console.log(`Incoming call from ${From} to ${To}`);
+
+  const response = new Plivo.Response();
+
+  // Greet caller
+  response.addSpeak('Welcome to our AI assistant. How can I help you today?', {
+    voice: 'Polly.Amy',
+  });
+
+  // Connect to voice AI stream
+  response.addStream(`wss://your-server.com/voice/stream/${CallUUID}`, {
+    bidirectional: 'true',
+    contentType: 'audio/x-l16;rate=8000',
+  });
+
+  res.set('Content-Type', 'application/xml');
+  res.send(response.toXML());
+});
+
+// Handle call status updates
+app.post('/voice/status', (req, res) => {
+  const { CallUUID, CallStatus, Duration } = req.body;
+  console.log(`Call ${CallUUID}: ${CallStatus} (${Duration}s)`);
+  res.sendStatus(200);
+});
+
+app.listen(3000, () => {
+  console.log('Voice server running on port 3000');
+});
+```
+
+#### Streaming Audio with WebSockets
+
+```typescript
+/**
+ * WebSocket handling for bidirectional audio streaming
+ */
+
+import WebSocket, { WebSocketServer } from 'ws';
+import { createServer } from 'http';
+
+const server = createServer();
+const wss = new WebSocketServer({ server });
+
+interface StreamMessage {
+  event: 'start' | 'media' | 'stop';
+  streamSid?: string;
+  media?: {
+    payload: string; // Base64 encoded audio
+  };
+}
+
+class AudioStreamHandler {
+  private audioBuffer: Buffer[] = [];
+  private lastAudioTime: number = Date.now();
+  private silenceThreshold: number = 500; // ms
+
+  constructor(
+    private ws: WebSocket,
+    private voiceAgent: VoiceAgent
+  ) {}
+
+  async handleMessage(message: string): Promise<void> {
+    const data: StreamMessage = JSON.parse(message);
+
+    switch (data.event) {
+      case 'start':
+        console.log(`Stream started: ${data.streamSid}`);
+        break;
+
+      case 'media':
+        if (data.media?.payload) {
+          const audio = Buffer.from(data.media.payload, 'base64');
+          this.audioBuffer.push(audio);
+          this.lastAudioTime = Date.now();
+        }
+        break;
+
+      case 'stop':
+        console.log('Stream stopped');
+        await this.processRemainingAudio();
+        break;
+    }
+  }
+
+  async checkForEndOfSpeech(): Promise<void> {
+    const now = Date.now();
+
+    if (
+      this.audioBuffer.length > 0 &&
+      now - this.lastAudioTime > this.silenceThreshold
+    ) {
+      const audioData = Buffer.concat(this.audioBuffer);
+      this.audioBuffer = [];
+
+      // Process with voice agent
+      const responseAudio = await this.voiceAgent.process(audioData);
+
+      // Send response back
+      this.sendAudio(responseAudio);
+    }
+  }
+
+  private sendAudio(audio: Buffer): void {
+    const message = {
+      event: 'media',
+      media: {
+        payload: audio.toString('base64'),
+      },
+    };
+    this.ws.send(JSON.stringify(message));
+  }
+
+  private async processRemainingAudio(): Promise<void> {
+    if (this.audioBuffer.length > 0) {
+      const audioData = Buffer.concat(this.audioBuffer);
+      this.audioBuffer = [];
+      const responseAudio = await this.voiceAgent.process(audioData);
+      this.sendAudio(responseAudio);
+    }
+  }
+}
+
+wss.on('connection', (ws) => {
+  const voiceAgent = new VoiceAgent();
+  const handler = new AudioStreamHandler(ws, voiceAgent);
+
+  // Check for end of speech periodically
+  const interval = setInterval(() => {
+    handler.checkForEndOfSpeech();
+  }, 100);
+
+  ws.on('message', (message) => {
+    handler.handleMessage(message.toString());
+  });
+
+  ws.on('close', () => {
+    clearInterval(interval);
+    console.log('Connection closed');
+  });
+});
+
+server.listen(8080);
+```
+
+### Error Handling
+
+```typescript
+/**
+ * Error handling patterns for Node.js voice AI applications
+ */
+
+// Custom error types
+class VoiceAIError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string
+  ) {
+    super(message);
+    this.name = 'VoiceAIError';
+  }
+}
+
+class STTError extends VoiceAIError {
+  constructor(message: string) {
+    super(message, 'STT_ERROR');
+    this.name = 'STTError';
+  }
+}
+
+class LLMError extends VoiceAIError {
+  constructor(message: string) {
+    super(message, 'LLM_ERROR');
+    this.name = 'LLMError';
+  }
+}
+
+class TTSError extends VoiceAIError {
+  constructor(message: string) {
+    super(message, 'TTS_ERROR');
+    this.name = 'TTSError';
+  }
+}
+
+// Retry utility
+async function retry<T>(
+  fn: () => Promise<T>,
+  options: {
+    maxAttempts?: number;
+    delay?: number;
+    backoff?: number;
+  } = {}
+): Promise<T> {
+  const { maxAttempts = 3, delay = 1000, backoff = 2 } = options;
+  let currentDelay = delay;
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`Attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`);
+
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, currentDelay));
+        currentDelay *= backoff;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+// Resilient voice client
+class ResilientVoiceClient {
+  async transcribe(audio: Buffer): Promise<string> {
+    return retry(
+      async () => {
+        try {
+          // Deepgram transcription logic
+          const result = await this.deepgram.transcribe(audio);
+          return result.transcript;
+        } catch (error) {
+          throw new STTError(`Transcription failed: ${error}`);
+        }
+      },
+      { maxAttempts: 3 }
+    );
+  }
+
+  async processWithFallback(audio: Buffer): Promise<Buffer> {
+    try {
+      const transcript = await this.transcribe(audio);
+      const response = await this.generate(transcript);
+      return await this.synthesize(response);
+    } catch (error) {
+      if (error instanceof STTError) {
+        return this.synthesizeFallback(
+          "I'm having trouble hearing you. Could you please repeat that?"
+        );
+      }
+      if (error instanceof LLMError) {
+        return this.synthesizeFallback(
+          'I apologize, but I am experiencing technical difficulties.'
+        );
+      }
+      throw error;
+    }
+  }
+}
+```
+
+## Go SDK Reference
+
+### Installation
+
+```bash
+# Initialize Go module
+go mod init voice-ai-agent
+
+# Install dependencies
+go get github.com/sashabaranov/go-openai
+go get github.com/plivo/plivo-go/v7
+go get github.com/gorilla/websocket
+go get github.com/joho/godotenv
+```
+
+### Common Operations
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/base64"
+    "encoding/json"
+    "fmt"
+    "log"
+    "net/http"
+    "os"
+    "sync"
+    "time"
+
+    "github.com/gorilla/websocket"
+    "github.com/joho/godotenv"
+    openai "github.com/sashabaranov/go-openai"
+    plivo "github.com/plivo/plivo-go/v7"
+)
+
+// Configuration
+type Config struct {
+    OpenAIKey     string
+    DeepgramKey   string
+    ElevenLabsKey string
+    PlivoAuthID   string
+    PlivoToken    string
+}
+
+func LoadConfig() (*Config, error) {
+    godotenv.Load()
+
+    config := &Config{
+        OpenAIKey:     os.Getenv("OPENAI_API_KEY"),
+        DeepgramKey:   os.Getenv("DEEPGRAM_API_KEY"),
+        ElevenLabsKey: os.Getenv("ELEVENLABS_API_KEY"),
+        PlivoAuthID:   os.Getenv("PLIVO_AUTH_ID"),
+        PlivoToken:    os.Getenv("PLIVO_AUTH_TOKEN"),
+    }
+
+    if config.OpenAIKey == "" {
+        return nil, fmt.Errorf("OPENAI_API_KEY is required")
+    }
+
+    return config, nil
+}
+
+// Voice AI Agent
+type VoiceAgent struct {
+    openai *openai.Client
+    plivo  *plivo.Client
+    config *Config
+    mu     sync.Mutex
+    history []openai.ChatCompletionMessage
+}
+
+func NewVoiceAgent(config *Config) (*VoiceAgent, error) {
+    openaiClient := openai.NewClient(config.OpenAIKey)
+
+    plivoClient, err := plivo.NewClient(config.PlivoAuthID, config.PlivoToken, nil)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create Plivo client: %w", err)
+    }
+
+    return &VoiceAgent{
+        openai: openaiClient,
+        plivo:  plivoClient,
+        config: config,
+        history: []openai.ChatCompletionMessage{
+            {
+                Role:    openai.ChatMessageRoleSystem,
+                Content: "You are a helpful voice assistant. Keep responses concise.",
+            },
+        },
+    }, nil
+}
+
+// Generate response using OpenAI
+func (a *VoiceAgent) GenerateResponse(ctx context.Context, userInput string) (string, error) {
+    a.mu.Lock()
+    a.history = append(a.history, openai.ChatCompletionMessage{
+        Role:    openai.ChatMessageRoleUser,
+        Content: userInput,
+    })
+    messages := make([]openai.ChatCompletionMessage, len(a.history))
+    copy(messages, a.history)
+    a.mu.Unlock()
+
+    resp, err := a.openai.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+        Model:     openai.GPT4TurboPreview,
+        Messages:  messages,
+        MaxTokens: 150,
+    })
+    if err != nil {
+        return "", fmt.Errorf("LLM error: %w", err)
+    }
+
+    response := resp.Choices[0].Message.Content
+
+    a.mu.Lock()
+    a.history = append(a.history, openai.ChatCompletionMessage{
+        Role:    openai.ChatMessageRoleAssistant,
+        Content: response,
+    })
+    a.mu.Unlock()
+
+    return response, nil
+}
+
+// Make outbound call
+func (a *VoiceAgent) MakeCall(to, from, answerURL string) (string, error) {
+    resp, err := a.plivo.Calls.Create(plivo.CallCreateParams{
+        From:         from,
+        To:           to,
+        AnswerURL:    answerURL,
+        AnswerMethod: "POST",
+    })
+    if err != nil {
+        return "", fmt.Errorf("call creation failed: %w", err)
+    }
+
+    return resp.RequestUUID, nil
+}
+
+// WebSocket stream handler
+type StreamHandler struct {
+    agent        *VoiceAgent
+    audioBuffer  []byte
+    lastAudio    time.Time
+    silenceMs    int64
+    mu           sync.Mutex
+}
+
+func NewStreamHandler(agent *VoiceAgent) *StreamHandler {
+    return &StreamHandler{
+        agent:     agent,
+        silenceMs: 500,
+        lastAudio: time.Now(),
+    }
+}
+
+type StreamMessage struct {
+    Event string `json:"event"`
+    Media *struct {
+        Payload string `json:"payload"`
+    } `json:"media,omitempty"`
+}
+
+func (h *StreamHandler) HandleConnection(conn *websocket.Conn) {
+    defer conn.Close()
+
+    // Start silence detection goroutine
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    go h.detectSilence(ctx, conn)
+
+    for {
+        _, message, err := conn.ReadMessage()
+        if err != nil {
+            log.Printf("Read error: %v", err)
+            return
+        }
+
+        var msg StreamMessage
+        if err := json.Unmarshal(message, &msg); err != nil {
+            continue
+        }
+
+        switch msg.Event {
+        case "start":
+            log.Println("Stream started")
+
+        case "media":
+            if msg.Media != nil {
+                audio, _ := base64.StdEncoding.DecodeString(msg.Media.Payload)
+                h.mu.Lock()
+                h.audioBuffer = append(h.audioBuffer, audio...)
+                h.lastAudio = time.Now()
+                h.mu.Unlock()
+            }
+
+        case "stop":
+            log.Println("Stream stopped")
+            return
+        }
+    }
+}
+
+func (h *StreamHandler) detectSilence(ctx context.Context, conn *websocket.Conn) {
+    ticker := time.NewTicker(100 * time.Millisecond)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            h.mu.Lock()
+            silenceDuration := time.Since(h.lastAudio).Milliseconds()
+            hasAudio := len(h.audioBuffer) > 0
+            h.mu.Unlock()
+
+            if hasAudio && silenceDuration > h.silenceMs {
+                h.processAudio(ctx, conn)
+            }
+        }
+    }
+}
+
+func (h *StreamHandler) processAudio(ctx context.Context, conn *websocket.Conn) {
+    h.mu.Lock()
+    audio := h.audioBuffer
+    h.audioBuffer = nil
+    h.mu.Unlock()
+
+    if len(audio) == 0 {
+        return
+    }
+
+    // Process with voice agent (simplified - actual implementation needs STT)
+    response, err := h.agent.GenerateResponse(ctx, "User said something")
+    if err != nil {
+        log.Printf("Agent error: %v", err)
+        return
+    }
+
+    // Send response (simplified - actual implementation needs TTS)
+    log.Printf("Agent response: %s", response)
+}
+
+// HTTP handlers
+func main() {
+    config, err := LoadConfig()
+    if err != nil {
+        log.Fatalf("Config error: %v", err)
+    }
+
+    agent, err := NewVoiceAgent(config)
+    if err != nil {
+        log.Fatalf("Agent error: %v", err)
+    }
+
+    upgrader := websocket.Upgrader{
+        CheckOrigin: func(r *http.Request) bool { return true },
+    }
+
+    http.HandleFunc("/voice/stream/", func(w http.ResponseWriter, r *http.Request) {
+        conn, err := upgrader.Upgrade(w, r, nil)
+        if err != nil {
+            log.Printf("Upgrade error: %v", err)
+            return
+        }
+
+        handler := NewStreamHandler(agent)
+        handler.HandleConnection(conn)
+    })
+
+    log.Println("Server starting on :8080")
+    log.Fatal(http.ListenAndServe(":8080", nil))
+}
+```
+
+## Best Practices
+
+### Connection Management
+
+```
++------------------------------------------------------------------+
+|                    CONNECTION BEST PRACTICES                      |
++------------------------------------------------------------------+
+|                                                                   |
+|  1. CONNECTION POOLING                                            |
+|     - Reuse HTTP clients across requests                          |
+|     - Set appropriate connection limits                           |
+|     - Configure keepalive settings                                |
+|                                                                   |
+|  2. TIMEOUT CONFIGURATION                                         |
+|     +------------------------+--------------------------------+   |
+|     | Operation              | Recommended Timeout            |   |
+|     +------------------------+--------------------------------+   |
+|     | STT request            | 30 seconds                     |   |
+|     | LLM request            | 60 seconds                     |   |
+|     | TTS request            | 30 seconds                     |   |
+|     | WebSocket ping         | 30 seconds                     |   |
+|     | Call API request       | 10 seconds                     |   |
+|     +------------------------+--------------------------------+   |
+|                                                                   |
+|  3. GRACEFUL SHUTDOWN                                             |
+|     - Handle SIGTERM/SIGINT signals                               |
+|     - Drain active connections                                    |
+|     - Complete in-progress calls                                  |
+|                                                                   |
+|  4. HEALTH CHECKS                                                 |
+|     - Verify API connectivity on startup                          |
+|     - Implement liveness/readiness probes                         |
+|     - Monitor connection pool health                              |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+### Rate Limiting
+
+| Service | Rate Limit | Recommended Buffer |
+|---------|------------|-------------------|
+| OpenAI GPT-4 | Varies by tier | 80% of limit |
+| Deepgram | 100 concurrent | 80 concurrent max |
+| ElevenLabs | Varies by plan | Monitor usage |
+| Plivo | 50 calls/sec | Use queuing |
+
+### Security
+
+1. **API Key Management**: Never hardcode keys; use environment variables or secret managers
+2. **Request Validation**: Validate webhook signatures from telephony providers
+3. **Audio Encryption**: Use TLS for all audio streams
+4. **PII Handling**: Implement proper data handling for voice recordings
+
+## Summary
+
+This SDK reference provides the foundation for building voice AI applications across multiple languages. Key takeaways:
+
+- Use lazy initialization for API clients to improve startup time
+- Implement comprehensive error handling with retries and fallbacks
+- Design for streaming to minimize latency
+- Follow security best practices for API key management
+
+Continue to the [API Reference](/topics/implementation/api-reference) for detailed endpoint documentation, or explore [Code Examples](/topics/implementation/code-examples) for complete working implementations.
+
+<RelatedTopics
+  topics={[
+    {
+      title: "API Reference",
+      href: "/topics/implementation/api-reference",
+      description: "REST and WebSocket API documentation for voice AI services"
+    },
+    {
+      title: "Code Examples",
+      href: "/topics/implementation/code-examples",
+      description: "Production-ready code examples and patterns"
+    },
+    {
+      title: "Getting Started",
+      href: "/topics/implementation/getting-started",
+      description: "Build your first voice AI agent in 15 minutes"
+    },
+    {
+      title: "Deployment Guide",
+      href: "/topics/implementation/deployment",
+      description: "Deploy voice AI applications to production"
+    }
+  ]}
+/>

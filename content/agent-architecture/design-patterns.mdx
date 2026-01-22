@@ -1,0 +1,462 @@
+---
+title: "Voice AI Pipeline Design Patterns"
+description: "Comprehensive guide to pipeline architectures including cascaded, streaming, and speech-to-speech patterns for voice AI agents"
+---
+
+# Voice AI Pipeline Design Patterns
+
+The architecture of a voice AI pipeline fundamentally determines its latency characteristics, capabilities, and trade-offs. This guide examines the three primary pipeline architectures: traditional cascading, streaming, and speech-to-speech (S2S), along with their implementation patterns and selection criteria.
+
+## Traditional Cascading Pipeline (STT to LLM to TTS)
+
+The cascading architecture processes audio through discrete, sequential stages.
+
+```
++--------------------------------------------------------------------------+
+|                    CASCADING PIPELINE ARCHITECTURE                        |
++--------------------------------------------------------------------------+
+|                                                                           |
+|  +-----------+         +-----------+         +-----------+               |
+|  |           |  Text   |           |  Text   |           | Audio         |
+|  |    STT    |-------->|    LLM    |-------->|    TTS    |------->       |
+|  |           |         |           |         |           |               |
+|  +-----------+         +-----------+         +-----------+               |
+|        ^                                                                  |
+|        | Audio                                                            |
+|  ------+                                                                  |
+|                                                                           |
+|  Timeline:                                                                |
+|  +--- STT (200-500ms) ---+--- LLM (350-1500ms) ---+--- TTS (75-200ms) ---+|
+|  0ms                   ~400ms                   ~1400ms              ~1600ms|
+|                                                                           |
++--------------------------------------------------------------------------+
+```
+
+### Advantages
+
+- **Simplicity**: Easy to implement, debug, and maintain
+- **Modularity**: Components can be swapped independently
+- **Auditability**: Clear intermediate representations (text) for logging
+- **Compliance**: Text transcripts enable content moderation
+
+### Disadvantages
+
+- **High Latency**: Sequential processing adds cumulative delays
+- **Information Loss**: Prosodic features (tone, emotion) lost in STT
+- **Error Propagation**: STT errors cascade to LLM
+
+### When to Use
+
+- Compliance-heavy industries requiring full transcripts
+- Development and debugging phases
+- Use cases tolerant of 1.5s+ latency
+- Scenarios requiring human-in-the-loop review
+
+## Streaming Pipeline with Concurrent Processing
+
+Modern production systems employ streaming at every stage for significant latency reduction.
+
+```
++----------------------------------------------------------------------------+
+|                    STREAMING PIPELINE ARCHITECTURE                          |
++----------------------------------------------------------------------------+
+|                                                                             |
+|  Audio Input (continuous stream)                                            |
+|       |                                                                     |
+|       v                                                                     |
+|  +-----------------------------------------------------------------------+  |
+|  |  STREAMING STT                                                        |  |
+|  |  +-----+-----+-----+-----+-----+-----+-----+-----+                    |  |
+|  |  | Th  | e   | wea | ther|  is |  ni | ce  | ... |  <- Partial        |  |
+|  |  +-----+-----+-----+-----+-----+-----+-----+-----+     Results        |  |
+|  +-----------------------------+-------------------------------------+---+  |
+|                                | (tokens stream to LLM as available)        |
+|                                v                                            |
+|  +-----------------------------------------------------------------------+  |
+|  |  STREAMING LLM                                                        |  |
+|  |  +-----+-----+-----+-----+-----+-----+-----+-----+                    |  |
+|  |  | Yes | ,   | it  | 's  |  a  | lov | ely | day |  <- Token          |  |
+|  |  +-----+-----+-----+-----+-----+-----+-----+-----+     Stream         |  |
+|  +-----------------------------+-------------------------------------+---+  |
+|                                | (tokens stream to TTS immediately)         |
+|                                v                                            |
+|  +-----------------------------------------------------------------------+  |
+|  |  STREAMING TTS                                                        |  |
+|  |  +-----+-----+-----+-----+-----+-----+-----+-----+                    |  |
+|  |  | ### | ### | ### | ### | ### | ... | ... | ... |  <- Audio          |  |
+|  |  +-----+-----+-----+-----+-----+-----+-----+-----+     Chunks         |  |
+|  +-----------------------------+-------------------------------------+---+  |
+|                                |                                            |
+|                                v                                            |
+|                      Audio Output (begins before full response ready)       |
+|                                                                             |
+|  Concurrent Timeline:                                                       |
+|  STT:  ################......................................               |
+|  LLM:  ........######################........................               |
+|  TTS:  ................####################################                 |
+|        |<--TTFA-->|                                                         |
+|        0ms   ~250ms                                                         |
+|             Time to First Audio                                             |
+|                                                                             |
++----------------------------------------------------------------------------+
+```
+
+### Key Implementation Patterns
+
+```python
+async def streaming_pipeline(audio_stream: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """Concurrent streaming voice pipeline"""
+
+    # Stage 1: Stream audio to STT
+    async def stt_stage():
+        async for audio_chunk in audio_stream:
+            partial_transcript = await stt.process_chunk(audio_chunk)
+            if partial_transcript:
+                yield partial_transcript
+
+    # Stage 2: Stream transcripts to LLM
+    async def llm_stage(transcript_stream):
+        buffer = ""
+        async for partial in transcript_stream:
+            buffer += partial
+            if is_complete_thought(buffer):
+                async for token in llm.stream(buffer):
+                    yield token
+
+    # Stage 3: Stream tokens to TTS
+    async def tts_stage(token_stream):
+        sentence_buffer = ""
+        async for token in token_stream:
+            sentence_buffer += token
+            if is_speakable_unit(sentence_buffer):
+                async for audio_chunk in tts.synthesize_stream(sentence_buffer):
+                    yield audio_chunk
+                sentence_buffer = ""
+
+    # Connect stages with async generators
+    transcript_stream = stt_stage()
+    token_stream = llm_stage(transcript_stream)
+    audio_stream = tts_stage(token_stream)
+
+    async for audio_chunk in audio_stream:
+        yield audio_chunk
+```
+
+### Speakable Unit Detection
+
+Determining when to send text to TTS is critical for balancing latency and prosody:
+
+```python
+def is_speakable_unit(buffer: str) -> bool:
+    """Determine if buffer is ready for TTS synthesis"""
+    # Sentence boundary - highest quality prosody
+    if buffer.rstrip().endswith(('.', '!', '?')):
+        return True
+
+    # Clause boundary with minimum length
+    if len(buffer) > 50 and buffer.rstrip().endswith((',', ';', ':')):
+        return True
+
+    # Fallback: send after N tokens regardless
+    if len(buffer.split()) > 15:
+        return True
+
+    return False
+```
+
+### Advantages
+
+- **Lower Latency**: 400-800ms achievable vs 1.5-3s for cascaded
+- **Better User Experience**: Response begins while still generating
+- **Interruptibility**: Can cancel mid-generation
+
+### Disadvantages
+
+- **Complexity**: Requires careful state management
+- **Prosody Challenges**: Sentence-incomplete TTS may sound unnatural
+- **Error Handling**: Mid-stream failures are harder to recover from
+
+## Speech-to-Speech (S2S) Architecture
+
+Speech-to-Speech models process audio input directly to audio output, bypassing intermediate text representation.
+
+```
++----------------------------------------------------------------------------+
+|                   SPEECH-TO-SPEECH (S2S) ARCHITECTURE                       |
++----------------------------------------------------------------------------+
+|                                                                             |
+|                         +-----------------------------+                     |
+|                         |    S2S FOUNDATION MODEL      |                     |
+|                         |                             |                     |
+|  Audio Input ---------->|  +---------------------+   |--------> Audio Output|
+|  (waveform)             |  |   Neural Codec      |   |        (waveform)    |
+|                         |  |   Encoder/Decoder   |   |                     |
+|                         |  +---------------------+   |                     |
+|                         |            |               |                     |
+|                         |            v               |                     |
+|                         |  +---------------------+   |                     |
+|                         |  |   Transformer       |   |                     |
+|                         |  |   Language Model    |   |                     |
+|                         |  +---------------------+   |                     |
+|                         |                             |                     |
+|                         +-----------------------------+                     |
+|                                                                             |
+|  Latency: 200-300ms end-to-end (approaching human response time)            |
+|                                                                             |
++----------------------------------------------------------------------------+
+```
+
+### S2S Model Examples
+
+| Model | TTFT | Notes |
+|-------|------|-------|
+| OpenAI GPT-4o Realtime | ~250-300ms | Commercial, highest capability |
+| Google Gemini Flash | ~280ms | Multimodal, fast |
+| NVIDIA PersonaPlex | Variable | Open-source enterprise S2S |
+| Meta SeamlessM4T | Variable | Multilingual S2S translation |
+| Moshi | ~100ms | Open-source, mobile-optimized |
+
+### S2S Internal Architecture
+
+```
++-------------------------------------------------------------------------+
+|                    S2S MODEL INTERNAL STRUCTURE                          |
++-------------------------------------------------------------------------+
+|                                                                          |
+|  Input Audio --> +----------------------------------------------------+  |
+|                  |           AUDIO ENCODER                             |  |
+|                  |  - Mel spectrogram extraction                       |  |
+|                  |  - Conformer/Transformer encoder                    |  |
+|                  |  - Produces continuous representations              |  |
+|                  +------------------------+---------------------------+  |
+|                                           |                              |
+|                                           v                              |
+|                  +----------------------------------------------------+  |
+|                  |        SEMANTIC/ACOUSTIC TOKENS                     |  |
+|                  |  - Discretize audio into learned codebook           |  |
+|                  |  - Typically 8-16 codebooks, 50-100 tokens/sec     |  |
+|                  |  - Preserves prosody, emotion, speaker identity    |  |
+|                  +------------------------+---------------------------+  |
+|                                           |                              |
+|                                           v                              |
+|                  +----------------------------------------------------+  |
+|                  |         TRANSFORMER LANGUAGE MODEL                  |  |
+|                  |  - Autoregressive token prediction                  |  |
+|                  |  - Conditions on conversation history              |  |
+|                  |  - Generates response audio tokens                  |  |
+|                  +------------------------+---------------------------+  |
+|                                           |                              |
+|                                           v                              |
+|                  +----------------------------------------------------+  |
+|                  |           AUDIO DECODER                             |  |
+|                  |  - Neural vocoder (HiFi-GAN, Vocos, etc.)          |  |
+|                  |  - Token sequence -> waveform                        |  |
+|                  |  - Streaming-capable for low latency               |  |
+|                  +------------------------+---------------------------+  |
+|                                           |                              |
+|                                           v                              |
+|                                    Output Audio                          |
+|                                                                          |
++-------------------------------------------------------------------------+
+```
+
+### Half-Cascade Architecture
+
+Many production "S2S" systems are actually half-cascades that combine native audio understanding with text-based reasoning:
+
+```
++-------------------------------------------------------------------------+
+|                    HALF-CASCADE ARCHITECTURE                             |
++-------------------------------------------------------------------------+
+|                                                                          |
+|  Audio In --> [Native Audio Understanding] --> [Text-Based Reasoning]   |
+|                                                     |                    |
+|                                                     v                    |
+|                                            [Native Audio Synthesis]      |
+|                                                     |                    |
+|                                                     v                    |
+|                                                Audio Out                 |
+|                                                                          |
+|  Benefits:                                                               |
+|  - 200-300ms latency (vs 800ms+ for full cascade)                       |
+|  - Retains text-based reasoning capability                              |
+|  - Better tool calling and structured output                            |
+|                                                                          |
+|  Limitations:                                                            |
+|  - Less auditable than full cascade                                      |
+|  - Limited visibility into intermediate steps                           |
+|                                                                          |
++-------------------------------------------------------------------------+
+```
+
+## Architecture Comparison Matrix
+
+| Aspect | Cascaded (STT->LLM->TTS) | Streaming Cascade | Speech-to-Speech |
+|--------|--------------------------|-------------------|------------------|
+| **Latency** | 1.5-3s | 400-800ms | 200-300ms |
+| **Prosody Preservation** | None | None | Full |
+| **Emotion Detection** | Limited | Limited | Native |
+| **Auditability** | Excellent | Good | Limited |
+| **Tool Calling** | Excellent | Excellent | Limited |
+| **Compliance** | Easy | Easy | Challenging |
+| **Cost** | Moderate | Moderate | Higher |
+| **Maturity** | Production-ready | Production-ready | Emerging |
+| **Open-source Options** | Many | Many | Few |
+
+## Choosing the Right Architecture
+
+### Use Cascaded Pipeline When:
+
+- Full transcript logging is required (compliance, analytics)
+- Content moderation must review all agent responses
+- Debugging and development phases
+- Use case tolerates 1.5s+ latency
+- Working with limited engineering resources
+
+### Use Streaming Pipeline When:
+
+- Latency is important (under 800ms target)
+- Real-time conversation experience is a priority
+- You need interruptibility (barge-in support)
+- Production deployment with moderate complexity budget
+- Most common choice for customer service voice bots
+
+### Use Speech-to-Speech When:
+
+- Ultra-low latency is critical (under 300ms)
+- Emotion and prosody understanding matters
+- Building premium conversational experiences
+- Willing to accept limited tool calling capabilities
+- Have budget for frontier model APIs or GPU infrastructure
+
+## Hybrid Architecture Patterns
+
+### Pattern 1: S2S with Text Fallback
+
+```python
+class HybridVoiceAgent:
+    """S2S primary with cascaded fallback for tool calls"""
+
+    async def process(self, audio: bytes) -> AsyncIterator[bytes]:
+        # Try S2S first
+        response = await self.s2s_model.generate(audio)
+
+        if response.requires_tool_call:
+            # Fall back to cascaded for structured reasoning
+            transcript = await self.stt.transcribe(audio)
+            llm_response = await self.llm.generate_with_tools(transcript)
+            return self.tts.synthesize(llm_response.text)
+
+        return response.audio
+```
+
+### Pattern 2: Parallel Processing
+
+```python
+class ParallelVoiceAgent:
+    """Run S2S and cascaded in parallel, use fastest appropriate result"""
+
+    async def process(self, audio: bytes) -> AsyncIterator[bytes]:
+        s2s_task = asyncio.create_task(self.s2s_model.generate(audio))
+        cascade_task = asyncio.create_task(self._cascade_pipeline(audio))
+
+        # Wait for first result
+        done, pending = await asyncio.wait(
+            [s2s_task, cascade_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        result = done.pop().result()
+
+        # Cancel slower path
+        for task in pending:
+            task.cancel()
+
+        return result
+```
+
+### Pattern 3: Adaptive Selection
+
+```python
+class AdaptiveVoiceAgent:
+    """Select architecture based on query classification"""
+
+    def __init__(self):
+        self.classifier = QueryClassifier()
+
+    async def process(self, audio: bytes) -> AsyncIterator[bytes]:
+        # Quick classification from audio features
+        query_type = await self.classifier.classify(audio)
+
+        if query_type == QueryType.SIMPLE_QA:
+            # S2S for simple, fast responses
+            return await self.s2s_agent.process(audio)
+
+        elif query_type == QueryType.REQUIRES_TOOLS:
+            # Cascaded for tool-heavy queries
+            return await self.cascaded_agent.process(audio)
+
+        else:
+            # Streaming cascade as default
+            return await self.streaming_agent.process(audio)
+```
+
+## Implementation Considerations
+
+### Buffer Management
+
+Each architecture requires different buffering strategies:
+
+| Architecture | Input Buffer | Output Buffer | Intermediate Buffers |
+|--------------|--------------|---------------|---------------------|
+| Cascaded | Full utterance | Full response | Text (STT output, LLM output) |
+| Streaming | Chunk-based | Playback buffer | Token buffer, sentence buffer |
+| S2S | Minimal | Playback buffer | Audio token buffer |
+
+### Error Recovery
+
+```python
+class ResilientPipeline:
+    """Error recovery patterns for voice pipelines"""
+
+    async def process_with_recovery(self, audio: bytes) -> AsyncIterator[bytes]:
+        try:
+            async for chunk in self.primary_pipeline.process(audio):
+                yield chunk
+
+        except STTError:
+            # Retry with backup STT
+            async for chunk in self.backup_stt_pipeline.process(audio):
+                yield chunk
+
+        except LLMError:
+            # Generate fallback response
+            yield await self.tts.synthesize(
+                "I'm having trouble processing that. Could you try again?"
+            )
+
+        except TTSError:
+            # Fall back to backup TTS
+            async for chunk in self.backup_tts.synthesize_stream(
+                self.last_text_response
+            ):
+                yield chunk
+```
+
+### Monitoring by Architecture
+
+| Architecture | Key Metrics | SLOs |
+|--------------|-------------|------|
+| Cascaded | Total E2E latency, STT accuracy, LLM quality | E2E under 2s p95 |
+| Streaming | TTFA, token throughput, interruption handling | TTFA under 400ms p95 |
+| S2S | TTFA, audio quality (MOS), emotion accuracy | TTFA under 250ms p95 |
+
+## Summary
+
+Selecting the right pipeline architecture is a foundational decision that affects latency, capabilities, and operational complexity:
+
+1. **Cascaded pipelines** offer simplicity and auditability at the cost of latency
+2. **Streaming pipelines** balance latency and capabilities for most production use cases
+3. **Speech-to-Speech** achieves the lowest latency but with trade-offs in tool calling and auditability
+
+Consider hybrid approaches when requirements span multiple architecture strengths. The next section covers state machines and conversation management that work across all these architectures.

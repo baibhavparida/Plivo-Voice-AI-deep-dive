@@ -1,0 +1,251 @@
+---
+title: "LLM Model Selection for Voice AI"
+description: "Comprehensive guide to selecting LLMs for voice AI agents, covering model tiers, latency vs quality tradeoffs, benchmarks, and cost analysis"
+category: "llm-integration"
+tags: ["llm", "model-selection", "latency", "voice-ai", "benchmarks", "cost-optimization"]
+relatedTopics: ["prompt-engineering", "context-management", "speech-to-speech"]
+---
+
+# LLM Model Selection for Voice AI
+
+The choice of Large Language Model fundamentally determines both the quality ceiling and latency floor of voice agents. Research indicates that the LLM accounts for approximately 71% of end-to-end voice agent latency, making model selection one of the most critical decisions in voice AI architecture.
+
+## The Latency Equation
+
+Understanding the latency breakdown is essential for model selection:
+
+```
+Total Latency = T_STT + T_LLM + T_TTS + T_Network
+```
+
+Typical values:
+- **T_STT**: 150-300ms (Speech recognition)
+- **T_LLM**: 300-1500ms (LLM inference) - the dominant factor
+- **T_TTS**: 100-300ms (Speech synthesis)
+- **T_Network**: 50-150ms (Round-trip time)
+
+**Critical Threshold**: Human conversation operates within a 300-500ms response window. Delays beyond 500ms feel unnatural, and delays beyond 1.5 seconds cause rapid experience degradation.
+
+## Model Tiers Overview
+
+```
+LATENCY <-----------------------------------------> CAPABILITY
+
+Ultra-Fast          Fast            Standard           Premium
+(&lt;350ms)         (350-700ms)       (700-1200ms)       (1200ms+)
+
++-----------+    +-----------+    +-----------+    +-----------+
+| Gemini    |    | GPT-4o    |    | GPT-4o    |    | Claude    |
+| Flash     |    | mini      |    |           |    | Opus      |
+|           |    |           |    |           |    |           |
+| Groq      |    | Claude    |    | Claude    |    | o1        |
+| Llama     |    | Haiku     |    | Sonnet    |    |           |
++-----------+    +-----------+    +-----------+    +-----------+
+
+Simple           Moderate         Complex          Expert-level
+queries          tasks            reasoning        analysis
+```
+
+## Tier 1: Ultra-Fast Models (&lt;350ms TTFT)
+
+### Gemini 2.0 Flash
+
+| Metric | Value |
+|--------|-------|
+| TTFT | ~300ms |
+| TPS | ~250 tokens/second |
+| Context | 1M tokens |
+| Strengths | Multimodal, fast, excellent instruction following |
+| Weaknesses | Occasional consistency issues |
+| Best For | High-volume customer service, simple Q&A |
+
+### Groq-hosted Llama 3.1 (70B)
+
+| Metric | Value |
+|--------|-------|
+| TTFT | ~200ms (LPU architecture) |
+| TPS | 280-400 tokens/second |
+| Context | 128K tokens |
+| Strengths | Deterministic latency, no jitter, open weights |
+| Weaknesses | Higher cost at scale, capacity constraints |
+| Best For | Latency-critical applications, real-time assistance |
+
+**Example Latency Breakdown (Ultra-Fast):**
+```
+Component          Time (ms)
+---------------------------------
+STT (Deepgram)       150
+LLM (Groq Llama)     200
+TTS (ElevenLabs)     150
+---------------------------------
+Total                500ms (Excellent)
+```
+
+## Tier 2: Fast Models (350-700ms TTFT)
+
+### GPT-4o-mini
+
+| Metric | Value |
+|--------|-------|
+| TTFT | ~400ms |
+| TPS | ~100 tokens/second |
+| Context | 128K tokens |
+| Pricing | $0.15 / $0.60 per 1M tokens (input/output) |
+| Strengths | Strong reasoning, reliable tool use, cost-effective |
+| Best For | Balanced production deployments |
+
+### Claude 3.5 Haiku
+
+| Metric | Value |
+|--------|-------|
+| TTFT | ~350ms |
+| TPS | ~80 tokens/second |
+| Context | 200K tokens |
+| Pricing | $0.80 / $4.00 per 1M tokens |
+| Strengths | Excellent instruction following, safety |
+| Best For | Enterprise applications requiring safety |
+
+## Tier 3: Standard Models (700ms+ TTFT)
+
+### GPT-4o
+
+| Metric | Value |
+|--------|-------|
+| TTFT | 700-1000ms |
+| TPS | ~60 tokens/second |
+| Context | 128K tokens |
+| Pricing | $5.00 / $15.00 per 1M tokens |
+| Strengths | State-of-the-art reasoning, multimodal |
+| Best For | Complex reasoning, high-stakes conversations |
+
+### Claude 3.5/3.7 Sonnet
+
+| Metric | Value |
+|--------|-------|
+| TTFT | ~800ms |
+| TPS | ~77 tokens/second |
+| Context | 200K tokens |
+| Pricing | $3.00 / $15.00 per 1M tokens |
+| Strengths | Excellent coding, nuanced understanding |
+| Best For | Technical support, complex multi-turn |
+
+## Detailed Benchmarks
+
+### Latency Benchmarks by Provider
+
+| Model | Provider | TTFT (p50) | TTFT (p99) | TPS | Context |
+|-------|----------|------------|------------|-----|---------|
+| Llama 3.1 70B | Groq | 200ms | 280ms | 300 | 128K |
+| Llama 3.1 70B | Together | 350ms | 500ms | 95 | 128K |
+| Llama 3.1 70B | Fireworks | 400ms | 600ms | 85 | 128K |
+| Gemini 2.0 Flash | Google | 300ms | 450ms | 250 | 1M |
+| GPT-4o-mini | OpenAI | 400ms | 800ms | 100 | 128K |
+| GPT-4o | OpenAI | 700ms | 1500ms | 60 | 128K |
+| Claude 3.5 Haiku | Anthropic | 350ms | 600ms | 80 | 200K |
+| Claude 3.5 Sonnet | Anthropic | 800ms | 1200ms | 77 | 200K |
+
+### Quality Benchmarks (Voice-Relevant Tasks)
+
+| Model | Instruction Following | Tool Calling | Conversation Quality |
+|-------|----------------------|--------------|---------------------|
+| GPT-4o | 94% | 92% | Excellent |
+| Claude 3.5 Sonnet | 93% | 90% | Excellent |
+| Gemini 2.0 Flash | 89% | 88% | Very Good |
+| GPT-4o-mini | 87% | 85% | Very Good |
+| Claude 3.5 Haiku | 85% | 83% | Good |
+| Llama 3.1 70B | 82% | 78% | Good |
+
+## Cost Analysis Per Minute of Conversation
+
+Assuming average voice conversation:
+- 30 words spoken per turn (user)
+- 50 words generated per turn (agent)
+- 6 turns per minute
+- ~40 input tokens, ~65 output tokens per turn
+- 240 input tokens, 390 output tokens per minute
+
+| Model | Input Cost | Output Cost | Total/Min | Cost/Hour |
+|-------|------------|-------------|-----------|-----------|
+| GPT-4o-mini | $0.000036 | $0.000234 | $0.00027 | $0.016 |
+| Claude 3 Haiku | $0.000060 | $0.000488 | $0.00055 | $0.033 |
+| Gemini Flash | $0.000036 | $0.001365 | $0.00140 | $0.084 |
+| Claude 3.5 Haiku | $0.000192 | $0.001560 | $0.00175 | $0.105 |
+| GPT-4o | $0.001200 | $0.005850 | $0.00705 | $0.423 |
+| Claude 3.5 Sonnet | $0.000720 | $0.005850 | $0.00657 | $0.394 |
+| Claude 3 Opus | $0.003600 | $0.029250 | $0.03285 | $1.971 |
+
+**Key Insight**: For high-volume voice applications, model choice can mean the difference between $0.02/hour and $2.00/hour - a 100x cost differential.
+
+## Selection Framework
+
+```python
+def select_voice_llm(
+    latency_requirement: str,  # "ultra-fast", "fast", "standard"
+    task_complexity: str,      # "simple", "moderate", "complex"
+    budget_constraint: str,    # "minimal", "moderate", "flexible"
+    volume: int               # calls per hour
+) -> str:
+    """
+    Decision framework for voice LLM selection.
+    """
+
+    # Ultra-fast latency required
+    if latency_requirement == "ultra-fast":
+        if budget_constraint == "minimal":
+            return "Gemini 2.0 Flash"
+        else:
+            return "Groq Llama 3.1 70B"
+
+    # Fast latency with moderate complexity
+    if latency_requirement == "fast":
+        if task_complexity == "simple":
+            return "GPT-4o-mini"
+        elif budget_constraint != "minimal":
+            return "Claude 3.5 Haiku"
+        else:
+            return "GPT-4o-mini"
+
+    # Standard latency acceptable
+    if task_complexity == "complex":
+        if budget_constraint == "flexible":
+            return "GPT-4o"
+        else:
+            return "Claude 3.5 Sonnet"
+
+    # Default balanced choice
+    return "GPT-4o-mini"
+```
+
+## Key Metrics for Voice Applications
+
+### Time to First Token (TTFT)
+
+The latency from request submission to receiving the first generated token. TTFT determines when TTS can begin streaming audio - lower TTFT equals faster perceived response.
+
+**Target**: TTFT of 500ms or less is generally acceptable for voice AI.
+
+### Tokens Per Second (TPS)
+
+The rate at which tokens are generated after the first token. Higher TPS enables longer responses without latency penalty.
+
+### Context Window
+
+While large context windows exist (up to 1M tokens), voice agents typically benefit more from efficient summarization than from using maximum context, due to latency implications.
+
+## Quick Reference
+
+| Use Case | Recommended Model | TTFT | Cost/Min |
+|----------|-------------------|------|----------|
+| High-volume customer service | Gemini 2.0 Flash | ~300ms | $0.0014 |
+| Balanced production | GPT-4o-mini | ~400ms | $0.0003 |
+| Complex reasoning | Claude 3.5 Sonnet | ~800ms | $0.0066 |
+| Ultra-low latency | Groq Llama 3.1 70B | ~200ms | Variable |
+
+## Latency Budget Template
+
+| Component | Budget (ms) | Notes |
+|-----------|-------------|-------|
+| STT | 200 | Speech recognition |
+| LLM TTFT | 400 | First token generation |
+| TTS to first audio | 200 | Speech synthesis |
+| **Total Target** | **800** | End-to-end |

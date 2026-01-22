@@ -1,0 +1,478 @@
+---
+title: "STT Provider Comparison"
+description: "Comprehensive comparison of major Speech-to-Text providers including Deepgram, OpenAI Whisper, AssemblyAI, Google Cloud, Amazon Transcribe, and Azure Speech Services."
+category: "foundations"
+tags:
+  - providers
+  - deepgram
+  - whisper
+  - assemblyai
+  - google-cloud
+  - amazon-transcribe
+  - azure-speech
+  - comparison
+relatedTopics:
+  - overview
+  - streaming-vs-batch
+  - optimization
+lastUpdated: "2026-01-21"
+---
+
+# STT Provider Comparison
+
+Choosing the right Speech-to-Text provider is crucial for voice AI applications. This guide provides a detailed comparison of major providers, covering accuracy, latency, pricing, and use-case fit.
+
+## Quick Comparison Matrix
+
+| Provider | WER (Real-world) | Streaming Latency | Price/1000 min | Languages | Best For |
+|----------|-----------------|-------------------|----------------|-----------|----------|
+| **Deepgram Nova-3** | 5-7% | ~150ms | $4.30 | 30+ | Voice agents |
+| **OpenAI Whisper** | 3-10% | N/A (batch) | $6.00 | 50+ | Batch transcription |
+| **AssemblyAI Universal-2** | 8-15% | ~300ms | $2.50* | 99+ | Speech Understanding |
+| **Google Chirp 3** | 8-12% | ~400ms | $16.00 | 125+ | Multilingual |
+| **Amazon Transcribe** | 18-22% | ~500ms | $24.00 | 100+ | AWS ecosystem |
+| **Azure Speech** | 10-18% | ~350ms | $16.67 | 100+ | Microsoft ecosystem |
+
+*AssemblyAI effective rate with session overhead
+
+## Deepgram
+
+### Overview
+
+Deepgram has emerged as a leader in real-time voice AI applications, offering purpose-built streaming ASR with industry-leading latency.
+
+### Architecture
+
+- **Model Family:** Nova-2, Nova-3
+- **Architecture:** End-to-end transformer-based with proprietary optimizations
+- **Training Data:** Large-scale diverse audio corpora
+
+### Accuracy Benchmarks
+
+| Model | Mode | Median WER | Dataset |
+|-------|------|------------|---------|
+| Nova-3 | Streaming | 6.84% | Real-world diverse |
+| Nova-3 | Batch | 5.26% | Real-world diverse |
+| Nova-2 | Streaming | ~8.4% | Real-world diverse |
+| Nova-3 Medical | Batch | 3.45% | Medical terminology |
+
+**Competitive Positioning:**
+- 54.2% WER improvement over competitors (streaming)
+- 47.4% WER improvement (batch)
+- 36% lower WER than OpenAI Whisper on select datasets
+
+### Latency Performance
+
+- Streaming latency: ~100-150ms
+- Real-time factor: < 0.15
+- First partial: < 200ms
+- Supports WebSocket streaming
+
+### Pricing (2025)
+
+| Tier | Price per Minute | Notes |
+|------|-----------------|-------|
+| Pay-as-you-go | $0.0043 | $4.30/1000 min |
+| Growth | $0.0036 | $3.60/1000 min |
+| Enterprise | Custom | Volume discounts |
+| Free tier | - | 12,500 minutes/year |
+
+**Billing:** Per-second (no 15-second rounding)
+
+### Strengths
+
+- Industry-leading streaming latency
+- Excellent real-time voice agent integration
+- Strong accuracy-to-cost ratio
+- Nova-3 Medical for healthcare
+- Per-second billing
+
+### Limitations
+
+- Primarily English-focused (expanding)
+- Fewer languages than Google/Azure
+- Limited built-in NLU features
+
+### Best For
+
+Real-time voice agents, conversational AI, customer service automation.
+
+## OpenAI Whisper
+
+### Overview
+
+Whisper is OpenAI's open-source ASR model, known for exceptional robustness across languages, accents, and acoustic conditions.
+
+### Architecture
+
+- **Model Type:** Encoder-decoder Transformer
+- **Input:** 30-second chunks to 80/128-channel log-Mel spectrogram
+- **Training:** 680,000+ hours multilingual audio (1M+ hours for v3)
+- **Output:** Multitask (transcription, translation, timestamps)
+
+### Model Variants
+
+| Model | Parameters | Relative Speed | VRAM |
+|-------|-----------|----------------|------|
+| tiny | 39M | ~32x | ~1 GB |
+| base | 74M | ~16x | ~1 GB |
+| small | 244M | ~6x | ~2 GB |
+| medium | 769M | ~2x | ~5 GB |
+| large-v3 | 1.55B | 1x | ~10 GB |
+| turbo | 809M | ~8x | ~6 GB |
+
+### Accuracy Benchmarks
+
+- LibriSpeech clean: 2.7% WER
+- 50+ languages supported
+- Large-v3: 10-20% error reduction over v2
+
+### Latency Performance
+
+{/* <Callout type="warning">
+Whisper is not streaming-native. Real-time applications require chunking workarounds that can introduce instability.
+</Callout> */}
+
+- **Not streaming-native** (requires chunking workarounds)
+- Batch processing: RTF 0.5-2.0 depending on model/hardware
+- FastWhisper (CTranslate2): ~4x speedup
+- Whisper.cpp: Optimized for CPU/edge
+
+### Pricing
+
+| Option | Price | Notes |
+|--------|-------|-------|
+| OpenAI API (Whisper Large-v2) | $0.006/min | $6/1000 min |
+| GPT-4o Transcribe | $0.006/min | Higher accuracy |
+| Self-hosted | Infrastructure only | Full control |
+
+### Strengths
+
+- Open-source (MIT license)
+- Exceptional multilingual support
+- Robust to noise, accents, domains
+- Active community and tooling
+- Self-hosting option
+
+### Limitations
+
+- Hallucination issues (8/10 transcripts in some studies)
+- No native streaming support
+- Higher latency than purpose-built APIs
+- Repetitive text generation artifacts
+
+### Best For
+
+Batch transcription, multilingual applications, self-hosted deployments.
+
+## AssemblyAI
+
+### Overview
+
+AssemblyAI offers strong accuracy with integrated Speech Understanding features like sentiment analysis, PII detection, and speaker diarization.
+
+### Architecture
+
+- **Model:** Universal-2 (600M parameters)
+- **Architecture:** Proprietary end-to-end neural
+- **Special Features:** Integrated Speech Understanding
+
+### Accuracy Benchmarks
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Universal-2 accuracy | 15% more accurate than competitors | Vendor claim |
+| Streaming WER | 14.5% | Best among commercial streaming |
+| Rare word improvement | 24% | vs. competitors |
+| Alphanumeric improvement | 21% | vs. competitors |
+| Hallucination reduction | 30% | vs. Whisper |
+
+### Latency Performance
+
+- Universal-Streaming: 300ms P50 latency
+- Universal-2: 90ms TTFT
+- **Immutable transcripts** (no mid-conversation changes)
+
+### Pricing (2025)
+
+| Feature | Price | Notes |
+|---------|-------|-------|
+| Core transcription | $0.15/hour | $0.0025/min |
+| Effective with overhead | ~$0.0042/min | Session-based |
+| Slam-1 (Speech LLM) | $0.37/hour | Advanced tasks |
+| Languages | 99+ | Broad coverage |
+
+### Strengths
+
+- Best streaming accuracy among commercial providers
+- Rich Speech Understanding features built-in
+- Slam-1 Speech LLM for advanced tasks
+- Strong proper noun and alphanumeric handling
+- Immutable transcripts for stability
+
+### Limitations
+
+- Session-based billing can inflate costs
+- Streaming model distinct from batch
+- Enterprise features require higher tiers
+
+### Best For
+
+Applications requiring speech understanding (sentiment, PII, diarization), enterprise call analytics.
+
+## Google Cloud Speech-to-Text
+
+### Overview
+
+Google offers the widest language support with their Chirp models built on the Universal Speech Model (USM) foundation.
+
+### Architecture
+
+- **Models:** Chirp (V1), Chirp 2, Chirp 3
+- **Architecture:** Universal Speech Model (USM) foundation
+- **Availability:** V2 API required for latest models
+
+### Accuracy Benchmarks
+
+| Model | WER | Benchmark |
+|-------|-----|-----------|
+| Chirp 3 | State-of-the-art | Multilingual ASR |
+| Chirp 2 | 9.8% | Common Voice |
+
+- 125+ languages supported
+- 85+ languages in Chirp 3 preview
+- Built-in denoiser in Chirp 3
+
+### Latency Performance
+
+- Streaming: StreamingRecognize RPC
+- Supports real-time and batch modes
+- Typical RTF: 0.2-0.6
+
+### Pricing (2025)
+
+| Model | Price per Minute | Notes |
+|-------|-----------------|-------|
+| Standard | $0.024 | $24/1000 min |
+| Enhanced | $0.036 | $36/1000 min |
+| With data logging | Lower | Volume discount |
+| High-volume (2M+) | ~$0.004 | Negotiated |
+
+**Billing:** 15-second increments
+
+### Strengths
+
+- Widest language support
+- Deep Google Cloud integration
+- Built-in denoiser in Chirp 3
+- Strong speaker diarization
+
+### Limitations
+
+- Most expensive at standard rates
+- Chirp models region-restricted
+- 15-second billing increments
+- Latency higher than specialized providers
+
+### Best For
+
+Multilingual applications, Google Cloud ecosystem, international deployments.
+
+## Amazon Transcribe
+
+### Overview
+
+Amazon Transcribe integrates tightly with the AWS ecosystem and offers specialized models for medical transcription.
+
+### Architecture
+
+- **Foundation:** Large-scale multilingual ASR model
+- **Training:** Millions of hours of unlabeled audio
+- **Languages:** 100+ supported
+
+### Accuracy Benchmarks
+
+- WER: 18-22% on independent benchmarks
+- Significant improvement with custom models
+- 10-15% relative improvement possible with training
+
+### Latency Performance
+
+- Real-time streaming via WebSocket
+- Batch: ~5 min processing per audio hour
+- Typical RTF: 0.3-0.5
+
+### Pricing (2025)
+
+| Feature | Price per Minute | Notes |
+|---------|-----------------|-------|
+| Standard | $0.024 | $24/1000 min |
+| Medical | $0.0504 | Healthcare use |
+| PII redaction | +$0.0024 | Additional cost |
+
+**Billing:** 15-second increments
+
+### Strengths
+
+- Native AWS ecosystem integration
+- Transcribe Medical for healthcare
+- Call Analytics features
+- Automatic language identification
+
+### Limitations
+
+- Lower accuracy than newer competitors
+- 15-second billing penalizes short utterances
+- PII features add significant cost
+- Custom model training complexity
+
+### Best For
+
+AWS-native applications, healthcare (Transcribe Medical), call center analytics.
+
+## Azure Speech Services
+
+### Overview
+
+Microsoft's offering integrates with the broader Cognitive Services suite and offers on-device deployment options.
+
+### Architecture
+
+- **Engine:** Microsoft neural speech recognition
+- **Models:** Base, Custom Speech, Neural
+- **Platform:** Cognitive Services suite
+
+### Accuracy Benchmarks
+
+- Standard: ~14.7% WER with phrase lists
+- Custom models can achieve sub-5% WER
+- Strong accent handling with customization
+
+### Latency Performance
+
+- Near real-time streaming
+- Embedded Speech for on-device
+- RTF: 0.2-0.4 typical
+
+### Pricing (2025)
+
+| Tier | Price | Notes |
+|------|-------|-------|
+| Standard | $1.00/audio hour | ~$0.017/min |
+| Real-time streaming | $2.00/audio hour | ~$0.033/min |
+| Free tier | - | 5 hours/month |
+| Custom Speech | Additional | Training costs |
+
+### Strengths
+
+- Microsoft ecosystem integration (Teams, Office)
+- Custom Speech model training
+- On-device/embedded options
+- Comprehensive voice portfolio
+
+### Limitations
+
+- Custom models require expertise
+- Base accuracy trails leaders
+- Complex pricing structure
+- Regional availability varies
+
+### Best For
+
+Microsoft 365 integration, on-premise/embedded deployment, Teams applications.
+
+## Open-Source Options
+
+### OpenAI Whisper (Self-Hosted)
+
+- **License:** MIT
+- **Deployment:** Hugging Face, ONNX, TensorRT
+- **Best For:** Cost-sensitive batch processing
+- **Considerations:** Requires infrastructure, no streaming
+
+### NVIDIA NeMo ASR
+
+- **Models:** Conformer-CTC, Conformer-Transducer, Parakeet
+- **Parakeet TDT 0.6B V2:** 6.05% WER, RTFx 3386
+- **License:** Apache 2.0
+- **Best For:** High-performance on-premise
+
+### Vosk
+
+- **Size:** Lightweight models (50MB-2GB)
+- **Offline:** Full offline capability
+- **Languages:** 20+ supported
+- **Best For:** Edge/embedded devices
+
+### wav2vec 2.0
+
+- **Architecture:** Self-supervised pre-training
+- **Fine-tuning:** Achieves SOTA with minimal labeled data
+- **Best For:** Low-resource language ASR
+
+## Decision Framework
+
+### Choose Deepgram When
+
+- Real-time voice agents are the primary use case
+- Latency is critical (sub-200ms required)
+- English is the primary language
+- Per-second billing matters for short utterances
+
+### Choose Whisper When
+
+- Batch processing is acceptable
+- Multilingual support is essential
+- Self-hosting is preferred
+- Cost is a primary concern for high volume
+
+### Choose AssemblyAI When
+
+- Speech understanding features are needed
+- Transcript stability is critical
+- Enterprise analytics are required
+- PII detection/redaction is needed
+
+### Choose Google Cloud When
+
+- Maximum language coverage is needed
+- Already using Google Cloud Platform
+- Global deployment required
+- Diarization quality is critical
+
+### Choose Amazon Transcribe When
+
+- Deep AWS integration is required
+- Medical transcription is the use case
+- Call center analytics needed
+- Already invested in AWS ecosystem
+
+### Choose Azure When
+
+- Microsoft 365 integration is needed
+- On-device deployment required
+- Custom model training is planned
+- Teams/Office integration is critical
+
+## Cost Comparison Example
+
+For 100,000 minutes of transcription per month:
+
+| Provider | Monthly Cost | Notes |
+|----------|-------------|-------|
+| Deepgram (Growth) | $360 | Per-second billing |
+| OpenAI Whisper API | $600 | Batch only |
+| AssemblyAI | $250-420 | Session overhead varies |
+| Google (Standard) | $2,400 | 15-sec increments |
+| Amazon Transcribe | $2,400 | 15-sec increments |
+| Azure | $1,667-3,333 | Depends on mode |
+
+{/* <Callout type="info">
+For voice agents with many short utterances, per-second billing (Deepgram) can reduce costs by 40-60% compared to 15-second minimum billing.
+</Callout> */}
+
+## Further Reading
+
+- **[Overview](/topics/foundations/speech-recognition/overview)** - STT fundamentals
+- **[Streaming vs Batch](/topics/foundations/speech-recognition/streaming-vs-batch)** - Architecture differences
+- **[Optimization](/topics/foundations/speech-recognition/optimization)** - Performance tuning

@@ -1,0 +1,73 @@
+---
+title: "Streaming"
+description: "Guide to real-time streaming infrastructure for low-latency voice AI communication using WebSockets, gRPC, and optimized protocols"
+category: "infrastructure"
+tags:
+  - streaming
+  - real-time
+  - websocket
+  - grpc
+  - latency
+  - voice-ai
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Streaming Infrastructure
+
+Real-time streaming is the backbone of responsive voice AI systems. Unlike batch processing, streaming enables continuous, bidirectional audio flow that makes conversations feel natural and immediate.
+
+## Why Streaming Matters
+
+Voice conversations require real-time processing:
+
+- **Low Latency**: Users expect responses within hundreds of milliseconds
+- **Bidirectional**: Both parties can speak and listen simultaneously
+- **Continuous**: Audio flows constantly, not in discrete chunks
+- **Interruption**: Users should be able to interrupt the AI mid-response
+
+## Topics in This Section
+
+### [Streaming Overview](/topics/infrastructure/streaming/overview)
+Introduction to real-time streaming concepts, protocols, and architecture patterns for voice AI systems.
+
+### [WebSocket Protocols](/topics/infrastructure/streaming/websocket-protocols)
+WebSocket-based streaming for bidirectional real-time audio communication. The most common approach for web-based voice AI.
+
+### [gRPC Streaming](/topics/infrastructure/streaming/grpc-streaming)
+gRPC streaming for high-performance voice AI service communication. Efficient binary protocols for server-to-server integration.
+
+### [Buffer Management](/topics/infrastructure/streaming/buffer-management)
+Audio buffer management strategies for smooth playback and minimal latency. Balance between latency and audio quality.
+
+### [Latency Optimization](/topics/infrastructure/streaming/latency-optimization)
+Techniques for minimizing end-to-end latency in voice AI systems. Every millisecond counts in conversational AI.
+
+## Streaming Protocols Comparison
+
+| Protocol | Best For | Latency | Complexity |
+|----------|----------|---------|------------|
+| **WebSocket** | Web applications | Low | Low |
+| **gRPC** | Service-to-service | Very Low | Medium |
+| **WebRTC** | P2P, browser-to-browser | Lowest | High |
+| **HTTP/2 SSE** | Unidirectional streaming | Medium | Low |
+
+## Key Latency Targets
+
+| Metric | Excellent | Good | Acceptable |
+|--------|-----------|------|------------|
+| **Time-to-First-Audio** | &lt;250ms | 250-400ms | 400-600ms |
+| **End-to-End Latency** | &lt;500ms | 500-800ms | 800-1200ms |
+| **Network RTT** | &lt;50ms | 50-100ms | 100-200ms |
+
+## Architecture Pattern
+
+```
+User Audio → WebSocket → STT (streaming) → LLM → TTS (streaming) → WebSocket → User
+                ↑                                                        ↓
+                └──────────── Bidirectional Connection ──────────────────┘
+```
+
+## Getting Started
+
+Begin with the [Streaming Overview](/topics/infrastructure/streaming/overview) to understand the fundamentals, then dive into [WebSocket Protocols](/topics/infrastructure/streaming/websocket-protocols) for implementation details. For optimization, see [Latency Optimization](/topics/infrastructure/streaming/latency-optimization).

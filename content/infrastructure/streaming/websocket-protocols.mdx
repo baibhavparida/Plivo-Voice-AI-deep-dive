@@ -1,0 +1,808 @@
+---
+title: "WebSocket Protocols for Voice AI"
+description: "Deep dive into WebSocket protocols for real-time audio streaming in voice AI applications"
+---
+
+# WebSocket Protocols for Voice AI
+
+WebSocket protocols form the backbone of real-time voice AI systems, enabling bidirectional, low-latency communication between clients and servers. This guide covers everything from basic WebSocket concepts to production-ready implementations for voice streaming.
+
+## Why WebSockets for Voice AI?
+
+Traditional HTTP request-response patterns are fundamentally incompatible with real-time audio streaming:
+
+| Protocol | Latency | Bidirectional | Persistent | Best For |
+|----------|---------|---------------|------------|----------|
+| **HTTP/1.1** | High | No | No | Static content |
+| **HTTP/2** | Medium | Limited | Yes | Multiplexed requests |
+| **WebSocket** | Low | Yes | Yes | Real-time streaming |
+| **WebRTC** | Very Low | Yes | Yes | Peer-to-peer media |
+
+WebSockets provide:
+- **Full-duplex communication** - Send and receive simultaneously
+- **Low overhead** - Minimal framing after handshake
+- **Persistent connections** - No repeated handshakes
+- **Binary support** - Native audio data transmission
+
+## WebSocket Protocol Fundamentals
+
+### Connection Lifecycle
+
+```
+Client                                    Server
+   |                                         |
+   |  HTTP Upgrade Request                   |
+   |  Sec-WebSocket-Key: xxx                 |
+   |---------------------------------------->|
+   |                                         |
+   |  HTTP 101 Switching Protocols           |
+   |  Sec-WebSocket-Accept: yyy              |
+   |<----------------------------------------|
+   |                                         |
+   |  WebSocket Connection Established       |
+   |<=======================================>|
+   |                                         |
+   |  Binary Frame (audio data)              |
+   |---------------------------------------->|
+   |                                         |
+   |  Text Frame (transcription)             |
+   |<----------------------------------------|
+   |                                         |
+   |  Close Frame                            |
+   |<--------------------------------------->|
+```
+
+### Frame Structure
+
+WebSocket frames have minimal overhead:
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-------+-+-------------+-------------------------------+
+|F|R|R|R| opcode|M| Payload len |    Extended payload length    |
+|I|S|S|S|  (4)  |A|     (7)     |             (16/64)           |
+|N|V|V|V|       |S|             |   (if payload len==126/127)   |
+| |1|2|3|       |K|             |                               |
++-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
+|     Extended payload length continued, if payload len == 127  |
++ - - - - - - - - - - - - - - - +-------------------------------+
+|                               |Masking-key, if MASK set to 1  |
++-------------------------------+-------------------------------+
+| Masking-key (continued)       |          Payload Data         |
++-------------------------------- - - - - - - - - - - - - - - - +
+:                     Payload Data continued ...                :
++ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+|                     Payload Data (continued)                  |
++---------------------------------------------------------------+
+```
+
+Key opcodes for voice AI:
+- `0x01` - Text frame (JSON messages, transcriptions)
+- `0x02` - Binary frame (audio data)
+- `0x08` - Close frame
+- `0x09` - Ping frame
+- `0x0A` - Pong frame
+
+## Voice AI WebSocket Architecture
+
+### Basic Audio Streaming Pattern
+
+```typescript
+// Client-side WebSocket for voice streaming
+class VoiceWebSocket {
+  private ws: WebSocket;
+  private audioContext: AudioContext;
+  private mediaRecorder: MediaRecorder;
+
+  constructor(private url: string) {
+    this.audioContext = new AudioContext({ sampleRate: 16000 });
+  }
+
+  async connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.url);
+      this.ws.binaryType = 'arraybuffer';
+
+      this.ws.onopen = () => {
+        this.sendConfig();
+        resolve();
+      };
+
+      this.ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          this.handleTextMessage(JSON.parse(event.data));
+        } else {
+          this.handleAudioResponse(event.data);
+        }
+      };
+
+      this.ws.onerror = (error) => reject(error);
+    });
+  }
+
+  private sendConfig(): void {
+    this.ws.send(JSON.stringify({
+      type: 'config',
+      audio: {
+        encoding: 'linear16',
+        sampleRate: 16000,
+        channels: 1
+      },
+      model: 'nova-2',
+      language: 'en-US',
+      interimResults: true
+    }));
+  }
+
+  async startStreaming(): Promise<void> {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true
+      }
+    });
+
+    const source = this.audioContext.createMediaStreamSource(stream);
+    const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (event) => {
+      if (this.ws.readyState === WebSocket.OPEN) {
+        const audioData = event.inputBuffer.getChannelData(0);
+        const pcmData = this.float32ToInt16(audioData);
+        this.ws.send(pcmData.buffer);
+      }
+    };
+
+    source.connect(processor);
+    processor.connect(this.audioContext.destination);
+  }
+
+  private float32ToInt16(float32Array: Float32Array): Int16Array {
+    const int16Array = new Int16Array(float32Array.length);
+    for (let i = 0; i < float32Array.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return int16Array;
+  }
+
+  private handleTextMessage(message: any): void {
+    switch (message.type) {
+      case 'transcript':
+        console.log('Transcript:', message.text);
+        break;
+      case 'final':
+        console.log('Final:', message.text);
+        break;
+      case 'error':
+        console.error('Error:', message.message);
+        break;
+    }
+  }
+
+  private handleAudioResponse(audioData: ArrayBuffer): void {
+    // Play TTS audio response
+    this.audioContext.decodeAudioData(audioData, (buffer) => {
+      const source = this.audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.audioContext.destination);
+      source.start(0);
+    });
+  }
+}
+```
+
+### Server-Side WebSocket Handler
+
+```python
+import asyncio
+import json
+import websockets
+from typing import AsyncGenerator
+
+class VoiceWebSocketServer:
+    def __init__(self, stt_client, llm_client, tts_client):
+        self.stt_client = stt_client
+        self.llm_client = llm_client
+        self.tts_client = tts_client
+
+    async def handle_connection(self, websocket, path):
+        """Handle a single WebSocket connection."""
+        config = None
+        audio_buffer = bytearray()
+
+        try:
+            async for message in websocket:
+                if isinstance(message, str):
+                    # Handle text messages (config, control)
+                    data = json.loads(message)
+                    if data['type'] == 'config':
+                        config = data
+                        await websocket.send(json.dumps({
+                            'type': 'ready',
+                            'sessionId': self.generate_session_id()
+                        }))
+                    elif data['type'] == 'end_of_speech':
+                        # Process accumulated audio
+                        await self.process_audio(
+                            websocket, bytes(audio_buffer), config
+                        )
+                        audio_buffer.clear()
+                else:
+                    # Handle binary messages (audio data)
+                    audio_buffer.extend(message)
+
+                    # Stream to STT for interim results
+                    async for transcript in self.stream_stt(message, config):
+                        await websocket.send(json.dumps({
+                            'type': 'transcript',
+                            'text': transcript.text,
+                            'isFinal': transcript.is_final,
+                            'confidence': transcript.confidence
+                        }))
+
+        except websockets.exceptions.ConnectionClosed:
+            print("Connection closed")
+        finally:
+            await self.cleanup(websocket)
+
+    async def stream_stt(self, audio_chunk, config) -> AsyncGenerator:
+        """Stream audio to STT and yield transcripts."""
+        async for result in self.stt_client.streaming_recognize(
+            audio_chunk,
+            sample_rate=config['audio']['sampleRate'],
+            encoding=config['audio']['encoding'],
+            language=config.get('language', 'en-US'),
+            interim_results=config.get('interimResults', True)
+        ):
+            yield result
+
+    async def process_audio(self, websocket, audio_data, config):
+        """Process complete utterance through STT -> LLM -> TTS pipeline."""
+        # Get final transcription
+        transcript = await self.stt_client.recognize(audio_data, config)
+
+        await websocket.send(json.dumps({
+            'type': 'final',
+            'text': transcript.text
+        }))
+
+        # Generate LLM response
+        response_text = ""
+        async for chunk in self.llm_client.stream_completion(transcript.text):
+            response_text += chunk
+            await websocket.send(json.dumps({
+                'type': 'llm_chunk',
+                'text': chunk
+            }))
+
+        # Generate and stream TTS
+        async for audio_chunk in self.tts_client.stream_synthesis(response_text):
+            await websocket.send(audio_chunk)  # Binary
+
+        await websocket.send(json.dumps({
+            'type': 'response_complete'
+        }))
+
+# Start server
+async def main():
+    server = VoiceWebSocketServer(stt, llm, tts)
+    async with websockets.serve(
+        server.handle_connection,
+        "0.0.0.0",
+        8765,
+        ping_interval=20,
+        ping_timeout=60,
+        max_size=10 * 1024 * 1024  # 10MB max message
+    ):
+        await asyncio.Future()  # Run forever
+
+asyncio.run(main())
+```
+
+## Message Protocol Design
+
+### Recommended Message Types
+
+```typescript
+// Client -> Server Messages
+interface AudioMessage {
+  // Binary frame with raw audio data
+}
+
+interface ConfigMessage {
+  type: 'config';
+  audio: {
+    encoding: 'linear16' | 'mulaw' | 'alaw' | 'opus';
+    sampleRate: 8000 | 16000 | 22050 | 44100 | 48000;
+    channels: 1 | 2;
+  };
+  stt: {
+    model: string;
+    language: string;
+    interimResults: boolean;
+    punctuation: boolean;
+  };
+  tts: {
+    voice: string;
+    speed: number;
+    pitch: number;
+  };
+}
+
+interface ControlMessage {
+  type: 'end_of_speech' | 'cancel' | 'reset' | 'ping';
+  timestamp?: number;
+}
+
+// Server -> Client Messages
+interface TranscriptMessage {
+  type: 'transcript';
+  text: string;
+  isFinal: boolean;
+  confidence: number;
+  words?: WordTiming[];
+  timestamp: number;
+}
+
+interface LLMChunkMessage {
+  type: 'llm_chunk';
+  text: string;
+  tokenId?: number;
+}
+
+interface AudioResponseMessage {
+  // Binary frame with TTS audio
+}
+
+interface ErrorMessage {
+  type: 'error';
+  code: string;
+  message: string;
+  recoverable: boolean;
+}
+
+interface StatusMessage {
+  type: 'status';
+  state: 'ready' | 'processing' | 'speaking' | 'idle';
+  latency?: LatencyMetrics;
+}
+```
+
+### Message Sequencing
+
+```
+Client                                    Server
+   |                                         |
+   |  {"type": "config", ...}                |
+   |---------------------------------------->|
+   |                                         |
+   |  {"type": "ready", "sessionId": "..."}  |
+   |<----------------------------------------|
+   |                                         |
+   |  [Binary: audio chunk 1]                |
+   |---------------------------------------->|
+   |                                         |
+   |  {"type": "transcript", "text": "Hel",  |
+   |   "isFinal": false}                     |
+   |<----------------------------------------|
+   |                                         |
+   |  [Binary: audio chunk 2]                |
+   |---------------------------------------->|
+   |                                         |
+   |  {"type": "transcript", "text": "Hello",|
+   |   "isFinal": false}                     |
+   |<----------------------------------------|
+   |                                         |
+   |  {"type": "end_of_speech"}              |
+   |---------------------------------------->|
+   |                                         |
+   |  {"type": "transcript", "text": "Hello",|
+   |   "isFinal": true, "confidence": 0.98}  |
+   |<----------------------------------------|
+   |                                         |
+   |  {"type": "llm_chunk", "text": "Hi"}    |
+   |<----------------------------------------|
+   |  {"type": "llm_chunk", "text": " there"}|
+   |<----------------------------------------|
+   |                                         |
+   |  [Binary: TTS audio]                    |
+   |<----------------------------------------|
+   |                                         |
+   |  {"type": "response_complete"}          |
+   |<----------------------------------------|
+```
+
+## Connection Management
+
+### Reconnection Strategy
+
+```typescript
+class ResilientWebSocket {
+  private ws: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private baseDelay = 1000;
+  private maxDelay = 30000;
+  private messageQueue: any[] = [];
+
+  constructor(
+    private url: string,
+    private onMessage: (data: any) => void,
+    private onStateChange: (state: string) => void
+  ) {}
+
+  connect(): void {
+    this.onStateChange('connecting');
+
+    this.ws = new WebSocket(this.url);
+    this.ws.binaryType = 'arraybuffer';
+
+    this.ws.onopen = () => {
+      this.reconnectAttempts = 0;
+      this.onStateChange('connected');
+      this.flushMessageQueue();
+    };
+
+    this.ws.onclose = (event) => {
+      if (!event.wasClean) {
+        this.scheduleReconnect();
+      }
+    };
+
+    this.ws.onerror = () => {
+      this.onStateChange('error');
+    };
+
+    this.ws.onmessage = (event) => {
+      this.onMessage(event.data);
+    };
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.onStateChange('failed');
+      return;
+    }
+
+    const delay = Math.min(
+      this.baseDelay * Math.pow(2, this.reconnectAttempts),
+      this.maxDelay
+    );
+
+    // Add jitter (±25%)
+    const jitter = delay * 0.25 * (Math.random() * 2 - 1);
+    const finalDelay = delay + jitter;
+
+    this.reconnectAttempts++;
+    this.onStateChange('reconnecting');
+
+    setTimeout(() => this.connect(), finalDelay);
+  }
+
+  send(data: any): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
+    } else {
+      this.messageQueue.push(data);
+    }
+  }
+
+  private flushMessageQueue(): void {
+    while (this.messageQueue.length > 0 &&
+           this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(this.messageQueue.shift());
+    }
+  }
+
+  close(): void {
+    this.maxReconnectAttempts = 0; // Prevent reconnection
+    this.ws?.close(1000, 'Client closing');
+  }
+}
+```
+
+### Heartbeat/Keep-Alive
+
+```python
+import asyncio
+
+class WebSocketHeartbeat:
+    def __init__(self, websocket, interval=30, timeout=10):
+        self.websocket = websocket
+        self.interval = interval
+        self.timeout = timeout
+        self.last_pong = asyncio.get_event_loop().time()
+        self._heartbeat_task = None
+
+    async def start(self):
+        """Start the heartbeat loop."""
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+    async def _heartbeat_loop(self):
+        while True:
+            try:
+                await asyncio.sleep(self.interval)
+
+                # Check if we've received a pong recently
+                elapsed = asyncio.get_event_loop().time() - self.last_pong
+                if elapsed > self.interval + self.timeout:
+                    print("Connection timed out, closing")
+                    await self.websocket.close(1001, "Heartbeat timeout")
+                    break
+
+                # Send ping
+                pong_waiter = await self.websocket.ping()
+                await asyncio.wait_for(pong_waiter, timeout=self.timeout)
+                self.last_pong = asyncio.get_event_loop().time()
+
+            except asyncio.TimeoutError:
+                print("Ping timeout")
+                await self.websocket.close(1001, "Ping timeout")
+                break
+            except Exception as e:
+                print(f"Heartbeat error: {e}")
+                break
+
+    def stop(self):
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+```
+
+## Audio Encoding Over WebSocket
+
+### Encoding Comparison
+
+| Encoding | Bandwidth | Latency | Quality | Complexity |
+|----------|-----------|---------|---------|------------|
+| **Linear16 (PCM)** | High (256 kbps @ 16kHz) | Lowest | Lossless | Lowest |
+| **μ-law** | Medium (64 kbps) | Very Low | Good | Low |
+| **Opus** | Low (24-64 kbps) | Low | Excellent | Medium |
+| **AAC** | Low (32-128 kbps) | Medium | Excellent | High |
+
+### Efficient Binary Packing
+
+```typescript
+// Efficient audio frame with metadata
+class AudioFrame {
+  static readonly HEADER_SIZE = 16;
+
+  constructor(
+    public timestamp: number,
+    public sequenceNumber: number,
+    public flags: number,
+    public audioData: Int16Array
+  ) {}
+
+  toBuffer(): ArrayBuffer {
+    const buffer = new ArrayBuffer(
+      AudioFrame.HEADER_SIZE + this.audioData.byteLength
+    );
+    const view = new DataView(buffer);
+
+    // Header
+    view.setFloat64(0, this.timestamp);      // 8 bytes
+    view.setUint32(8, this.sequenceNumber);  // 4 bytes
+    view.setUint32(12, this.flags);          // 4 bytes
+
+    // Audio data
+    const audioView = new Int16Array(buffer, AudioFrame.HEADER_SIZE);
+    audioView.set(this.audioData);
+
+    return buffer;
+  }
+
+  static fromBuffer(buffer: ArrayBuffer): AudioFrame {
+    const view = new DataView(buffer);
+
+    const timestamp = view.getFloat64(0);
+    const sequenceNumber = view.getUint32(8);
+    const flags = view.getUint32(12);
+    const audioData = new Int16Array(buffer, AudioFrame.HEADER_SIZE);
+
+    return new AudioFrame(timestamp, sequenceNumber, flags, audioData);
+  }
+}
+
+// Frame flags
+const FrameFlags = {
+  SPEECH_START: 1 << 0,
+  SPEECH_END: 1 << 1,
+  INTERRUPT: 1 << 2,
+  FINAL: 1 << 3,
+};
+```
+
+## Security Considerations
+
+### Secure WebSocket (WSS)
+
+Always use WSS (WebSocket Secure) in production:
+
+```typescript
+// Bad - unencrypted
+const ws = new WebSocket('ws://api.example.com/voice');
+
+// Good - encrypted
+const ws = new WebSocket('wss://api.example.com/voice');
+```
+
+### Authentication
+
+```typescript
+// Option 1: Token in URL (simple but visible in logs)
+const ws = new WebSocket(`wss://api.example.com/voice?token=${token}`);
+
+// Option 2: Token in first message (recommended)
+const ws = new WebSocket('wss://api.example.com/voice');
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: 'auth',
+    token: authToken
+  }));
+};
+
+// Option 3: Custom header via subprotocol (limited)
+const ws = new WebSocket(
+  'wss://api.example.com/voice',
+  [`bearer.${token}`]
+);
+```
+
+### Rate Limiting
+
+```python
+from collections import defaultdict
+import time
+
+class WebSocketRateLimiter:
+    def __init__(self, max_messages=100, window_seconds=1):
+        self.max_messages = max_messages
+        self.window = window_seconds
+        self.message_counts = defaultdict(list)
+
+    def is_allowed(self, client_id: str) -> bool:
+        now = time.time()
+        window_start = now - self.window
+
+        # Clean old entries
+        self.message_counts[client_id] = [
+            t for t in self.message_counts[client_id]
+            if t > window_start
+        ]
+
+        if len(self.message_counts[client_id]) >= self.max_messages:
+            return False
+
+        self.message_counts[client_id].append(now)
+        return True
+```
+
+## Performance Optimization
+
+### Message Batching
+
+```typescript
+class AudioBatcher {
+  private buffer: Int16Array[] = [];
+  private totalSamples = 0;
+  private batchSize = 4800; // 300ms at 16kHz
+  private flushInterval: number;
+
+  constructor(
+    private send: (data: ArrayBuffer) => void,
+    flushMs = 100
+  ) {
+    this.flushInterval = window.setInterval(
+      () => this.flush(),
+      flushMs
+    );
+  }
+
+  add(samples: Int16Array): void {
+    this.buffer.push(samples);
+    this.totalSamples += samples.length;
+
+    if (this.totalSamples >= this.batchSize) {
+      this.flush();
+    }
+  }
+
+  private flush(): void {
+    if (this.buffer.length === 0) return;
+
+    // Combine all buffers
+    const combined = new Int16Array(this.totalSamples);
+    let offset = 0;
+    for (const chunk of this.buffer) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    this.send(combined.buffer);
+    this.buffer = [];
+    this.totalSamples = 0;
+  }
+
+  destroy(): void {
+    clearInterval(this.flushInterval);
+    this.flush();
+  }
+}
+```
+
+### Compression
+
+```typescript
+// Using permessage-deflate extension
+const ws = new WebSocket('wss://api.example.com/voice', {
+  perMessageDeflate: {
+    zlibDeflateOptions: {
+      chunkSize: 1024,
+      memLevel: 7,
+      level: 3
+    },
+    zlibInflateOptions: {
+      chunkSize: 10 * 1024
+    },
+    clientMaxWindowBits: 10,
+    serverMaxWindowBits: 10,
+    concurrencyLimit: 10,
+    threshold: 1024 // Only compress messages > 1KB
+  }
+});
+```
+
+## Provider-Specific Implementations
+
+### Deepgram WebSocket
+
+```typescript
+const deepgramWs = new WebSocket(
+  'wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US',
+  ['token', DEEPGRAM_API_KEY]
+);
+
+deepgramWs.onopen = () => {
+  // Start sending audio immediately
+};
+
+deepgramWs.onmessage = (event) => {
+  const result = JSON.parse(event.data);
+  if (result.type === 'Results') {
+    const transcript = result.channel.alternatives[0].transcript;
+    const isFinal = result.is_final;
+  }
+};
+```
+
+### AssemblyAI WebSocket
+
+```typescript
+const assemblyWs = new WebSocket(
+  `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000`
+);
+
+assemblyWs.onopen = () => {
+  assemblyWs.send(JSON.stringify({
+    token: ASSEMBLY_API_KEY
+  }));
+};
+
+assemblyWs.onmessage = (event) => {
+  const result = JSON.parse(event.data);
+  if (result.message_type === 'FinalTranscript') {
+    console.log('Final:', result.text);
+  }
+};
+```
+
+## Related Topics
+
+- **[gRPC Streaming](/topics/infrastructure/streaming/grpc-streaming)** - Alternative protocol for high-performance streaming
+- **[Buffer Management](/topics/infrastructure/streaming/buffer-management)** - Managing audio buffers effectively
+- **[Audio Pipeline](/topics/infrastructure/audio-pipeline)** - End-to-end audio processing
+- **[Latency Optimization](/topics/foundations/latency-optimization)** - Reducing end-to-end delay

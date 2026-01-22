@@ -1,0 +1,1013 @@
+---
+title: "Security and Compliance for Voice AI"
+description: "Comprehensive guide to securing voice AI systems, protecting voice data, and meeting regulatory compliance requirements including PCI DSS, HIPAA, SOC 2, and GDPR"
+category: Enterprise
+tags:
+  - security
+  - compliance
+  - privacy
+  - HIPAA
+  - PCI-DSS
+  - GDPR
+  - SOC2
+related:
+  - scalability
+  - analytics
+  - cost-optimization
+lastUpdated: "2025-01-21"
+difficulty: advanced
+---
+
+# Security and Compliance for Voice AI
+
+Voice AI systems process some of the most sensitive data in any organization: human speech containing personal information, financial details, health records, and authentication credentials. This guide provides a comprehensive framework for securing voice AI deployments and meeting regulatory compliance requirements.
+
+## Voice Data Privacy Fundamentals
+
+Voice data presents unique privacy challenges compared to text-based systems. Audio recordings contain biometric data (voiceprints), emotional states, background conversations, and environmental information that users may not intend to share.
+
+```
++-----------------------------------------------------------------------------+
+|                        VOICE DATA SENSITIVITY LEVELS                          |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  LEVEL 1: HIGHLY SENSITIVE                                                    |
+|  +----------------------------------------------------------------------+    |
+|  | - Biometric voiceprints (authentication)                              |    |
+|  | - Financial account numbers spoken aloud                              |    |
+|  | - Health information (HIPAA protected)                                |    |
+|  | - Social Security numbers, government IDs                             |    |
+|  | - Passwords or PINs spoken during authentication                      |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  LEVEL 2: SENSITIVE                                                           |
+|  +----------------------------------------------------------------------+    |
+|  | - Full names and addresses                                            |    |
+|  | - Contact information                                                 |    |
+|  | - Transaction details                                                 |    |
+|  | - Employment information                                              |    |
+|  | - Location data inferred from speech                                  |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  LEVEL 3: CONTEXTUAL                                                          |
+|  +----------------------------------------------------------------------+    |
+|  | - Conversation topics and intent                                      |    |
+|  | - Emotional state and sentiment                                       |    |
+|  | - Background audio (conversations, environment)                       |    |
+|  | - Speech patterns and linguistic markers                              |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### Data Minimization Principles
+
+```python
+class VoiceDataMinimization:
+    """
+    Implement data minimization for voice AI systems.
+    Only collect and retain what is necessary.
+    """
+
+    def __init__(self, config: ComplianceConfig):
+        self.retention_days = config.retention_days
+        self.redaction_enabled = config.redact_sensitive
+        self.transcription_only = config.store_transcripts_only
+
+    async def process_call(self, audio_stream: AudioStream) -> ProcessedCall:
+        # Process in real-time without storing raw audio when possible
+        transcript_segments = []
+
+        async for audio_chunk in audio_stream:
+            # Transcribe immediately
+            transcript = await self.stt.transcribe(audio_chunk)
+
+            # Redact sensitive information in real-time
+            if self.redaction_enabled:
+                transcript = await self.redact_pii(transcript)
+
+            transcript_segments.append(transcript)
+
+            # Don't store raw audio unless required
+            if not self.config.retain_audio:
+                del audio_chunk
+
+        return ProcessedCall(
+            transcript=transcript_segments,
+            metadata=self._extract_metadata(),
+            # Audio only stored if explicitly required
+            audio_reference=None if self.transcription_only else audio_ref
+        )
+
+    async def redact_pii(self, text: str) -> str:
+        """Redact personally identifiable information from transcripts"""
+        patterns = {
+            'ssn': r'\b\d{3}-\d{2}-\d{4}\b',
+            'credit_card': r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b',
+            'phone': r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',
+            'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+        }
+
+        redacted = text
+        for pii_type, pattern in patterns.items():
+            redacted = re.sub(pattern, f'[REDACTED_{pii_type.upper()}]', redacted)
+
+        return redacted
+```
+
+## PCI DSS Compliance for Payment Handling
+
+Voice AI systems that handle payment card data must comply with PCI DSS (Payment Card Industry Data Security Standard). This applies to any voice bot that accepts credit card numbers, CVVs, or processes payments.
+
+### PCI DSS Requirements for Voice AI
+
+| Requirement | Voice AI Implementation |
+|-------------|------------------------|
+| Req 3: Protect stored cardholder data | Never store full card numbers in transcripts or logs |
+| Req 4: Encrypt transmission | TLS 1.3 for all audio streams |
+| Req 6: Secure systems | Regular security testing of voice infrastructure |
+| Req 7: Restrict access | Role-based access to call recordings |
+| Req 10: Track and monitor | Complete audit trail of payment interactions |
+| Req 12: Security policies | Documented voice data handling procedures |
+
+### Secure Payment Flow Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                    PCI-COMPLIANT VOICE PAYMENT FLOW                           |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  Customer Call                                                                |
+|       |                                                                       |
+|       v                                                                       |
+|  +------------------+     +------------------+     +------------------+       |
+|  |   Voice AI Bot   |     |  DTMF/Secure     |     |   PCI-Compliant  |       |
+|  |   (Non-PCI)      |---->|  Payment IVR     |---->|   Payment        |       |
+|  |                  |     |  (PCI Scope)     |     |   Processor      |       |
+|  +------------------+     +------------------+     +------------------+       |
+|         ^                        |                        |                   |
+|         |                        |                        |                   |
+|         +------------------------+------------------------+                   |
+|                     Return to Voice AI after payment                          |
+|                                                                               |
+|  KEY PRINCIPLE: Voice AI NEVER touches card data                              |
+|  - Transfer to secure IVR for card entry                                      |
+|  - Use DTMF tones (keypad) instead of speech for card numbers                |
+|  - Receive only tokenized payment confirmation                                |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### Implementation Pattern
+
+```python
+class PCICompliantPaymentHandler:
+    """
+    Handle payments without bringing voice AI into PCI scope.
+    Uses secure handoff to PCI-compliant payment IVR.
+    """
+
+    def __init__(self, payment_ivr_endpoint: str):
+        self.payment_ivr = payment_ivr_endpoint
+        self.tokenization_service = TokenizationService()
+
+    async def initiate_payment(
+        self,
+        call_session: CallSession,
+        amount: Decimal,
+        description: str
+    ) -> PaymentResult:
+
+        # Generate one-time payment session
+        payment_session = await self.create_secure_session(
+            amount=amount,
+            callback_url=call_session.callback_url,
+            timeout_seconds=300
+        )
+
+        # Inform customer about secure payment transfer
+        await call_session.speak(
+            "I'll now transfer you to our secure payment system. "
+            "Please enter your card number using your phone's keypad. "
+            "I'll wait here and won't be able to hear your card details."
+        )
+
+        # Transfer to PCI-compliant IVR
+        # Voice AI is paused and out of scope
+        transfer_result = await call_session.transfer_to_ivr(
+            destination=self.payment_ivr,
+            session_id=payment_session.id,
+            return_on_complete=True
+        )
+
+        # Receive only tokenized result (no card data)
+        if transfer_result.success:
+            return PaymentResult(
+                success=True,
+                token=transfer_result.payment_token,  # Tokenized, not actual card
+                last_four=transfer_result.last_four,  # Only last 4 digits
+                authorization_code=transfer_result.auth_code
+            )
+
+        return PaymentResult(success=False, error=transfer_result.error)
+```
+
+<Callout type="warning" title="PCI Scope Warning">
+If your voice AI system transcribes or logs spoken credit card numbers, your entire voice infrastructure falls into PCI scope. Always use DTMF (keypad) entry for card numbers and transfer to a PCI-compliant IVR system.
+</Callout>
+
+## HIPAA Compliance for Healthcare Voice AI
+
+Healthcare voice AI applications must comply with HIPAA (Health Insurance Portability and Accountability Act) when handling Protected Health Information (PHI).
+
+### HIPAA Requirements Mapping
+
+```
++-----------------------------------------------------------------------------+
+|                    HIPAA COMPLIANCE FOR VOICE AI                              |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  ADMINISTRATIVE SAFEGUARDS                                                    |
+|  +----------------------------------------------------------------------+    |
+|  | - Designated security officer for voice AI systems                    |    |
+|  | - Workforce training on voice PHI handling                            |    |
+|  | - Business Associate Agreements (BAAs) with all vendors              |    |
+|  | - Incident response procedures for voice data breaches               |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  PHYSICAL SAFEGUARDS                                                          |
+|  +----------------------------------------------------------------------+    |
+|  | - Secure data centers for audio storage                               |    |
+|  | - Access controls to voice processing infrastructure                  |    |
+|  | - Workstation security for agents accessing recordings               |    |
+|  | - Device and media controls for call recordings                       |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  TECHNICAL SAFEGUARDS                                                         |
+|  +----------------------------------------------------------------------+    |
+|  | - Unique user identification for system access                        |    |
+|  | - Automatic logoff from voice admin interfaces                        |    |
+|  | - Encryption of voice data in transit and at rest                    |    |
+|  | - Audit controls and logging of all PHI access                       |    |
+|  | - Data integrity verification for recordings                          |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### HIPAA-Compliant Architecture
+
+```python
+class HIPAACompliantVoiceAI:
+    """
+    Voice AI system designed for HIPAA compliance.
+    """
+
+    def __init__(self, config: HIPAAConfig):
+        # All vendors must have signed BAAs
+        self.stt_provider = config.baa_certified_stt
+        self.llm_provider = config.baa_certified_llm
+        self.storage = config.hipaa_compliant_storage
+
+        # Encryption configuration
+        self.encryption = AES256Encryption(config.encryption_key)
+
+        # Audit logging
+        self.audit_logger = HIPAAAuditLogger()
+
+    async def process_patient_call(
+        self,
+        call: IncomingCall,
+        operator_context: OperatorContext
+    ) -> CallResult:
+
+        # Log access attempt
+        await self.audit_logger.log_access(
+            user_id=operator_context.user_id,
+            patient_identifier=call.ani,  # Caller ID
+            action="voice_interaction_start",
+            timestamp=datetime.utcnow()
+        )
+
+        try:
+            # Process with minimum necessary PHI
+            result = await self._process_with_minimum_necessary(call)
+
+            # Store encrypted, with retention limits
+            await self._store_compliant(
+                call_id=call.id,
+                transcript=result.transcript,
+                retention_days=self.config.phi_retention_days
+            )
+
+            return result
+
+        finally:
+            # Always log completion
+            await self.audit_logger.log_access(
+                user_id=operator_context.user_id,
+                patient_identifier=call.ani,
+                action="voice_interaction_end",
+                timestamp=datetime.utcnow()
+            )
+
+    async def _store_compliant(
+        self,
+        call_id: str,
+        transcript: str,
+        retention_days: int
+    ):
+        """Store PHI with encryption and retention controls"""
+
+        # Encrypt before storage
+        encrypted_data = self.encryption.encrypt(transcript.encode())
+
+        # Store with automatic expiration
+        await self.storage.store(
+            key=f"phi/calls/{call_id}",
+            data=encrypted_data,
+            metadata={
+                "encrypted": True,
+                "encryption_key_id": self.encryption.key_id,
+                "retention_until": datetime.utcnow() + timedelta(days=retention_days),
+                "data_classification": "PHI"
+            }
+        )
+```
+
+### Required Business Associate Agreements
+
+| Vendor Type | BAA Required | Key Considerations |
+|-------------|--------------|-------------------|
+| STT Provider | Yes | Must not retain audio for training without consent |
+| LLM Provider | Yes | PHI must not be used for model training |
+| TTS Provider | Yes | Voice synthesis must not expose PHI |
+| Cloud Provider | Yes | Data residency requirements |
+| Telephony | Yes | Call recording handling |
+| Analytics | Yes | De-identification requirements |
+
+## SOC 2 Certification Requirements
+
+SOC 2 (System and Organization Controls 2) certification demonstrates that your voice AI system meets rigorous security standards. This is often required by enterprise customers before deployment.
+
+### SOC 2 Trust Service Criteria for Voice AI
+
+```
++-----------------------------------------------------------------------------+
+|                    SOC 2 TRUST SERVICE CRITERIA                               |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  SECURITY (Required)                                                          |
+|  - Access controls to voice AI systems and data                               |
+|  - Network security for audio streams                                         |
+|  - Change management for voice AI models and code                             |
+|  - Incident response for voice data breaches                                  |
+|                                                                               |
+|  AVAILABILITY (Optional but common)                                           |
+|  - Voice AI uptime SLAs and monitoring                                        |
+|  - Disaster recovery for voice infrastructure                                 |
+|  - Capacity management for call volume                                        |
+|                                                                               |
+|  PROCESSING INTEGRITY (Optional)                                              |
+|  - Accuracy of speech recognition                                             |
+|  - Correct execution of voice workflows                                       |
+|  - Data validation for voice inputs                                           |
+|                                                                               |
+|  CONFIDENTIALITY (Optional but common)                                        |
+|  - Protection of confidential voice data                                      |
+|  - Encryption requirements                                                    |
+|  - Data retention and disposal                                                |
+|                                                                               |
+|  PRIVACY (Optional)                                                           |
+|  - Voice data collection notices                                              |
+|  - Consent management                                                         |
+|  - Data subject rights (access, deletion)                                     |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### SOC 2 Control Implementation
+
+```python
+class SOC2ControlFramework:
+    """
+    Implementation of SOC 2 controls for voice AI systems.
+    """
+
+    # CC6.1: Logical Access Security
+    async def verify_access(
+        self,
+        user: User,
+        resource: Resource,
+        action: Action
+    ) -> AccessDecision:
+
+        # Multi-factor authentication required for voice data access
+        if not user.mfa_verified:
+            return AccessDecision(
+                allowed=False,
+                reason="MFA required for voice data access"
+            )
+
+        # Role-based access control
+        required_role = self.get_required_role(resource, action)
+        if required_role not in user.roles:
+            await self.audit_log.record(
+                event_type="ACCESS_DENIED",
+                user_id=user.id,
+                resource=resource.id,
+                action=action,
+                reason="Insufficient role permissions"
+            )
+            return AccessDecision(allowed=False, reason="Insufficient permissions")
+
+        # Log successful access
+        await self.audit_log.record(
+            event_type="ACCESS_GRANTED",
+            user_id=user.id,
+            resource=resource.id,
+            action=action
+        )
+
+        return AccessDecision(allowed=True)
+
+    # CC7.2: System Monitoring
+    async def monitor_voice_system(self) -> MonitoringResult:
+        metrics = {
+            "active_calls": await self.get_active_call_count(),
+            "failed_authentications": await self.get_failed_auth_count(),
+            "error_rate": await self.get_error_rate(),
+            "latency_p99": await self.get_latency_percentile(99),
+            "data_access_anomalies": await self.detect_access_anomalies()
+        }
+
+        # Alert on anomalies
+        for metric, value in metrics.items():
+            if self.is_anomalous(metric, value):
+                await self.alert_security_team(metric, value)
+
+        return MonitoringResult(metrics=metrics, timestamp=datetime.utcnow())
+
+    # CC8.1: Change Management
+    async def deploy_voice_model(
+        self,
+        model: VoiceModel,
+        deployment: Deployment
+    ) -> DeploymentResult:
+
+        # Require approval for production deployments
+        if deployment.environment == "production":
+            approval = await self.get_change_approval(model, deployment)
+            if not approval.approved:
+                return DeploymentResult(
+                    success=False,
+                    reason="Change approval required"
+                )
+
+        # Security scan before deployment
+        scan_result = await self.security_scan(model)
+        if scan_result.vulnerabilities:
+            return DeploymentResult(
+                success=False,
+                reason=f"Security vulnerabilities found: {scan_result.vulnerabilities}"
+            )
+
+        # Deploy with rollback capability
+        result = await self.deploy_with_rollback(model, deployment)
+
+        # Log deployment
+        await self.audit_log.record(
+            event_type="MODEL_DEPLOYED",
+            model_id=model.id,
+            version=model.version,
+            environment=deployment.environment,
+            approved_by=approval.approver_id if approval else None
+        )
+
+        return result
+```
+
+## GDPR and Voice Data
+
+The General Data Protection Regulation (GDPR) has specific implications for voice AI systems processing data of EU residents.
+
+### GDPR Requirements for Voice Data
+
+| GDPR Requirement | Voice AI Implementation |
+|------------------|------------------------|
+| Lawful basis | Consent or legitimate interest documented before recording |
+| Purpose limitation | Voice data used only for stated purposes |
+| Data minimization | Retain only necessary portions of calls |
+| Accuracy | Provide transcript correction mechanisms |
+| Storage limitation | Automatic deletion after retention period |
+| Integrity & confidentiality | Encryption and access controls |
+| Accountability | Document all processing activities |
+
+### GDPR-Compliant Consent Flow
+
+```python
+class GDPRConsentManager:
+    """
+    Manage GDPR consent for voice AI interactions.
+    """
+
+    CONSENT_SCRIPT = """
+    This call may be recorded and processed by our AI assistant
+    for quality assurance and to help serve you better.
+    You can say 'I agree' to continue with recording,
+    or 'No recording' to proceed without recording.
+    You can withdraw consent at any time by saying 'Stop recording'.
+    """
+
+    async def obtain_consent(
+        self,
+        call: Call,
+        purposes: List[str]
+    ) -> ConsentResult:
+
+        # Provide clear consent information
+        await call.speak(self.CONSENT_SCRIPT)
+
+        # Wait for explicit consent
+        response = await call.listen(timeout_seconds=30)
+
+        consent_given = self._parse_consent_response(response.transcript)
+
+        # Record consent decision with timestamp
+        consent_record = ConsentRecord(
+            call_id=call.id,
+            caller_id=call.ani,
+            consent_given=consent_given,
+            purposes=purposes,
+            timestamp=datetime.utcnow(),
+            consent_method="voice",
+            recording_of_consent=response.audio_reference
+        )
+
+        await self.consent_store.save(consent_record)
+
+        return ConsentResult(
+            consent_given=consent_given,
+            record_id=consent_record.id
+        )
+
+    async def handle_consent_withdrawal(
+        self,
+        call: Call,
+        consent_record_id: str
+    ):
+        """Handle mid-call consent withdrawal"""
+
+        # Stop all recording immediately
+        await call.stop_recording()
+
+        # Update consent record
+        await self.consent_store.update(
+            consent_record_id,
+            {
+                "withdrawn": True,
+                "withdrawal_timestamp": datetime.utcnow()
+            }
+        )
+
+        # Delete any recorded data
+        await self._delete_call_data(call.id)
+
+        await call.speak(
+            "Recording has been stopped. Any recorded data from this call "
+            "will be deleted. How can I continue to help you?"
+        )
+
+    async def handle_data_subject_request(
+        self,
+        request_type: str,  # "access", "deletion", "portability"
+        subject_identifier: str
+    ) -> DSRResult:
+        """Handle GDPR data subject requests"""
+
+        if request_type == "access":
+            # Provide all voice data for the subject
+            data = await self.voice_store.get_all_for_subject(subject_identifier)
+            return DSRResult(
+                success=True,
+                data=data,
+                format="json"
+            )
+
+        elif request_type == "deletion":
+            # Delete all voice data (right to be forgotten)
+            deleted_count = await self.voice_store.delete_all_for_subject(
+                subject_identifier
+            )
+            return DSRResult(
+                success=True,
+                deleted_records=deleted_count
+            )
+
+        elif request_type == "portability":
+            # Export in machine-readable format
+            data = await self.voice_store.export_for_subject(
+                subject_identifier,
+                format="json"
+            )
+            return DSRResult(
+                success=True,
+                data=data,
+                format="json"
+            )
+```
+
+## Voice Authentication and Anti-Spoofing
+
+Voice biometrics provide convenient authentication but require robust anti-spoofing measures to prevent fraud.
+
+### Voice Authentication Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                    VOICE AUTHENTICATION SYSTEM                                |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  ENROLLMENT PHASE                                                             |
+|  +----------------------------------------------------------------------+    |
+|  |  User speaks --> Feature Extraction --> Voiceprint Generation        |    |
+|  |                                              |                        |    |
+|  |                                              v                        |    |
+|  |                                    Encrypted Voiceprint Storage       |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  AUTHENTICATION PHASE                                                         |
+|  +----------------------------------------------------------------------+    |
+|  |  User speaks --> Feature Extraction --> Liveness Detection           |    |
+|  |                        |                       |                      |    |
+|  |                        v                       v                      |    |
+|  |              Voiceprint Comparison      Spoof Detection              |    |
+|  |                        |                       |                      |    |
+|  |                        +----------+------------+                      |    |
+|  |                                   |                                   |    |
+|  |                                   v                                   |    |
+|  |                          Authentication Decision                      |    |
+|  |                    (Accept / Reject / Step-up Required)              |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### Anti-Spoofing Implementation
+
+```python
+class VoiceAuthenticator:
+    """
+    Voice authentication with anti-spoofing measures.
+    """
+
+    def __init__(self):
+        self.voiceprint_model = VoiceprintModel()
+        self.liveness_detector = LivenessDetector()
+        self.spoof_detector = SpoofDetector()
+
+    async def authenticate(
+        self,
+        audio: AudioData,
+        claimed_identity: str,
+        challenge_response: Optional[str] = None
+    ) -> AuthResult:
+
+        # Step 1: Liveness detection (is this live speech?)
+        liveness_result = await self.liveness_detector.check(audio)
+        if not liveness_result.is_live:
+            await self.log_spoof_attempt(claimed_identity, "liveness_failed")
+            return AuthResult(
+                authenticated=False,
+                reason="Liveness check failed",
+                risk_score=0.9
+            )
+
+        # Step 2: Replay attack detection
+        replay_result = await self.detect_replay_attack(audio)
+        if replay_result.is_replay:
+            await self.log_spoof_attempt(claimed_identity, "replay_detected")
+            return AuthResult(
+                authenticated=False,
+                reason="Replay attack detected",
+                risk_score=1.0
+            )
+
+        # Step 3: Synthetic speech detection (deepfake voices)
+        synthetic_result = await self.spoof_detector.detect_synthetic(audio)
+        if synthetic_result.is_synthetic:
+            await self.log_spoof_attempt(claimed_identity, "synthetic_voice")
+            return AuthResult(
+                authenticated=False,
+                reason="Synthetic speech detected",
+                risk_score=0.95
+            )
+
+        # Step 4: Voiceprint matching
+        stored_voiceprint = await self.get_voiceprint(claimed_identity)
+        if not stored_voiceprint:
+            return AuthResult(
+                authenticated=False,
+                reason="No voiceprint enrolled"
+            )
+
+        similarity_score = await self.voiceprint_model.compare(
+            audio,
+            stored_voiceprint
+        )
+
+        # Step 5: Challenge-response verification (optional extra security)
+        if challenge_response:
+            transcript = await self.transcribe(audio)
+            if not self.verify_challenge_response(transcript, challenge_response):
+                return AuthResult(
+                    authenticated=False,
+                    reason="Challenge response mismatch"
+                )
+
+        # Make authentication decision
+        threshold = self.get_threshold(claimed_identity)
+        authenticated = similarity_score >= threshold
+
+        return AuthResult(
+            authenticated=authenticated,
+            confidence=similarity_score,
+            risk_score=self.calculate_risk_score(
+                liveness_result,
+                synthetic_result,
+                similarity_score
+            )
+        )
+
+    async def detect_replay_attack(self, audio: AudioData) -> ReplayResult:
+        """Detect if audio is a replay of previously recorded speech"""
+
+        # Generate audio fingerprint
+        fingerprint = await self.generate_fingerprint(audio)
+
+        # Check against recent fingerprints
+        recent_fingerprints = await self.get_recent_fingerprints(
+            time_window_minutes=60
+        )
+
+        for stored_fp in recent_fingerprints:
+            similarity = self.compare_fingerprints(fingerprint, stored_fp)
+            if similarity > 0.95:
+                return ReplayResult(is_replay=True, similarity=similarity)
+
+        # Store fingerprint for future replay detection
+        await self.store_fingerprint(fingerprint)
+
+        return ReplayResult(is_replay=False)
+```
+
+### Anti-Spoofing Techniques
+
+| Attack Type | Detection Method | Effectiveness |
+|-------------|------------------|---------------|
+| Replay attack | Audio fingerprinting, channel analysis | High |
+| TTS synthesis | Spectral analysis, prosody detection | Medium-High |
+| Voice conversion | Artifact detection, consistency checks | Medium |
+| Deepfake voices | Neural detection models | Evolving |
+| Recording playback | Acoustic environment analysis | Medium |
+
+## Data Encryption Requirements
+
+Voice data requires encryption both in transit and at rest to meet compliance requirements.
+
+### Encryption Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                    VOICE DATA ENCRYPTION ARCHITECTURE                         |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  IN TRANSIT                                                                   |
+|  +----------------------------------------------------------------------+    |
+|  |  Client <---> Server                                                  |    |
+|  |  - TLS 1.3 for all WebSocket/HTTP connections                        |    |
+|  |  - SRTP for WebRTC media streams                                     |    |
+|  |  - Certificate pinning for mobile apps                               |    |
+|  |  - Perfect Forward Secrecy (PFS) cipher suites                       |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  AT REST                                                                      |
+|  +----------------------------------------------------------------------+    |
+|  |  Audio Storage                                                        |    |
+|  |  - AES-256-GCM encryption for all audio files                        |    |
+|  |  - Per-call encryption keys (KEK-DEK hierarchy)                      |    |
+|  |  - HSM-backed key management                                          |    |
+|  |                                                                        |    |
+|  |  Transcript Storage                                                   |    |
+|  |  - Field-level encryption for PII                                    |    |
+|  |  - Searchable encryption where needed                                |    |
+|  |                                                                        |    |
+|  |  Voiceprint Storage                                                   |    |
+|  |  - Separate encryption keys from audio                               |    |
+|  |  - Cannot reconstruct voice from stored template                     |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  KEY MANAGEMENT                                                               |
+|  +----------------------------------------------------------------------+    |
+|  |  - Key rotation every 90 days (configurable)                         |    |
+|  |  - Automatic re-encryption on rotation                               |    |
+|  |  - Key access audit logging                                          |    |
+|  |  - Separate keys per customer (multi-tenant)                         |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### Encryption Implementation
+
+```python
+class VoiceDataEncryption:
+    """
+    End-to-end encryption for voice data.
+    """
+
+    def __init__(self, key_manager: KeyManager):
+        self.key_manager = key_manager
+
+    async def encrypt_audio(
+        self,
+        audio_data: bytes,
+        call_id: str,
+        customer_id: str
+    ) -> EncryptedAudio:
+
+        # Get customer-specific key encryption key (KEK)
+        kek = await self.key_manager.get_kek(customer_id)
+
+        # Generate unique data encryption key (DEK) for this call
+        dek = os.urandom(32)  # 256 bits
+
+        # Encrypt audio with DEK
+        cipher = AESGCM(dek)
+        nonce = os.urandom(12)
+        encrypted_audio = cipher.encrypt(nonce, audio_data, None)
+
+        # Encrypt DEK with KEK (key wrapping)
+        wrapped_dek = self.key_manager.wrap_key(dek, kek)
+
+        return EncryptedAudio(
+            ciphertext=encrypted_audio,
+            nonce=nonce,
+            wrapped_key=wrapped_dek,
+            key_id=kek.id,
+            algorithm="AES-256-GCM"
+        )
+
+    async def decrypt_audio(
+        self,
+        encrypted: EncryptedAudio,
+        customer_id: str
+    ) -> bytes:
+
+        # Log decryption access
+        await self.audit_log.record(
+            event="AUDIO_DECRYPTION",
+            customer_id=customer_id,
+            key_id=encrypted.key_id
+        )
+
+        # Get KEK and unwrap DEK
+        kek = await self.key_manager.get_kek(
+            customer_id,
+            key_id=encrypted.key_id
+        )
+        dek = self.key_manager.unwrap_key(encrypted.wrapped_key, kek)
+
+        # Decrypt audio
+        cipher = AESGCM(dek)
+        audio_data = cipher.decrypt(
+            encrypted.nonce,
+            encrypted.ciphertext,
+            None
+        )
+
+        return audio_data
+```
+
+## Audit Logging Requirements
+
+Comprehensive audit logging is required for all compliance frameworks. Voice AI systems must log access to audio data, system changes, and security events.
+
+### Audit Log Schema
+
+```python
+@dataclass
+class VoiceAuditEvent:
+    """Comprehensive audit event for voice AI systems"""
+
+    # Event identification
+    event_id: str
+    event_type: str  # ACCESS, MODIFICATION, SECURITY, ADMIN
+    event_subtype: str  # e.g., "AUDIO_ACCESSED", "TRANSCRIPT_EXPORTED"
+    timestamp: datetime
+
+    # Actor information
+    actor_type: str  # USER, SYSTEM, API_CLIENT
+    actor_id: str
+    actor_ip: Optional[str]
+    actor_session_id: Optional[str]
+
+    # Resource information
+    resource_type: str  # CALL_RECORDING, TRANSCRIPT, VOICEPRINT
+    resource_id: str
+    customer_id: str
+
+    # Action details
+    action: str  # READ, WRITE, DELETE, EXPORT
+    action_result: str  # SUCCESS, FAILURE, DENIED
+    failure_reason: Optional[str]
+
+    # Compliance metadata
+    data_classification: str  # PHI, PCI, PII, CONFIDENTIAL
+    consent_verified: bool
+    retention_policy_applied: bool
+
+    # Integrity
+    event_hash: str  # For tamper detection
+    previous_event_hash: str  # Chain integrity
+
+
+class AuditLogger:
+    """Tamper-evident audit logging for compliance"""
+
+    async def log(self, event: VoiceAuditEvent) -> str:
+        # Calculate event hash (tamper detection)
+        event.event_hash = self._calculate_hash(event)
+
+        # Get previous event hash for chain integrity
+        event.previous_event_hash = await self._get_last_hash()
+
+        # Store in append-only audit log
+        await self.audit_store.append(event)
+
+        # Also send to SIEM for real-time monitoring
+        await self.siem_client.send(event)
+
+        return event.event_id
+
+    def _calculate_hash(self, event: VoiceAuditEvent) -> str:
+        """Calculate SHA-256 hash of event for integrity"""
+        event_data = json.dumps(asdict(event), sort_keys=True, default=str)
+        return hashlib.sha256(event_data.encode()).hexdigest()
+```
+
+### Required Audit Events
+
+| Event Category | Events to Log | Retention |
+|----------------|---------------|-----------|
+| Access | Audio playback, transcript view, export | 7 years |
+| Authentication | Voice auth attempts, failures, lockouts | 7 years |
+| Administration | User creation, permission changes | 7 years |
+| Security | Failed access, anomalies, breaches | 7 years |
+| Data Lifecycle | Creation, modification, deletion | 7 years |
+| Consent | Consent given, withdrawn, expired | Duration of consent + 7 years |
+
+## Security Checklist
+
+<Callout type="info" title="Voice AI Security Checklist">
+Use this checklist to verify your voice AI system meets security requirements:
+
+**Data Protection**
+- [ ] All audio encrypted in transit (TLS 1.3 / SRTP)
+- [ ] All audio encrypted at rest (AES-256)
+- [ ] PII redaction enabled for transcripts
+- [ ] Data minimization policies implemented
+- [ ] Retention limits configured and enforced
+
+**Access Control**
+- [ ] Role-based access control implemented
+- [ ] Multi-factor authentication for admin access
+- [ ] Audit logging for all data access
+- [ ] Principle of least privilege applied
+
+**Compliance**
+- [ ] Required BAAs signed with all vendors
+- [ ] Data processing agreements in place
+- [ ] Privacy notices updated for voice data
+- [ ] Consent mechanisms implemented
+- [ ] Data subject request process documented
+
+**Security Monitoring**
+- [ ] Real-time security alerting configured
+- [ ] Anomaly detection for access patterns
+- [ ] Regular security assessments scheduled
+- [ ] Incident response procedures documented
+</Callout>
+
+## Summary
+
+Securing voice AI systems requires a comprehensive approach addressing:
+
+1. **Data minimization**: Only collect and retain necessary voice data
+2. **Encryption**: Protect voice data in transit and at rest
+3. **Access control**: Implement role-based access with audit logging
+4. **Compliance frameworks**: Meet requirements for PCI DSS, HIPAA, SOC 2, and GDPR
+5. **Anti-spoofing**: Protect voice authentication from fraud
+6. **Audit logging**: Maintain tamper-evident records of all access
+
+Voice data is uniquely sensitive because it contains biometric information, emotional context, and often highly personal content. Building security and compliance into your voice AI architecture from the beginning is far easier than retrofitting these capabilities later.

@@ -1,0 +1,495 @@
+---
+title: "Streaming Architecture for Voice AI"
+description: "Comprehensive guide to streaming architecture, event-driven patterns, and state management in real-time voice AI systems"
+---
+
+# Streaming Architecture for Voice AI
+
+Voice AI systems represent one of the most challenging real-time computing problems in modern AI infrastructure. Human conversation tolerates approximately 200-300ms response gaps; anything longer feels robotic and degrades user experience. This guide provides a comprehensive technical analysis of streaming architecture, event-driven patterns, and state management for production voice AI systems.
+
+## End-to-End Pipeline Architecture
+
+A voice AI system transforms spoken human language into intelligent responses delivered as synthesized speech. The fundamental pipeline consists of three core processing stages surrounded by critical infrastructure components.
+
+```
++-----------------------------------------------------------------------------+
+|                        VOICE AI SYSTEM ARCHITECTURE                          |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  +---------+    +---------+    +---------+    +---------+    +---------+   |
+|  |  Audio  |--->|   STT   |--->|   LLM   |--->|   TTS   |--->|  Audio  |   |
+|  |  Input  |    | (ASR)   |    | (Brain) |    | (Voice) |    | Output  |   |
+|  +---------+    +---------+    +---------+    +---------+    +---------+   |
+|       |              |              |              |              |         |
+|       v              v              v              v              v         |
+|  +-----------------------------------------------------------------------+  |
+|  |                    ORCHESTRATION LAYER                                |  |
+|  |  State Management | Context Tracking | Error Handling                 |  |
+|  |  Turn Detection   | Interruption Handling | Tool Execution            |  |
+|  +-----------------------------------------------------------------------+  |
+|                                    |                                        |
+|                                    v                                        |
+|  +-----------------------------------------------------------------------+  |
+|  |                    INFRASTRUCTURE LAYER                               |  |
+|  |  WebRTC/WebSocket | Load Balancing | Caching | Monitoring             |  |
+|  +-----------------------------------------------------------------------+  |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+## Component Interaction Patterns
+
+### Sequential Processing Model
+
+The traditional model processes each stage to completion before advancing:
+
+```
+User Speech -> [Complete STT] -> [Complete LLM] -> [Complete TTS] -> Response Audio
+```
+
+**Characteristics:**
+- Simple implementation
+- Predictable behavior
+- High latency (1.5-3+ seconds typical)
+- Not suitable for real-time conversation
+
+### Streaming Processing Model
+
+Modern systems employ streaming at every stage:
+
+```
+User Speech --+---> STT Streaming --+---> LLM Streaming --+---> TTS Streaming ---> Audio
+              |                     |                     |
+              +-- Partial Results --+-- Token Stream -----+-- Audio Chunks
+```
+
+**Characteristics:**
+- Complex state management
+- Overlap between processing stages
+- Sub-500ms achievable latency
+- Requires careful buffer management
+
+## Event-Driven Architecture
+
+Event-driven architecture forms the backbone of responsive voice AI systems, enabling loose coupling between components and flexible processing flows.
+
+```
++--------------------------------------------------------------------+
+|                      EVENT BUS / MESSAGE QUEUE                      |
++--------------------------------------------------------------------+
+|                                                                     |
+|  audio.chunk.received --> stt.partial.transcript --> stt.final     |
+|                                                                     |
+|  stt.final --> llm.request.start --> llm.token.generated (stream)  |
+|                                                                     |
+|  llm.token.generated --> tts.synthesis.start --> audio.chunk.ready |
+|                                                                     |
+|  user.interruption --> pipeline.cancel --> state.reset             |
+|                                                                     |
++--------------------------------------------------------------------+
+```
+
+### Event Types and Handlers
+
+Voice AI systems typically handle the following event categories:
+
+| Event Category | Events | Handler Responsibility |
+|----------------|--------|------------------------|
+| Audio Input | `audio.chunk.received`, `audio.silence.detected` | Buffer management, VAD triggering |
+| STT | `stt.partial.transcript`, `stt.final.transcript` | Text aggregation, confidence filtering |
+| LLM | `llm.token.generated`, `llm.tool.call`, `llm.response.complete` | Response assembly, tool execution |
+| TTS | `tts.chunk.ready`, `tts.synthesis.complete` | Audio buffering, playback scheduling |
+| Control | `user.interruption`, `session.timeout`, `error.occurred` | State transitions, cleanup |
+
+### Implementing Event Handlers
+
+```python
+class VoiceEventHandler:
+    """Event handler for voice AI pipeline events"""
+
+    def __init__(self):
+        self.event_bus = EventBus()
+        self._register_handlers()
+
+    def _register_handlers(self):
+        self.event_bus.subscribe("audio.chunk.received", self._on_audio_chunk)
+        self.event_bus.subscribe("stt.final.transcript", self._on_transcript)
+        self.event_bus.subscribe("llm.token.generated", self._on_token)
+        self.event_bus.subscribe("user.interruption", self._on_interruption)
+
+    async def _on_audio_chunk(self, event: AudioChunkEvent):
+        """Process incoming audio chunk"""
+        # Feed to VAD
+        is_speech = await self.vad.process(event.data)
+
+        if is_speech:
+            # Forward to STT
+            await self.stt.process_chunk(event.data)
+
+    async def _on_transcript(self, event: TranscriptEvent):
+        """Handle completed transcript"""
+        # Build LLM prompt
+        prompt = self._build_prompt(event.text)
+
+        # Start streaming LLM response
+        async for token in self.llm.stream(prompt):
+            self.event_bus.emit("llm.token.generated", TokenEvent(token))
+
+    async def _on_token(self, event: TokenEvent):
+        """Handle LLM token for TTS"""
+        self.token_buffer.append(event.token)
+
+        if self._is_speakable(self.token_buffer):
+            text = "".join(self.token_buffer)
+            await self.tts.synthesize_stream(text)
+            self.token_buffer.clear()
+
+    async def _on_interruption(self, event: InterruptionEvent):
+        """Handle user barge-in"""
+        await self.tts.cancel()
+        await self.llm.cancel()
+        self.token_buffer.clear()
+        self.state.transition_to(State.LISTENING)
+```
+
+## WebSocket Audio Streaming Architecture
+
+WebSocket provides a reliable transport for bidirectional audio streaming in voice AI applications.
+
+```
++----------------------------------------------------------------------------+
+|                   WEBSOCKET AUDIO STREAMING ARCHITECTURE                    |
++----------------------------------------------------------------------------+
+|                                                                             |
+|  Client                                      Voice AI Server                |
+|  +------------------+                      +------------------+             |
+|  |                  | -- WS Handshake ---->|                  |             |
+|  |  Audio Capture   |                      |  WebSocket       |             |
+|  |       |          | <-- WS Accept ------ |  Handler         |             |
+|  |       v          |                      |       |          |             |
+|  |  Audio Encoder   | ==== Binary Frames ==|       v          |             |
+|  |  (Opus/PCM)      |      (Audio Data)    |  Audio Decoder   |             |
+|  |       |          |                      |       |          |             |
+|  |       v          | <=== Binary Frames ==|       v          |             |
+|  |  Audio Decoder   |      (Response Audio)|  AI Pipeline     |             |
+|  |       |          |                      |       |          |             |
+|  |       v          | <--- JSON Messages --|       v          |             |
+|  |  Audio Playback  |      (Control/Events)|  Audio Encoder   |             |
+|  |                  |                      |                  |             |
+|  +------------------+                      +------------------+             |
+|                                                                             |
++----------------------------------------------------------------------------+
+```
+
+### Message Protocol Design
+
+```javascript
+// Audio frame (binary)
+[2-byte header: frame_type | flags] + [audio_data]
+
+// Control message (JSON)
+{
+  "type": "control",
+  "action": "start_speaking" | "stop" | "interrupt",
+  "timestamp": 1705123456789,
+  "metadata": {...}
+}
+
+// Transcript event (JSON)
+{
+  "type": "transcript",
+  "is_final": false,
+  "text": "Hello, I would like to...",
+  "confidence": 0.95
+}
+```
+
+### WebSocket vs WebRTC Comparison
+
+| Aspect | WebSocket | WebRTC |
+|--------|-----------|--------|
+| Transport | TCP | UDP (preferred) + TCP |
+| NAT Traversal | Simple (via proxy) | Complex (ICE/STUN/TURN) |
+| Latency | Higher (TCP HoL) | Lower (UDP, no HoL) |
+| Packet Loss | Retransmission | Concealment (PLC) |
+| Built-in Features | None | AEC, AGC, NS, Jitter buffer |
+| Synchronization | Manual | Automatic (RTCP) |
+| Browser Support | Universal | Universal (modern) |
+| Implementation | Simple | Complex |
+
+**Recommendation:**
+- **WebRTC**: Production voice AI requiring lowest latency
+- **WebSocket**: Simpler integration, server-side processing focus
+- **Hybrid**: WebSocket signaling + WebRTC media (common pattern)
+
+## Audio Buffer Management and Jitter Buffers
+
+Jitter buffers smooth out variable network delays to ensure consistent audio playback.
+
+```
++----------------------------------------------------------------------------+
+|                       JITTER BUFFER ARCHITECTURE                            |
++----------------------------------------------------------------------------+
+|                                                                             |
+|  Network Input (variable arrival times)                                     |
+|       |                                                                     |
+|       v                                                                     |
+|  +-----------------------------------------------------------------------+  |
+|  |                      JITTER BUFFER                                    |  |
+|  |  +-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+       |  |
+|  |  |  1  |  2  |  3  |  4  |  5  |  6  |  7  |  8  |  9  | 10  |       |  |
+|  |  +-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+       |  |
+|  |    ^                         |                                 ^      |  |
+|  |    |                         |                                 |      |  |
+|  |  Write                    Read                              Buffer    |  |
+|  |  Pointer                  Pointer                           Depth     |  |
+|  |                                                                       |  |
+|  |  Parameters:                                                          |  |
+|  |  - Target delay: 40-80ms (voice AI optimal)                          |  |
+|  |  - Max delay: 200ms (beyond this, discard)                           |  |
+|  |  - Min delay: 20ms (underrun threshold)                              |  |
+|  |  - Adaptation rate: 2ms per second                                   |  |
+|  +-----------------------------------------------------------------------+  |
+|       |                                                                     |
+|       v                                                                     |
+|  Audio Output (smooth, consistent playback)                                 |
+|                                                                             |
++----------------------------------------------------------------------------+
+```
+
+### Adaptive Jitter Buffer Implementation
+
+```python
+class AdaptiveJitterBuffer:
+    """
+    Production-grade adaptive jitter buffer for voice AI.
+    Balances latency minimization with smooth playback.
+    """
+
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        frame_duration_ms: int = 20,
+        target_delay_ms: int = 60,
+        min_delay_ms: int = 20,
+        max_delay_ms: int = 200
+    ):
+        self.sample_rate = sample_rate
+        self.frame_size = int(sample_rate * frame_duration_ms / 1000)
+        self.target_delay = target_delay_ms
+        self.min_delay = min_delay_ms
+        self.max_delay = max_delay_ms
+
+        # Buffer storage
+        self.buffer: Dict[int, np.ndarray] = {}
+        self.write_seq = 0
+        self.read_seq = 0
+
+        # Statistics for adaptation
+        self.jitter_estimate = 0.0
+        self.packet_loss_rate = 0.0
+        self.adaptation_alpha = 0.01
+
+    def push(self, sequence_num: int, audio_frame: np.ndarray, timestamp: float):
+        """Add packet to buffer with reordering support"""
+        # Handle out-of-order packets
+        if sequence_num < self.read_seq:
+            # Late packet, already played - discard
+            return
+
+        if sequence_num > self.write_seq + 100:
+            # Gap too large, reset buffer
+            self._reset()
+
+        self.buffer[sequence_num] = audio_frame
+        self.write_seq = max(self.write_seq, sequence_num)
+
+        # Update jitter estimate
+        self._update_jitter_estimate(timestamp)
+
+    def pop(self) -> Optional[np.ndarray]:
+        """Get next audio frame for playback"""
+        if self.read_seq in self.buffer:
+            frame = self.buffer.pop(self.read_seq)
+            self.read_seq += 1
+            return frame
+        else:
+            # Packet loss - apply concealment
+            self.read_seq += 1
+            return self._conceal_loss()
+
+    def _conceal_loss(self) -> np.ndarray:
+        """Packet loss concealment using interpolation"""
+        # Simple approach: return comfort noise
+        # Advanced: use previous frame with attenuation
+        return np.random.randn(self.frame_size) * 0.01
+
+    def _adapt_target_delay(self):
+        """Dynamically adjust buffer depth based on network conditions"""
+        optimal_delay = self.jitter_estimate * 2 + 20  # 2x jitter + safety margin
+        self.target_delay = np.clip(optimal_delay, self.min_delay, self.max_delay)
+```
+
+## Real-Time Audio Streaming
+
+### Streaming at Every Stage
+
+The principle is clear: never wait for complete results; stream partial outputs.
+
+**Stage 1: Streaming STT**
+```python
+# Stream partials to LLM before utterance complete
+async for partial in stt.stream_transcribe(audio):
+    if partial.is_stable:  # Confidence threshold
+        llm_input_queue.put(partial.text)
+```
+
+**Stage 2: Streaming LLM**
+```python
+# Don't wait for full response
+async for token in llm.stream(prompt):
+    tts_buffer.append(token)
+    if is_speakable_chunk(tts_buffer):
+        tts_queue.put(tts_buffer)
+        tts_buffer = ""
+
+# Speakable chunk detection:
+# - Sentence boundary (. ! ?)
+# - Clause boundary (, ; :)
+# - Minimum token threshold (5-10 tokens)
+```
+
+**Stage 3: Streaming TTS**
+```python
+# Begin synthesis before full text available
+async for audio_chunk in tts.stream_synthesize(text_chunk):
+    audio_output_buffer.push(audio_chunk)
+
+# Chunking strategies:
+# - Word-level: Lowest latency, potential prosody issues
+# - Sentence-level: Better prosody, higher latency
+# - Clause-level: Balanced approach (recommended)
+```
+
+### Key Implementation Patterns
+
+```python
+async def streaming_pipeline(audio_stream: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """Concurrent streaming voice pipeline"""
+
+    # Stage 1: Stream audio to STT
+    async def stt_stage():
+        async for audio_chunk in audio_stream:
+            partial_transcript = await stt.process_chunk(audio_chunk)
+            if partial_transcript:
+                yield partial_transcript
+
+    # Stage 2: Stream transcripts to LLM
+    async def llm_stage(transcript_stream):
+        buffer = ""
+        async for partial in transcript_stream:
+            buffer += partial
+            if is_complete_thought(buffer):
+                async for token in llm.stream(buffer):
+                    yield token
+
+    # Stage 3: Stream tokens to TTS
+    async def tts_stage(token_stream):
+        sentence_buffer = ""
+        async for token in token_stream:
+            sentence_buffer += token
+            if is_speakable_unit(sentence_buffer):
+                async for audio_chunk in tts.synthesize_stream(sentence_buffer):
+                    yield audio_chunk
+                sentence_buffer = ""
+
+    # Connect stages with async generators
+    transcript_stream = stt_stage()
+    token_stream = llm_stage(transcript_stream)
+    audio_stream = tts_stage(token_stream)
+
+    async for audio_chunk in audio_stream:
+        yield audio_chunk
+```
+
+## Echo Cancellation (AEC)
+
+Acoustic echo cancellation is critical for full-duplex voice communication.
+
+```
++----------------------------------------------------------------------------+
+|                    ACOUSTIC ECHO CANCELLATION (AEC)                         |
++----------------------------------------------------------------------------+
+|                                                                             |
+|  THE ECHO PROBLEM:                                                          |
+|                                                                             |
+|  Speaker --> Room Acoustics --> Microphone --> Transmitted to peer          |
+|     |            (echo path)         ^                                      |
+|     |                                |                                      |
+|     +---------- Direct Path ---------+                                      |
+|                                                                             |
+|  Without AEC: Peer hears their own voice delayed (annoying echo)            |
+|                                                                             |
++----------------------------------------------------------------------------+
+|                                                                             |
+|  AEC ARCHITECTURE:                                                          |
+|                                                                             |
+|  Far-end Signal ----+--------------------------------> Speaker              |
+|  (Reference)        |                                                       |
+|                     |                                                       |
+|                     v                                                       |
+|              +--------------+                                               |
+|              |   Adaptive   |                                               |
+|              |    Filter    |<--- Error signal                              |
+|              |   (h[n])     |     (adaptation)                              |
+|              +------+-------+                                               |
+|                     | Echo Estimate                                         |
+|                     v                                                       |
+|  Microphone ---> [  SUM  ] ---> Echo-Cancelled Output                       |
+|  Signal         (subtract)     (Near-end + Residual)                        |
+|                                                                             |
++----------------------------------------------------------------------------+
+```
+
+### Key Challenges
+
+- **Double-talk**: Both parties speaking simultaneously
+- **Non-linear distortion**: Speaker/amplifier non-linearities
+- **Echo path changes**: Movement, doors opening
+- **Algorithmic delay**: Processing latency budget (10-20ms typical)
+
+### Modern Approaches
+
+| Traditional DSP | Neural AEC |
+|-----------------|------------|
+| NLMS/RLS adaptive filter + Residual echo suppressor | End-to-end neural network (RNN, Conv-TasNet, Transformer) |
+| **Pros**: Low latency, predictable | **Pros**: Better double-talk, handles non-linearities |
+| **Cons**: Struggles with non-linear echo | **Cons**: Higher compute, may need GPU |
+
+**Recommended Solutions:**
+- **WebRTC (built-in)**: Good for browser-based applications
+- **speexdsp**: Open-source, CPU-efficient
+- **NVIDIA Maxine**: GPU-accelerated neural AEC
+- **Custom neural**: Train on your acoustic environment
+
+## Key Performance Targets
+
+| Metric | Target | Acceptable | Poor |
+|--------|--------|------------|------|
+| End-to-End Latency | &lt;500ms | 500-800ms | >800ms |
+| Time-to-First-Audio | &lt;300ms | 300-500ms | >500ms |
+| STT Processing | &lt;150ms | 150-300ms | >300ms |
+| LLM Time-to-First-Token | &lt;200ms | 200-400ms | >400ms |
+| TTS Time-to-First-Byte | &lt;100ms | 100-200ms | >200ms |
+
+## Summary
+
+Building production-grade streaming architecture for voice AI requires:
+
+1. **Event-driven design** for loose coupling and responsive handling
+2. **Streaming at every stage** to minimize time-to-first-audio
+3. **Robust buffer management** to handle network variability
+4. **Echo cancellation** for natural full-duplex conversation
+5. **Careful state management** to coordinate complex async flows
+
+The next section on latency optimization dives deeper into specific techniques for achieving sub-500ms response times.

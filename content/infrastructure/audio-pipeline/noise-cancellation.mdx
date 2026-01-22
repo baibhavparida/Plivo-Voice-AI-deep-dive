@@ -1,0 +1,344 @@
+---
+title: "Noise Cancellation and Suppression"
+description: "Comprehensive guide to noise suppression algorithms including RNNoise, DTLN, and DeepFilterNet for voice AI applications"
+category: "infrastructure"
+tags: ["noise-cancellation", "noise-suppression", "rnnoise", "dtln", "deepfilternet", "audio-enhancement"]
+relatedTopics: ["signal-processing", "echo-cancellation", "vad", "stt-fundamentals"]
+---
+
+# Noise Cancellation and Suppression
+
+Noise suppression is critical for voice AI systems operating in real-world environments. This guide covers both traditional DSP approaches and modern neural network-based solutions.
+
+## Traditional DSP Approaches
+
+### Spectral Subtraction
+
+Spectral subtraction is one of the earliest and most intuitive noise reduction methods, introduced by Boll in 1979.
+
+**Principle:** Enhanced speech spectrum is obtained by subtracting estimated noise spectrum:
+
+```
+|S(w)|^2 = |Y(w)|^2 - alpha * |N(w)|^2
+```
+
+Where:
+- `S(w)` = estimated clean speech
+- `Y(w)` = noisy input
+- `N(w)` = estimated noise (from speech pauses)
+- `alpha` = subtraction factor (typically 0.8-1.2)
+
+**Advantages:**
+- Computationally efficient
+- Low latency
+- Effective for stationary noise
+
+**Disadvantages:**
+- Introduces "musical noise" (random spectral peaks)
+- Poor performance on non-stationary noise
+- Requires accurate noise estimation
+
+### Wiener Filtering
+
+The Wiener filter is an optimal linear filter that minimizes mean square error between the desired signal and filtered output.
+
+**Principle:**
+
+```
+H(w) = |S(w)|^2 / (|S(w)|^2 + |N(w)|^2)
+     = SNR(w) / (1 + SNR(w))
+```
+
+The Wiener filter gain approaches 1 when SNR is high and approaches 0 when SNR is low.
+
+**Advantages:**
+- Theoretically optimal for stationary signals
+- Adapts to changing SNR
+- Can improve SNR by 5-10 dB
+
+**Disadvantages:**
+- Assumes stationary signal and noise
+- Requires accurate spectral estimation
+- Performance degrades in non-stationary conditions
+
+### Limitations of Traditional Methods
+
+1. **Stationarity assumption:** Real-world noise is rarely stationary
+2. **Musical noise:** Residual artifacts from spectral processing
+3. **Speech distortion:** Aggressive processing damages speech
+4. **Non-adaptive:** Cannot learn from data
+
+## Neural Network Approaches
+
+Neural network-based noise suppression has revolutionized audio preprocessing, offering superior performance on non-stationary noise.
+
+### RNNoise
+
+**Overview:** Released by Mozilla in 2017, RNNoise combines traditional DSP with a compact GRU-based neural network.
+
+**Architecture:**
+- Hybrid DSP + neural network design
+- GRU (Gated Recurrent Unit) core
+- 85 kB model size (8-bit quantized weights)
+- Weights constrained to +/- 0.5 during training
+
+**Performance:**
+
+| Metric | Value |
+|--------|-------|
+| PESQ | ~3.88 |
+| STOI | ~0.92 |
+| Latency | 10-20ms |
+| Model size | 85 kB |
+
+**Strengths:**
+- Extremely lightweight
+- Real-time on almost any device
+- Well-suited for embedded systems
+- Open source (BSD license)
+
+**Limitations:**
+- Lower quality than modern alternatives
+- May struggle with complex noise profiles
+
+**Use Cases:**
+- Embedded systems
+- Low-resource environments
+- WebRTC applications
+- Edge devices
+
+### DTLN (Dual-Signal Transformation LSTM Network)
+
+**Overview:** Introduced by Westhausen and Meyer, DTLN uses two cascaded processing cores operating in different domains.
+
+**Architecture:**
+- **Core 1:** Frequency-domain processing (STFT)
+- **Core 2:** Learned time-domain representation
+- Both cores use LSTM layers with instant layer normalization
+- < 1 million parameters
+
+**Key Innovation:** DTLN processes both magnitude and phase information, unlike traditional magnitude-only approaches.
+
+**Performance:**
+- Real-time capable
+- Significantly better than RNNoise
+- Datadog's dtln-rs processes 1 second of audio in 33ms on M1 MacBook Pro
+
+**Use Cases:**
+- Balanced real-time applications
+- When RNNoise quality is insufficient but resources are limited
+
+### DeepFilterNet
+
+**Overview:** State-of-the-art speech enhancement framework using deep filtering for full-band audio (up to 48 kHz).
+
+**Architecture:**
+- Predicts dynamic suppression gains per frequency bin
+- Uses learned filterbanks instead of fixed spectrograms
+- Multiple versions: DeepFilterNet, DeepFilterNet2, DeepFilterNet3
+
+**Performance:**
+
+| Metric | DeepFilterNet3 |
+|--------|----------------|
+| PESQ | 3.5-4.0+ |
+| STOI | > 0.95 |
+| Latency | < 20ms |
+| Best for | Quality-focused applications |
+
+**Research Findings:** A comparative study found that DeepFilterNet3 exhibited the best overall performance, excelling in intelligibility and speech quality, with superior generalization capabilities.
+
+### Comparative Summary
+
+| Feature | RNNoise | DTLN | DeepFilterNet3 |
+|---------|---------|------|----------------|
+| Latency | 10-20ms | Real-time | < 20ms |
+| Model Size | 85 kB | < 1M params | Larger |
+| PESQ | ~3.88 | Good | 3.5-4.0+ |
+| STOI | ~0.92 | Good | > 0.95 |
+| Best For | Embedded/low-resource | Balanced | Quality-focused |
+| License | BSD | MIT | MIT |
+
+## Commercial Solutions
+
+### Krisp SDK
+
+**Overview:** Enterprise-grade noise cancellation powering 80B+ monthly audio minutes across 200M+ devices.
+
+**Products:**
+- **Krisp SDK:** Client-side noise cancellation
+- **VIVA SDK:** Server-side voice isolation for Voice AI agents
+- **VIVA-Tel-Lite-v1:** 3.5x smaller model with comparable performance
+
+**Key Features:**
+- Removes background noise and secondary voices (voice isolation)
+- Improves turn-taking and interrupt handling
+- Supports Win, Mac, Linux, iOS, Android, Web (JS/WASM)
+- Server-side via Python and Node.js
+
+**Performance:**
+- BVC-VAD mode shows 18% improvement in WER
+- Processes 1B+ minutes/month in voice AI deployments
+
+**Integration Partners:** Discord, RingCentral Video, Twilio Video
+
+### NVIDIA RTX Voice / Maxine
+
+**Overview:** GPU-accelerated audio processing leveraging Tensor Cores for AI-based noise removal.
+
+**Products:**
+- **RTX Voice:** Consumer-facing plugin
+- **Maxine Audio Effects SDK:** Developer SDK with multiple effects
+
+**Available Effects:**
+1. Noise Removal / Background Noise Suppression
+2. Room Echo Removal / Dereverb
+3. Combined Denoise + Dereverb
+4. Speaker Focus (isolates primary speaker)
+5. Studio Voice (microphone enhancement)
+
+**Technical Details:**
+- Trained on English accents, European/Asian languages
+- 29 different noise profiles
+- Intensity ratio: 0.0 (passthrough) to 1.0 (maximum)
+- Requires NVIDIA GPUs with Tensor Cores
+
+**Performance Impact:**
+- 4-10% frame rate reduction (mic only)
+- Up to 20% with both mic + speaker processing
+
+### Dolby.io
+
+**Overview:** Cloud-based audio APIs leveraging Dolby's audio expertise.
+
+**Products:**
+- Media Enhance API (file-based)
+- Communications APIs (real-time)
+
+**Enhance API Features:**
+- Noise reduction (adjustable: low to max)
+- Speech leveling
+- Speech isolation
+- Loudness correction
+- Sibilance/plosive reduction
+- Dynamic equalization
+- Hum reduction
+- Mouth click reduction
+
+**Technical Details:**
+- Neural network-based detection
+- Adjustable noise reduction (may introduce artifacts at max)
+- REST API for file processing
+
+### Agora Audio Processing
+
+**Overview:** Real-time engagement platform with AI-powered audio enhancements.
+
+**Audio Features:**
+- AI Noise Suppression (100+ noise types)
+- 3D Spatial Audio
+- Echo Cancellation
+- Automatic Gain Control
+- Active Speaker Recognition
+
+**Conversational AI Features:**
+- Built-in interruption handling
+- AI echo cancellation
+- Background noise suppression
+- Intelligent routing for low latency
+
+**Platform Support:** Web, iOS, Android, Mac, Windows, Unity, React Native, Flutter, Linux, Electron
+
+## Quality Metrics
+
+### PESQ (Perceptual Evaluation of Speech Quality)
+
+- Scale: -0.5 to 4.5 (higher is better)
+- Correlates with Mean Opinion Score (MOS)
+- Standard: ITU-T P.862
+
+### STOI (Short-Time Objective Intelligibility)
+
+- Scale: 0 to 1 (higher is better)
+- Measures speech intelligibility
+- Better for noise conditions
+
+## Benchmark Comparison
+
+| Solution | PESQ | STOI | Latency | Model Size |
+|----------|------|------|---------|------------|
+| No processing | 1.5-2.5 | 0.65-0.80 | 0 ms | - |
+| RNNoise | ~3.88 | ~0.92 | 10-20 ms | 85 kB |
+| DTLN | Good | Good | Real-time | < 1M params |
+| DeepFilterNet3 | 3.5-4.0+ | > 0.95 | < 20 ms | Larger |
+| Krisp VIVA | Excellent | Excellent | Low | Proprietary |
+| NVIDIA Maxine | Excellent | Excellent | Low | GPU required |
+
+## Implementation Considerations
+
+### When to Use Noise Suppression
+
+**Use preprocessing when:**
+- Background noise is severe (SNR < 10 dB)
+- STT model is not noise-robust
+- Latency budget allows (10-40ms)
+- User experience is critical
+
+**Skip preprocessing when:**
+- Audio is already clean
+- STT model was multi-condition trained
+- Latency budget is extremely tight (under 100ms total)
+- Risk of introducing artifacts outweighs benefits
+
+### Noise Suppression in the Pipeline
+
+```
+Input -> HPF -> NS -> AEC -> AGC -> Output
+```
+
+Noise suppression typically runs before AEC to prevent the adaptive filter from trying to model noise.
+
+### VAD Integration
+
+Modern approaches use VAD to:
+1. Gate preprocessing to save resources
+2. Improve noise estimation (during non-speech)
+3. Control turn-taking in conversation
+
+**Krisp BVC-VAD approach:**
+- Whisper operates on original audio
+- VAD uses Krisp-processed audio
+- Result: 18% WER improvement
+
+## Open-Source Options
+
+| Solution | Type | License | Best For |
+|----------|------|---------|----------|
+| RNNoise | Noise suppression | BSD | Embedded, low-resource |
+| DTLN | Noise suppression | MIT | Balanced real-time |
+| DeepFilterNet | Noise suppression | MIT | Quality-focused |
+| WebRTC APM | Full pipeline | BSD | Reference implementation |
+| SpeexDSP | Echo cancellation | BSD | Legacy, embedded |
+
+## Choosing the Right Solution
+
+### Decision Matrix
+
+| Requirement | Recommended Solution |
+|-------------|---------------------|
+| Embedded/IoT | RNNoise |
+| Balanced quality/latency | DTLN |
+| Maximum quality | DeepFilterNet3 |
+| Enterprise scale | Krisp SDK |
+| GPU available | NVIDIA Maxine |
+| File processing | Dolby.io |
+| Real-time communication | Agora |
+
+### Cost vs. Quality Trade-offs
+
+| Tier | Solutions | Quality | Cost |
+|------|-----------|---------|------|
+| Free/Open | RNNoise, DTLN, DeepFilterNet | Good to Excellent | $0 |
+| Commercial SDK | Krisp, Agora | Excellent | Per-minute pricing |
+| Cloud API | Dolby.io | Excellent | Per-minute processing |
+| Hardware | NVIDIA Maxine | Excellent | GPU cost |

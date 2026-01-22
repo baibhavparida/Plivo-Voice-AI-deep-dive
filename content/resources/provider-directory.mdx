@@ -1,0 +1,834 @@
+---
+title: "Voice AI Provider Directory"
+description: "Comprehensive directory of Voice AI providers across STT, TTS, LLM, orchestration, and telephony categories with comparison matrices, pricing, and selection guidance"
+category: "resources"
+tags: ["providers", "directory", "stt", "tts", "llm", "telephony", "orchestration", "comparison"]
+relatedTopics: ["benchmarks", "provider-comparison", "model-selection", "glossary"]
+lastUpdated: "2026-01-21"
+---
+
+# Voice AI Provider Directory
+
+A comprehensive reference directory of providers across the Voice AI ecosystem. Use this guide to identify, compare, and select the right providers for your voice agent stack.
+
+---
+
+## Quick Navigation
+
+- [STT Providers](#stt-providers)
+- [TTS Providers](#tts-providers)
+- [LLM Providers](#llm-providers)
+- [Orchestration Platforms](#orchestration-platforms)
+- [Telephony Providers](#telephony-providers)
+- [Selection Guidance](#selection-guidance)
+
+---
+
+## STT Providers
+
+Speech-to-Text providers convert spoken audio into text. Selection criteria typically include accuracy, latency, language support, and pricing.
+
+### Quick Comparison Matrix
+
+| Provider | Accuracy | Streaming | Languages | Min Price | Best For |
+|----------|----------|-----------|-----------|-----------|----------|
+| Deepgram | Excellent | Yes | 30+ | $4.30/1K min | Real-time agents |
+| AssemblyAI | Very Good | Yes | 99+ | $2.50/1K min | Speech understanding |
+| OpenAI Whisper | Excellent | API: No | 50+ | $6.00/1K min | Batch transcription |
+| Google Cloud | Very Good | Yes | 125+ | $16/1K min | Multilingual |
+| Azure Speech | Good | Yes | 100+ | $16.67/1K min | Microsoft ecosystem |
+| Amazon Transcribe | Good | Yes | 100+ | $24/1K min | AWS ecosystem |
+
+### Deepgram
+
+**Focus**: Real-time voice AI with lowest latency streaming ASR.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Nova-3, Nova-2, Nova-3 Medical |
+| **Streaming Latency** | ~100-150ms |
+| **Primary Languages** | English (expanding multilingual) |
+| **Accuracy (WER)** | 5-7% real-world |
+| **Unique Features** | Per-second billing, keyword boosting, smart formatting |
+
+**Pricing (2025)**:
+- Pay-as-you-go: $0.0043/min ($4.30/1K min)
+- Growth tier: $0.0036/min ($3.60/1K min)
+- Free tier: 12,500 min/year
+
+**API**: REST, WebSocket streaming
+
+**Website**: deepgram.com
+
+---
+
+### AssemblyAI
+
+**Focus**: Speech Understanding with integrated NLU capabilities.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Universal-2, Universal-Streaming |
+| **Streaming Latency** | ~300ms |
+| **Languages** | 99+ |
+| **Accuracy (WER)** | 8-15% real-world |
+| **Unique Features** | Sentiment analysis, PII detection, summarization, Slam-1 Speech LLM |
+
+**Pricing (2025)**:
+- Core: $0.15/hour ($0.0025/min)
+- With features: ~$0.0042/min effective
+- Slam-1: $0.37/hour
+
+**API**: REST, WebSocket streaming
+
+**Website**: assemblyai.com
+
+---
+
+### OpenAI Whisper
+
+**Focus**: Robust multilingual ASR with open-source option.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Whisper Large-v3, Turbo, GPT-4o Transcribe |
+| **Streaming** | API: No (batch only), Self-hosted: Chunking workaround |
+| **Languages** | 50+ |
+| **Accuracy (WER)** | 3-10% depending on conditions |
+| **Unique Features** | Open-source, translation, timestamps |
+
+**Pricing (2025)**:
+- API: $0.006/min ($6/1K min)
+- Self-hosted: Infrastructure cost only
+
+**Considerations**: Known hallucination issues, not ideal for streaming.
+
+**API**: REST (batch)
+
+**Website**: platform.openai.com
+
+---
+
+### Google Cloud Speech-to-Text
+
+**Focus**: Widest language support with Chirp models.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Chirp 3, Chirp 2, V1 models |
+| **Streaming Latency** | ~400ms |
+| **Languages** | 125+ |
+| **Accuracy (WER)** | 8-12% real-world |
+| **Unique Features** | Speaker diarization, built-in denoiser, USM foundation |
+
+**Pricing (2025)**:
+- Standard: $0.024/min ($24/1K min)
+- Enhanced: $0.036/min ($36/1K min)
+- With data logging: Discounted
+- 15-second billing increments
+
+**API**: REST, gRPC streaming
+
+**Website**: cloud.google.com/speech-to-text
+
+---
+
+### Azure Speech Services
+
+**Focus**: Microsoft ecosystem integration with on-device options.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Neural, Custom Speech |
+| **Streaming Latency** | ~350ms |
+| **Languages** | 100+ |
+| **Accuracy (WER)** | 10-18% (custom models improve) |
+| **Unique Features** | Embedded Speech, Custom Speech training, Teams integration |
+
+**Pricing (2025)**:
+- Standard: $1.00/audio hour (~$0.017/min)
+- Real-time streaming: $2.00/audio hour
+- Free tier: 5 hours/month
+
+**API**: REST, SDK streaming
+
+**Website**: azure.microsoft.com/services/cognitive-services/speech-to-text
+
+---
+
+### Amazon Transcribe
+
+**Focus**: AWS ecosystem with medical specialization.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Standard, Medical |
+| **Streaming Latency** | ~500ms |
+| **Languages** | 100+ |
+| **Accuracy (WER)** | 18-22% real-world |
+| **Unique Features** | Transcribe Medical, Call Analytics, AWS integration |
+
+**Pricing (2025)**:
+- Standard: $0.024/min ($24/1K min)
+- Medical: $0.0504/min
+- PII redaction: +$0.0024/min
+- 15-second billing increments
+
+**API**: REST, WebSocket streaming
+
+**Website**: aws.amazon.com/transcribe
+
+---
+
+### Open-Source STT Options
+
+| Solution | License | Best For | Notes |
+|----------|---------|----------|-------|
+| Whisper (OpenAI) | MIT | Self-hosted batch | Hallucination issues |
+| NVIDIA NeMo | Apache 2.0 | High-performance on-prem | Parakeet models |
+| Vosk | Apache 2.0 | Edge/embedded | Lightweight (50MB-2GB) |
+| wav2vec 2.0 | MIT | Low-resource languages | Self-supervised |
+
+---
+
+## TTS Providers
+
+Text-to-Speech providers convert text into spoken audio. Key considerations include voice quality, latency, voice cloning capabilities, and expressiveness.
+
+### Quick Comparison Matrix
+
+| Provider | Quality | TTFA | Voice Cloning | Price (1M chars) | Best For |
+|----------|---------|------|---------------|------------------|----------|
+| ElevenLabs | Excellent | 75-300ms | Excellent | ~$180 | Quality-first |
+| Cartesia | Very Good | 40-90ms | Good | ~$50 | Ultra-low latency |
+| PlayHT | Good | Variable | Good | ~$130 | Voice variety |
+| Deepgram | Very Good | &lt;200ms | Limited | $30 | Enterprise |
+| OpenAI | Very Good | 200-300ms | Limited | $15-30 | Integration |
+| Google Cloud | Excellent | Variable | No | $4-16 | Multilingual |
+| Azure | Excellent | Variable | Yes | $16+ | Enterprise |
+| Amazon Polly | Good | Variable | No | $4-30 | AWS ecosystem |
+
+### ElevenLabs
+
+**Focus**: Highest quality voice synthesis with advanced cloning.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Eleven v3, Turbo v2.5, Flash v2.5, Multilingual v2 |
+| **TTFA** | 75-300ms depending on model |
+| **Languages** | 29-32 depending on model |
+| **Voice Cloning** | Instant (30 sec audio), Professional |
+| **Unique Features** | Emotion from punctuation, stability/similarity sliders |
+
+**Pricing (2025)**:
+- Free: 10,000 chars
+- Starter: 30,000 chars - $5/month
+- Creator: 100,000 chars - $22/month
+- Pro: 500,000 chars - $99/month
+- Scale: 2,000,000 chars - $330/month
+
+**Website**: elevenlabs.io
+
+---
+
+### Cartesia (Sonic)
+
+**Focus**: Lowest latency TTS using State Space Models.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Sonic 3 |
+| **TTFA** | 40-90ms (fastest in market) |
+| **Languages** | Growing |
+| **Voice Cloning** | Supported |
+| **Unique Features** | SSM architecture, real-time emotion, 25ms internal latency achieved |
+
+**Pricing (2025)**:
+- ~$0.05/1,000 chars (~$50/1M chars)
+- Free tier available
+
+**Website**: cartesia.ai
+
+---
+
+### PlayHT
+
+**Focus**: Large voice library with extensive language support.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | PlayDialog, PlayDialogMultilingual, PlayDialogArabic |
+| **TTFA** | Variable |
+| **Languages** | 140+ |
+| **Voice Cloning** | Instant (30 sec), High-Fidelity |
+| **Unique Features** | 800+ AI voices, streaming synthesis |
+
+**Pricing (2025)**:
+- Free: 12,500 chars (one-time)
+- Creator: 3M chars/year - $31.20/month
+- Pro: Higher limits - $49/month
+
+**Website**: play.ht
+
+---
+
+### Deepgram Aura
+
+**Focus**: Enterprise-grade TTS with deployment flexibility.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Aura-2 |
+| **TTFA** | &lt;200ms (P90) |
+| **Languages** | English (40+ voices with accents) |
+| **Voice Cloning** | Limited |
+| **Unique Features** | VPC/on-prem deployment, 24kHz audio |
+
+**Pricing (2025)**:
+- $0.030/1,000 chars ($30/1M chars)
+- Volume discounts available
+
+**Website**: deepgram.com/aura
+
+---
+
+### OpenAI TTS
+
+**Focus**: Integration with GPT ecosystem, steerable voices.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | tts-1, tts-1-hd, gpt-4o-mini-tts |
+| **TTFA** | 200-300ms |
+| **Languages** | Multilingual |
+| **Voice Cloning** | Limited (requires sales contact) |
+| **Unique Features** | Instruction-following, 11 built-in voices |
+
+**Pricing (2025)**:
+- tts-1: $15/1M chars
+- tts-1-hd: $30/1M chars
+- gpt-4o-mini-tts: $0.60/1M input chars
+
+**Website**: platform.openai.com
+
+---
+
+### Google Cloud TTS
+
+**Focus**: Research-backed quality with broad language support.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Standard, WaveNet, Neural2, Chirp 3: HD, Gemini TTS |
+| **TTFA** | Variable by model |
+| **Languages** | 40+ (100+ locales) |
+| **Voice Cloning** | No |
+| **Unique Features** | SSML support, multi-speaker synthesis |
+
+**Pricing (2025)**:
+- Standard: $4/1M chars
+- WaveNet/Neural2: $16/1M chars
+- Free tier: 4M standard, 1M WaveNet/month
+
+**Website**: cloud.google.com/text-to-speech
+
+---
+
+### Azure Neural TTS
+
+**Focus**: Enterprise integration with custom voice training.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Neural, Neural HD, Custom Neural Voice |
+| **TTFA** | Variable |
+| **Languages** | 140+ |
+| **Voice Cloning** | Custom Neural Voice (requires consent verification) |
+| **Unique Features** | 400+ voices, speaking styles, SSML support |
+
+**Pricing (2025)**:
+- Neural: $16/1M chars
+- Neural HD: Higher tier
+- Free tier: 500K chars/month
+
+**Website**: azure.microsoft.com/services/cognitive-services/text-to-speech
+
+---
+
+### Amazon Polly
+
+**Focus**: AWS ecosystem with multiple engine options.
+
+| Attribute | Details |
+|-----------|---------|
+| **Models** | Standard, Neural, Generative |
+| **TTFA** | Variable |
+| **Languages** | 30+ |
+| **Voice Cloning** | Limited |
+| **Unique Features** | Long-form voices, full SSML support |
+
+**Pricing (2025)**:
+- Standard: $4/1M chars
+- Neural: $16/1M chars
+- Generative: $30/1M chars
+- Free tier: 5M standard, 1M neural (first year)
+
+**Website**: aws.amazon.com/polly
+
+---
+
+### Open-Source TTS Options
+
+| Solution | License | Best For | Notes |
+|----------|---------|----------|-------|
+| Coqui XTTS-v2 | Coqui Public | Voice cloning | Zero-shot from 6 sec |
+| Bark | MIT | Non-speech sounds | Laughter, music |
+| Tortoise TTS | Apache 2.0 | Quality focus | Slow but high quality |
+| Piper | MIT | Edge deployment | Fast, lightweight |
+
+---
+
+## LLM Providers
+
+Large Language Model providers power the conversational intelligence. For voice AI, latency (TTFT) is often more critical than raw capability.
+
+### Quick Comparison Matrix
+
+| Provider | Models | TTFT Range | Strengths | Pricing |
+|----------|--------|------------|-----------|---------|
+| OpenAI | GPT-4o, GPT-4o-mini | 400-1000ms | Quality, multimodal | $0.15-$15/1M tokens |
+| Anthropic | Claude 3.5 Sonnet/Haiku | 350-800ms | Safety, reasoning | $0.80-$15/1M tokens |
+| Google | Gemini 2.0 Flash/Pro | 300-600ms | Speed, multimodal | $0.075-$5/1M tokens |
+| Groq | Llama, Mixtral | 200-300ms | Fastest TTFT | Variable |
+| Together | Open models | 350-500ms | Open weights | $0.20-$1.20/1M tokens |
+
+### OpenAI
+
+**Models for Voice AI**:
+
+| Model | TTFT | TPS | Context | Best For |
+|-------|------|-----|---------|----------|
+| GPT-4o-mini | ~400ms | ~100 | 128K | Balanced production |
+| GPT-4o | ~700ms | ~60 | 128K | Complex reasoning |
+| gpt-4o-realtime | Native S2S | N/A | Varies | Speech-to-speech |
+
+**Pricing (2025)**:
+- GPT-4o-mini: $0.15/$0.60 per 1M tokens (in/out)
+- GPT-4o: $5/$15 per 1M tokens
+- Realtime API: Audio tokens pricing
+
+**Website**: platform.openai.com
+
+---
+
+### Anthropic
+
+**Models for Voice AI**:
+
+| Model | TTFT | TPS | Context | Best For |
+|-------|------|-----|---------|----------|
+| Claude 3.5 Haiku | ~350ms | ~80 | 200K | Fast, safe |
+| Claude 3.5 Sonnet | ~800ms | ~77 | 200K | Complex reasoning |
+| Claude 3 Opus | ~1200ms | ~50 | 200K | Expert analysis |
+
+**Pricing (2025)**:
+- Claude 3.5 Haiku: $0.80/$4.00 per 1M tokens
+- Claude 3.5 Sonnet: $3/$15 per 1M tokens
+- Claude 3 Opus: $15/$75 per 1M tokens
+
+**Website**: anthropic.com
+
+---
+
+### Google (Gemini)
+
+**Models for Voice AI**:
+
+| Model | TTFT | TPS | Context | Best For |
+|-------|------|-----|---------|----------|
+| Gemini 2.0 Flash | ~300ms | ~250 | 1M | High-volume |
+| Gemini 2.0 Pro | ~600ms | ~150 | 1M | Quality + speed |
+| Gemini Live | Native S2S | N/A | Varies | Multimodal |
+
+**Pricing (2025)**:
+- Gemini 2.0 Flash: $0.075/$0.30 per 1M tokens
+- Gemini 2.0 Pro: $1.25/$5.00 per 1M tokens
+
+**Website**: ai.google.dev
+
+---
+
+### Groq
+
+**Focus**: Fastest inference using custom LPU hardware.
+
+| Model | TTFT | TPS | Context | Best For |
+|-------|------|-----|---------|----------|
+| Llama 3.1 70B | ~200ms | 280-400 | 128K | Ultra-low latency |
+| Llama 3.1 8B | ~150ms | 500+ | 128K | Simple tasks |
+| Mixtral 8x7B | ~180ms | 300+ | 32K | Balanced |
+
+**Pricing**: Variable, usage-based
+
+**Website**: groq.com
+
+---
+
+### Together AI
+
+**Focus**: Open model hosting with competitive pricing.
+
+| Model | TTFT | TPS | Context | Best For |
+|-------|------|-----|---------|----------|
+| Llama 3.1 70B | ~350ms | ~95 | 128K | Open weights |
+| Llama 3.1 405B | ~600ms | ~50 | 128K | Maximum capability |
+| Mixtral 8x22B | ~400ms | ~80 | 64K | Efficient |
+
+**Pricing (2025)**:
+- Llama 3.1 8B: $0.20/$0.20 per 1M tokens
+- Llama 3.1 70B: $0.90/$0.90 per 1M tokens
+- Llama 3.1 405B: $5.00/$5.00 per 1M tokens
+
+**Website**: together.ai
+
+---
+
+### Additional LLM Providers
+
+| Provider | Focus | Notable Models | Website |
+|----------|-------|----------------|---------|
+| Fireworks AI | Fast inference | Llama, Mixtral | fireworks.ai |
+| Replicate | Model hosting | Various open | replicate.com |
+| Anyscale | Scalable inference | Llama variants | anyscale.com |
+| AWS Bedrock | Enterprise | Claude, Llama, Titan | aws.amazon.com/bedrock |
+| Azure OpenAI | Enterprise | GPT-4, GPT-4o | azure.microsoft.com |
+
+---
+
+## Orchestration Platforms
+
+Orchestration platforms combine STT, LLM, and TTS into complete voice agent solutions, handling the complexity of real-time audio streaming and conversation management.
+
+### Quick Comparison Matrix
+
+| Platform | Type | Hosting | Latency | Customization | Pricing Model |
+|----------|------|---------|---------|---------------|---------------|
+| Vapi | Managed | Cloud | &lt;800ms | Medium | Per-minute |
+| Vocode | Open-source | Self/Cloud | Variable | High | Self-hosted free |
+| LiveKit Agents | Framework | Self/Cloud | Variable | High | Self-hosted + infra |
+| Pipecat | Open-source | Self-hosted | Variable | Very High | Free |
+| Retell | Managed | Cloud | &lt;800ms | Medium | Per-minute |
+| Bland.ai | Managed | Cloud | Variable | Low-Medium | Per-minute |
+
+### Vapi
+
+**Type**: Managed Voice AI platform
+
+| Attribute | Details |
+|-----------|---------|
+| **Deployment** | Cloud (managed) |
+| **Latency** | &lt;800ms advertised |
+| **Providers** | Deepgram, OpenAI, ElevenLabs, more |
+| **Customization** | Provider selection, prompts, tools |
+| **Telephony** | Built-in (Twilio, Vonage) |
+
+**Pricing**: Per-minute (varies by provider selection)
+
+**Best For**: Quick deployment, managed infrastructure
+
+**Website**: vapi.ai
+
+---
+
+### Vocode
+
+**Type**: Open-source voice agent framework
+
+| Attribute | Details |
+|-----------|---------|
+| **Deployment** | Self-hosted or Vocode Cloud |
+| **Latency** | Variable (depends on config) |
+| **Providers** | Pluggable (most major providers) |
+| **Customization** | High (open-source) |
+| **Telephony** | Twilio, Vonage integrations |
+
+**Pricing**: Self-hosted free, cloud pricing varies
+
+**Best For**: Customization, cost control
+
+**Website**: vocode.dev | GitHub: vocodedev/vocode-core
+
+---
+
+### LiveKit Agents
+
+**Type**: Real-time communication framework with AI agents
+
+| Attribute | Details |
+|-----------|---------|
+| **Deployment** | Self-hosted or LiveKit Cloud |
+| **Latency** | Optimized for real-time |
+| **Providers** | Pluggable architecture |
+| **Customization** | High (framework approach) |
+| **Features** | WebRTC, room-based, multimodal |
+
+**Pricing**: Self-hosted free, Cloud usage-based
+
+**Best For**: WebRTC applications, custom pipelines
+
+**Website**: livekit.io | GitHub: livekit/agents
+
+---
+
+### Pipecat
+
+**Type**: Open-source voice/multimodal agent framework
+
+| Attribute | Details |
+|-----------|---------|
+| **Deployment** | Self-hosted |
+| **Latency** | Highly optimizable |
+| **Providers** | Extensive integrations |
+| **Customization** | Very High (Python framework) |
+| **Features** | Pipeline architecture, vision support |
+
+**Pricing**: Free (open-source)
+
+**Best For**: Maximum control, custom architectures
+
+**Website**: pipecat.ai | GitHub: pipecat-ai/pipecat
+
+---
+
+### Retell AI
+
+**Type**: Managed Voice AI platform
+
+| Attribute | Details |
+|-----------|---------|
+| **Deployment** | Cloud (managed) |
+| **Latency** | &lt;800ms advertised |
+| **Customization** | Medium |
+| **Telephony** | Built-in |
+
+**Pricing**: Per-minute
+
+**Best For**: Enterprise deployments, quick start
+
+**Website**: retellai.com
+
+---
+
+### Bland.ai
+
+**Type**: Managed AI phone agent platform
+
+| Attribute | Details |
+|-----------|---------|
+| **Deployment** | Cloud (managed) |
+| **Focus** | Phone calls, sales, support |
+| **Customization** | Template-based |
+| **Telephony** | Built-in |
+
+**Pricing**: Per-minute
+
+**Best For**: Sales automation, simple use cases
+
+**Website**: bland.ai
+
+---
+
+## Telephony Providers
+
+Telephony providers enable voice AI agents to make and receive phone calls via PSTN and SIP.
+
+### Quick Comparison Matrix
+
+| Provider | Global Coverage | Pricing | API Quality | Features |
+|----------|-----------------|---------|-------------|----------|
+| Plivo | 190+ countries | Competitive | Excellent | SIP, SMS, Voice |
+| Twilio | 180+ countries | Premium | Excellent | Full suite |
+| Vonage | 200+ countries | Mid-range | Good | Unified comms |
+| Telnyx | 140+ countries | Competitive | Good | SIP focus |
+| Bandwidth | US/Canada focus | Competitive | Good | Enterprise |
+| SignalWire | Global | Competitive | Good | WebRTC focus |
+
+### Plivo
+
+**Focus**: Enterprise communications with competitive pricing.
+
+| Attribute | Details |
+|-----------|---------|
+| **Coverage** | 190+ countries |
+| **Channels** | Voice, SMS, SIP Trunking |
+| **Voice Features** | Inbound/outbound, call control, recording |
+| **SIP Trunking** | Full support with BYOC |
+| **API Quality** | Excellent documentation, SDKs |
+
+**Voice Pricing (US)**:
+- Inbound: ~$0.0055/min
+- Outbound: ~$0.0100/min
+- DID numbers: ~$0.80/month
+
+**Strengths**: Cost-effective, reliable, good developer experience
+
+**Website**: plivo.com
+
+---
+
+### Twilio
+
+**Focus**: Market leader with comprehensive platform.
+
+| Attribute | Details |
+|-----------|---------|
+| **Coverage** | 180+ countries |
+| **Channels** | Voice, SMS, Video, Email |
+| **Voice Features** | Programmable Voice, Flex Contact Center |
+| **SIP Trunking** | Elastic SIP Trunking |
+| **Ecosystem** | Largest third-party integrations |
+
+**Voice Pricing (US)**:
+- Inbound: ~$0.0085/min
+- Outbound: ~$0.014/min
+- DID numbers: ~$1.15/month
+
+**Strengths**: Feature-complete, extensive documentation, large community
+
+**Website**: twilio.com
+
+---
+
+### Vonage (formerly Nexmo)
+
+**Focus**: Unified communications with enterprise features.
+
+| Attribute | Details |
+|-----------|---------|
+| **Coverage** | 200+ countries |
+| **Channels** | Voice, SMS, Video, Messages |
+| **Voice Features** | Voice API, SIP Connect |
+| **Enterprise** | Contact Center, UCaaS |
+
+**Voice Pricing**: Varies by region, generally mid-range
+
+**Strengths**: Unified platform, enterprise integrations
+
+**Website**: vonage.com
+
+---
+
+### Telnyx
+
+**Focus**: Developer-friendly with SIP emphasis.
+
+| Attribute | Details |
+|-----------|---------|
+| **Coverage** | 140+ countries |
+| **Channels** | Voice, SMS, Fax, SIP |
+| **Voice Features** | Mission Control Portal, TeXML |
+| **Network** | Private global network |
+
+**Voice Pricing (US)**:
+- Inbound: ~$0.007/min
+- Outbound: ~$0.008/min
+- Competitive international rates
+
+**Strengths**: SIP expertise, competitive pricing, private network
+
+**Website**: telnyx.com
+
+---
+
+### Bandwidth
+
+**Focus**: US/Canada enterprise communications.
+
+| Attribute | Details |
+|-----------|---------|
+| **Coverage** | US, Canada (expanding) |
+| **Channels** | Voice, Messaging, 911 |
+| **Voice Features** | Enterprise voice, PSTN |
+| **Differentiator** | Own US network infrastructure |
+
+**Strengths**: Direct carrier, regulatory compliance
+
+**Website**: bandwidth.com
+
+---
+
+### SignalWire
+
+**Focus**: Flexible communications with WebRTC.
+
+| Attribute | Details |
+|-----------|---------|
+| **Coverage** | Global |
+| **Channels** | Voice, Video, Messaging |
+| **Voice Features** | SWML, AI integrations |
+| **WebRTC** | Strong WebRTC support |
+
+**Strengths**: WebRTC expertise, AI integrations
+
+**Website**: signalwire.com
+
+---
+
+## Selection Guidance
+
+### By Use Case
+
+| Use Case | STT | LLM | TTS | Orchestration | Telephony |
+|----------|-----|-----|-----|---------------|-----------|
+| **Customer Service** | Deepgram | GPT-4o-mini | Cartesia | Vapi | Plivo |
+| **Sales Calls** | Deepgram | Claude Haiku | ElevenLabs | Retell | Twilio |
+| **Healthcare** | Deepgram Medical | GPT-4o | Azure | Custom | Bandwidth |
+| **Multilingual** | Google Chirp | Gemini Flash | Google TTS | Vocode | Vonage |
+| **Cost-Sensitive** | AssemblyAI | Groq Llama | OpenAI tts-1 | Pipecat | Telnyx |
+| **Maximum Quality** | Deepgram Nova-3 | Claude Sonnet | ElevenLabs v3 | LiveKit | Twilio |
+
+### By Priority
+
+**Lowest Latency Stack**:
+- STT: Deepgram Nova-3
+- LLM: Groq Llama 3.1 70B
+- TTS: Cartesia Sonic
+- Expected E2E: ~450ms
+
+**Best Quality Stack**:
+- STT: Deepgram Nova-3
+- LLM: Claude 3.5 Sonnet
+- TTS: ElevenLabs Multilingual v2
+- Expected E2E: ~1400ms
+
+**Most Cost-Effective Stack**:
+- STT: AssemblyAI
+- LLM: GPT-4o-mini
+- TTS: OpenAI tts-1
+- Expected cost: ~$0.002/min LLM + provider costs
+
+**Best Multilingual Stack**:
+- STT: Google Chirp 3
+- LLM: Gemini 2.0 Flash
+- TTS: Google Cloud TTS
+- Languages: 125+
+
+### Enterprise Considerations
+
+| Factor | Recommended Approach |
+|--------|---------------------|
+| **Data Privacy** | On-prem options (Deepgram, Azure) |
+| **Compliance** | HIPAA: Deepgram Medical, Azure |
+| **SLA Requirements** | Enterprise tiers from major providers |
+| **Support** | Twilio, Azure, AWS for 24/7 support |
+| **Vendor Lock-in** | Open-source (Vocode, Pipecat) for flexibility |
+
+---
+
+## Further Reading
+
+- **[Voice AI Benchmarks](/topics/resources/benchmarks)** - Performance comparisons
+- **[STT Provider Comparison](/topics/foundations/speech-recognition/provider-comparison)** - Detailed STT analysis
+- **[TTS Provider Comparison](/topics/foundations/speech-synthesis/provider-comparison)** - Detailed TTS analysis
+- **[LLM Model Selection](/topics/llm-integration/model-selection)** - LLM selection framework
+- **[Glossary](/topics/resources/glossary)** - Technical terminology

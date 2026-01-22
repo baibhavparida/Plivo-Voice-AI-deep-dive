@@ -1,0 +1,1470 @@
+---
+title: "Voice AI Analytics"
+description: "Comprehensive guide to measuring voice AI performance, conversation intelligence, sentiment analysis, quality monitoring, A/B testing, and building effective analytics dashboards"
+category: Enterprise
+tags:
+  - analytics
+  - metrics
+  - conversation-intelligence
+  - sentiment-analysis
+  - monitoring
+  - dashboards
+related:
+  - security-compliance
+  - scalability
+  - cost-optimization
+lastUpdated: "2025-01-21"
+difficulty: advanced
+---
+
+# Voice AI Analytics
+
+Measuring and optimizing voice AI performance requires a comprehensive analytics strategy that goes beyond traditional call center metrics. This guide covers the key metrics, conversation intelligence capabilities, quality monitoring approaches, and dashboard design patterns for voice AI systems.
+
+## Key Performance Metrics
+
+Voice AI systems require tracking metrics across multiple dimensions: operational efficiency, conversation quality, customer experience, and technical performance.
+
+### Primary Business Metrics
+
+```
++-----------------------------------------------------------------------------+
+|                    VOICE AI KEY PERFORMANCE INDICATORS                        |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  CONTAINMENT RATE                                                             |
+|  +----------------------------------------------------------------------+    |
+|  | Definition: % of calls fully handled by AI without human transfer     |    |
+|  | Formula: (AI-resolved calls / Total calls) x 100                      |    |
+|  |                                                                        |    |
+|  | Target: 60-80% (varies by use case)                                   |    |
+|  | Industry benchmarks:                                                  |    |
+|  |   - Simple FAQ/routing: 80-90%                                        |    |
+|  |   - Appointment scheduling: 70-85%                                    |    |
+|  |   - Technical support: 50-65%                                         |    |
+|  |   - Complex sales: 30-50%                                             |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  CUSTOMER SATISFACTION (CSAT)                                                 |
+|  +----------------------------------------------------------------------+    |
+|  | Definition: Customer rating of their experience                       |    |
+|  | Collection: Post-call survey (1-5 scale)                              |    |
+|  |                                                                        |    |
+|  | Target: 4.0+ (80%+ satisfied)                                         |    |
+|  | Note: AI CSAT should match or exceed human agent CSAT                |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  AVERAGE HANDLE TIME (AHT)                                                    |
+|  +----------------------------------------------------------------------+    |
+|  | Definition: Average duration of AI-handled calls                      |    |
+|  | Components: Talk time + Hold time + After-call work                   |    |
+|  |                                                                        |    |
+|  | Target: 20-40% reduction vs human agents                              |    |
+|  | Caution: Optimize for resolution, not just speed                      |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  FIRST CALL RESOLUTION (FCR)                                                  |
+|  +----------------------------------------------------------------------+    |
+|  | Definition: % of issues resolved on first contact                     |    |
+|  | Measurement: No callback within 24-72 hours for same issue           |    |
+|  |                                                                        |    |
+|  | Target: 70-85%                                                         |    |
+|  | Impact: Each 1% FCR improvement = 1% reduction in call volume        |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### Technical Performance Metrics
+
+| Metric | Definition | Target | Alert Threshold |
+|--------|------------|--------|-----------------|
+| End-to-End Latency | Time from speech end to response start | &lt;500ms | >800ms |
+| Time to First Audio | Time until AI starts speaking | &lt;300ms | >500ms |
+| STT Word Error Rate | Transcription accuracy | &lt;10% | >15% |
+| Intent Recognition Accuracy | Correct intent classification | >90% | &lt;85% |
+| TTS Naturalness (MOS) | Mean Opinion Score for voice quality | >4.0 | &lt;3.5 |
+| Call Completion Rate | Calls without technical failures | >99% | &lt;98% |
+| Interruption Handling | Successful barge-in processing | >95% | &lt;90% |
+
+### Metrics Collection Architecture
+
+```python
+class VoiceAIMetricsCollector:
+    """
+    Comprehensive metrics collection for voice AI systems.
+    """
+
+    def __init__(self, config: MetricsConfig):
+        self.metrics_store = MetricsStore(config.store_url)
+        self.event_processor = EventProcessor()
+
+    async def track_call(self, call: CompletedCall) -> CallMetrics:
+        """
+        Collect all metrics for a completed call.
+        """
+        metrics = CallMetrics(
+            call_id=call.id,
+            timestamp=call.end_time,
+
+            # Business metrics
+            containment=self._calculate_containment(call),
+            handle_time_seconds=call.duration_seconds,
+            resolution_status=call.resolution_status,
+            transfer_occurred=call.transferred_to_agent,
+
+            # Technical metrics
+            latency_metrics=self._calculate_latency_metrics(call),
+            quality_metrics=self._calculate_quality_metrics(call),
+
+            # Conversation metrics
+            turn_count=len(call.turns),
+            interruption_count=call.interruption_count,
+            silence_duration_total=call.total_silence_seconds,
+
+            # Sentiment
+            customer_sentiment=await self._analyze_sentiment(call),
+            sentiment_trajectory=await self._sentiment_over_time(call),
+        )
+
+        await self.metrics_store.store(metrics)
+        return metrics
+
+    def _calculate_latency_metrics(self, call: CompletedCall) -> LatencyMetrics:
+        """Calculate detailed latency breakdown"""
+
+        latencies = []
+        for turn in call.turns:
+            if turn.role == 'assistant':
+                latencies.append(LatencyBreakdown(
+                    stt_ms=turn.stt_latency_ms,
+                    llm_first_token_ms=turn.llm_first_token_ms,
+                    llm_total_ms=turn.llm_total_ms,
+                    tts_first_byte_ms=turn.tts_first_byte_ms,
+                    total_ms=turn.total_latency_ms,
+                ))
+
+        return LatencyMetrics(
+            avg_e2e_ms=np.mean([l.total_ms for l in latencies]),
+            p50_e2e_ms=np.percentile([l.total_ms for l in latencies], 50),
+            p95_e2e_ms=np.percentile([l.total_ms for l in latencies], 95),
+            p99_e2e_ms=np.percentile([l.total_ms for l in latencies], 99),
+            avg_stt_ms=np.mean([l.stt_ms for l in latencies]),
+            avg_llm_ms=np.mean([l.llm_total_ms for l in latencies]),
+            avg_tts_ms=np.mean([l.tts_first_byte_ms for l in latencies]),
+        )
+
+    def _calculate_quality_metrics(self, call: CompletedCall) -> QualityMetrics:
+        """Calculate conversation quality metrics"""
+
+        return QualityMetrics(
+            stt_confidence_avg=np.mean([
+                t.stt_confidence for t in call.turns if t.stt_confidence
+            ]),
+            intent_confidence_avg=np.mean([
+                t.intent_confidence for t in call.turns if t.intent_confidence
+            ]),
+            repetition_count=self._count_repetitions(call),
+            clarification_requests=self._count_clarifications(call),
+            error_recovery_count=call.error_recovery_count,
+        )
+```
+
+## Conversation Intelligence
+
+Conversation intelligence extracts insights from voice interactions to improve agent performance and identify trends.
+
+### Conversation Analysis Pipeline
+
+```
++-----------------------------------------------------------------------------+
+|                    CONVERSATION INTELLIGENCE PIPELINE                         |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  RAW DATA                                                                     |
+|  +----------------------------------------------------------------------+    |
+|  | Audio Recordings -> Transcripts -> Structured Events                  |    |
+|  +----------------------------------------------------------------------+    |
+|                              |                                                |
+|                              v                                                |
+|  EXTRACTION                                                                   |
+|  +----------------------------------------------------------------------+    |
+|  | - Intent classification                                               |    |
+|  | - Entity extraction (names, accounts, products)                       |    |
+|  | - Topic modeling                                                      |    |
+|  | - Action item detection                                               |    |
+|  | - Question/answer pairs                                               |    |
+|  +----------------------------------------------------------------------+    |
+|                              |                                                |
+|                              v                                                |
+|  ANALYSIS                                                                     |
+|  +----------------------------------------------------------------------+    |
+|  | - Sentiment analysis (turn-level and call-level)                     |    |
+|  | - Emotion detection (frustration, satisfaction, confusion)           |    |
+|  | - Conversation flow patterns                                          |    |
+|  | - Competitive mentions                                                |    |
+|  | - Compliance monitoring                                               |    |
+|  +----------------------------------------------------------------------+    |
+|                              |                                                |
+|                              v                                                |
+|  INSIGHTS                                                                     |
+|  +----------------------------------------------------------------------+    |
+|  | - Trending issues and topics                                          |    |
+|  | - Agent performance patterns                                          |    |
+|  | - Customer journey analysis                                           |    |
+|  | - Root cause analysis for escalations                                |    |
+|  | - Training recommendations                                            |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### Conversation Intelligence Implementation
+
+```python
+class ConversationIntelligence:
+    """
+    Extract insights from voice AI conversations.
+    """
+
+    def __init__(self):
+        self.intent_classifier = IntentClassifier()
+        self.entity_extractor = EntityExtractor()
+        self.topic_modeler = TopicModeler()
+        self.sentiment_analyzer = SentimentAnalyzer()
+
+    async def analyze_conversation(
+        self,
+        transcript: List[Turn]
+    ) -> ConversationAnalysis:
+        """
+        Comprehensive analysis of a conversation.
+        """
+        # Intent classification for each turn
+        intents = []
+        for turn in transcript:
+            if turn.role == 'user':
+                intent = await self.intent_classifier.classify(turn.text)
+                intents.append(IntentResult(
+                    turn_index=turn.index,
+                    intent=intent.label,
+                    confidence=intent.confidence,
+                    sub_intents=intent.sub_labels
+                ))
+
+        # Entity extraction
+        entities = await self.entity_extractor.extract(
+            " ".join([t.text for t in transcript])
+        )
+
+        # Topic analysis
+        topics = await self.topic_modeler.identify_topics(transcript)
+
+        # Conversation flow analysis
+        flow = self._analyze_flow(transcript, intents)
+
+        # Key moments identification
+        key_moments = await self._identify_key_moments(transcript)
+
+        return ConversationAnalysis(
+            primary_intent=intents[0].intent if intents else None,
+            intent_sequence=intents,
+            entities=entities,
+            topics=topics,
+            flow_analysis=flow,
+            key_moments=key_moments,
+            summary=await self._generate_summary(transcript, intents, entities)
+        )
+
+    async def _identify_key_moments(
+        self,
+        transcript: List[Turn]
+    ) -> List[KeyMoment]:
+        """
+        Identify important moments in the conversation.
+        """
+        moments = []
+
+        for i, turn in enumerate(transcript):
+            # Detect customer frustration
+            if await self._detect_frustration(turn):
+                moments.append(KeyMoment(
+                    turn_index=i,
+                    moment_type='customer_frustration',
+                    text=turn.text,
+                    importance='high'
+                ))
+
+            # Detect successful resolution
+            if await self._detect_resolution(turn, transcript[i:]):
+                moments.append(KeyMoment(
+                    turn_index=i,
+                    moment_type='issue_resolved',
+                    text=turn.text,
+                    importance='high'
+                ))
+
+            # Detect competitive mention
+            competitors = await self._detect_competitors(turn)
+            if competitors:
+                moments.append(KeyMoment(
+                    turn_index=i,
+                    moment_type='competitive_mention',
+                    text=turn.text,
+                    metadata={'competitors': competitors},
+                    importance='medium'
+                ))
+
+            # Detect upsell opportunity
+            if await self._detect_upsell_opportunity(turn):
+                moments.append(KeyMoment(
+                    turn_index=i,
+                    moment_type='upsell_opportunity',
+                    text=turn.text,
+                    importance='medium'
+                ))
+
+        return moments
+
+    def _analyze_flow(
+        self,
+        transcript: List[Turn],
+        intents: List[IntentResult]
+    ) -> FlowAnalysis:
+        """
+        Analyze conversation flow patterns.
+        """
+        # Build intent transition matrix
+        transitions = defaultdict(lambda: defaultdict(int))
+        for i in range(len(intents) - 1):
+            from_intent = intents[i].intent
+            to_intent = intents[i + 1].intent
+            transitions[from_intent][to_intent] += 1
+
+        # Calculate conversation efficiency
+        total_turns = len(transcript)
+        user_turns = len([t for t in transcript if t.role == 'user'])
+        repetitions = self._count_repetitions(transcript)
+
+        efficiency_score = max(0, 1 - (repetitions / max(user_turns, 1)))
+
+        # Detect conversation patterns
+        patterns = self._detect_patterns(transcript, intents)
+
+        return FlowAnalysis(
+            intent_transitions=dict(transitions),
+            efficiency_score=efficiency_score,
+            total_turns=total_turns,
+            avg_turn_length=np.mean([len(t.text.split()) for t in transcript]),
+            patterns=patterns,
+            bottlenecks=self._identify_bottlenecks(transcript, intents)
+        )
+```
+
+### Trend Analysis
+
+```python
+class TrendAnalyzer:
+    """
+    Identify trends across conversation data.
+    """
+
+    async def analyze_trends(
+        self,
+        time_range: TimeRange,
+        granularity: str = 'daily'
+    ) -> TrendReport:
+        """
+        Generate trend analysis report.
+        """
+        conversations = await self.conversation_store.get_range(time_range)
+
+        # Topic trends
+        topic_trends = await self._analyze_topic_trends(
+            conversations,
+            granularity
+        )
+
+        # Sentiment trends
+        sentiment_trends = await self._analyze_sentiment_trends(
+            conversations,
+            granularity
+        )
+
+        # Intent distribution changes
+        intent_trends = await self._analyze_intent_trends(
+            conversations,
+            granularity
+        )
+
+        # Emerging issues detection
+        emerging_issues = await self._detect_emerging_issues(
+            conversations,
+            baseline_period_days=30
+        )
+
+        return TrendReport(
+            time_range=time_range,
+            topic_trends=topic_trends,
+            sentiment_trends=sentiment_trends,
+            intent_trends=intent_trends,
+            emerging_issues=emerging_issues,
+            recommendations=self._generate_recommendations(
+                topic_trends,
+                sentiment_trends,
+                emerging_issues
+            )
+        )
+
+    async def _detect_emerging_issues(
+        self,
+        conversations: List[Conversation],
+        baseline_period_days: int
+    ) -> List[EmergingIssue]:
+        """
+        Detect issues that are increasing in frequency.
+        """
+        # Split into baseline and recent periods
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        recent = [c for c in conversations if c.timestamp > cutoff]
+        baseline = [c for c in conversations if c.timestamp <= cutoff]
+
+        # Compare topic frequencies
+        recent_topics = Counter()
+        baseline_topics = Counter()
+
+        for conv in recent:
+            for topic in conv.topics:
+                recent_topics[topic] += 1
+
+        for conv in baseline:
+            for topic in conv.topics:
+                baseline_topics[topic] += 1
+
+        # Normalize by period length
+        recent_rate = {k: v / 7 for k, v in recent_topics.items()}
+        baseline_rate = {k: v / baseline_period_days for k, v in baseline_topics.items()}
+
+        # Find topics with significant increase
+        emerging = []
+        for topic, recent_freq in recent_rate.items():
+            baseline_freq = baseline_rate.get(topic, 0.1)  # Avoid division by zero
+            increase_ratio = recent_freq / baseline_freq
+
+            if increase_ratio > 1.5 and recent_freq > 5:  # 50%+ increase, min volume
+                emerging.append(EmergingIssue(
+                    topic=topic,
+                    recent_frequency=recent_freq,
+                    baseline_frequency=baseline_freq,
+                    increase_ratio=increase_ratio,
+                    severity=self._calculate_severity(topic, conversations)
+                ))
+
+        return sorted(emerging, key=lambda x: x.increase_ratio, reverse=True)
+```
+
+## Sentiment Analysis Integration
+
+Sentiment analysis provides real-time understanding of customer emotions during voice interactions.
+
+### Multi-Modal Sentiment Analysis
+
+```python
+class VoiceSentimentAnalyzer:
+    """
+    Multi-modal sentiment analysis for voice conversations.
+    Combines text, acoustic, and prosodic features.
+    """
+
+    def __init__(self):
+        self.text_analyzer = TextSentimentModel()
+        self.acoustic_analyzer = AcousticSentimentModel()
+        self.fusion_model = SentimentFusionModel()
+
+    async def analyze_turn(
+        self,
+        audio: AudioData,
+        transcript: str
+    ) -> TurnSentiment:
+        """
+        Analyze sentiment for a single turn using multiple modalities.
+        """
+        # Text-based sentiment
+        text_sentiment = await self.text_analyzer.analyze(transcript)
+
+        # Acoustic features (pitch, energy, speaking rate)
+        acoustic_features = await self.acoustic_analyzer.extract_features(audio)
+        acoustic_sentiment = await self.acoustic_analyzer.predict(acoustic_features)
+
+        # Fuse modalities
+        fused_sentiment = await self.fusion_model.fuse(
+            text_sentiment,
+            acoustic_sentiment
+        )
+
+        return TurnSentiment(
+            text_sentiment=text_sentiment,
+            acoustic_sentiment=acoustic_sentiment,
+            combined_sentiment=fused_sentiment,
+            confidence=fused_sentiment.confidence,
+            emotions=await self._detect_emotions(acoustic_features, transcript)
+        )
+
+    async def _detect_emotions(
+        self,
+        acoustic_features: AcousticFeatures,
+        transcript: str
+    ) -> EmotionScores:
+        """
+        Detect specific emotions beyond positive/negative.
+        """
+        # Emotion categories relevant to customer service
+        emotions = {
+            'frustration': 0.0,
+            'satisfaction': 0.0,
+            'confusion': 0.0,
+            'urgency': 0.0,
+            'appreciation': 0.0,
+            'disappointment': 0.0,
+        }
+
+        # Text-based emotion indicators
+        text_emotions = await self.text_analyzer.detect_emotions(transcript)
+
+        # Acoustic emotion indicators
+        # High pitch variance + fast rate -> frustration or urgency
+        if acoustic_features.pitch_variance > 0.7:
+            if acoustic_features.speaking_rate > 1.2:
+                emotions['frustration'] += 0.3
+                emotions['urgency'] += 0.2
+
+        # Low energy + slow rate -> disappointment
+        if acoustic_features.energy_mean < 0.3:
+            if acoustic_features.speaking_rate < 0.8:
+                emotions['disappointment'] += 0.3
+
+        # Combine text and acoustic signals
+        for emotion, score in text_emotions.items():
+            if emotion in emotions:
+                emotions[emotion] = (emotions[emotion] + score) / 2
+
+        return EmotionScores(**emotions)
+
+    async def analyze_conversation_trajectory(
+        self,
+        turns: List[TurnSentiment]
+    ) -> SentimentTrajectory:
+        """
+        Analyze how sentiment evolves over the conversation.
+        """
+        # Calculate sentiment at each turn
+        sentiments = [t.combined_sentiment.score for t in turns]
+
+        # Find trend
+        if len(sentiments) >= 3:
+            slope, _ = np.polyfit(range(len(sentiments)), sentiments, 1)
+            trend = 'improving' if slope > 0.05 else 'declining' if slope < -0.05 else 'stable'
+        else:
+            trend = 'insufficient_data'
+
+        # Find turning points
+        turning_points = []
+        for i in range(1, len(sentiments) - 1):
+            if sentiments[i] - sentiments[i-1] > 0.3:
+                turning_points.append(TurningPoint(
+                    turn_index=i,
+                    direction='positive',
+                    magnitude=sentiments[i] - sentiments[i-1]
+                ))
+            elif sentiments[i] - sentiments[i-1] < -0.3:
+                turning_points.append(TurningPoint(
+                    turn_index=i,
+                    direction='negative',
+                    magnitude=sentiments[i-1] - sentiments[i]
+                ))
+
+        return SentimentTrajectory(
+            initial_sentiment=sentiments[0] if sentiments else None,
+            final_sentiment=sentiments[-1] if sentiments else None,
+            trend=trend,
+            turning_points=turning_points,
+            volatility=np.std(sentiments) if sentiments else 0
+        )
+```
+
+### Real-Time Sentiment Monitoring
+
+```python
+class RealTimeSentimentMonitor:
+    """
+    Monitor sentiment across all active calls in real-time.
+    """
+
+    def __init__(self):
+        self.sentiment_analyzer = VoiceSentimentAnalyzer()
+        self.alert_manager = AlertManager()
+        self.active_calls = {}
+
+    async def process_turn(
+        self,
+        call_id: str,
+        audio: AudioData,
+        transcript: str
+    ):
+        """
+        Process a turn and update real-time sentiment tracking.
+        """
+        # Analyze turn sentiment
+        turn_sentiment = await self.sentiment_analyzer.analyze_turn(
+            audio,
+            transcript
+        )
+
+        # Update call tracking
+        if call_id not in self.active_calls:
+            self.active_calls[call_id] = CallSentimentTracker(call_id)
+
+        tracker = self.active_calls[call_id]
+        tracker.add_turn(turn_sentiment)
+
+        # Check for alerts
+        await self._check_alerts(call_id, tracker)
+
+        # Publish real-time update
+        await self._publish_update(call_id, tracker)
+
+    async def _check_alerts(
+        self,
+        call_id: str,
+        tracker: CallSentimentTracker
+    ):
+        """
+        Check if any alert conditions are met.
+        """
+        # Sustained negative sentiment
+        if tracker.negative_turn_streak >= 3:
+            await self.alert_manager.send_alert(
+                AlertType.NEGATIVE_SENTIMENT,
+                call_id=call_id,
+                message="Customer showing sustained negative sentiment",
+                severity="high"
+            )
+
+        # Sharp sentiment drop
+        if tracker.sentiment_drop_detected():
+            await self.alert_manager.send_alert(
+                AlertType.SENTIMENT_DROP,
+                call_id=call_id,
+                message="Sharp decline in customer sentiment",
+                severity="medium"
+            )
+
+        # High frustration detected
+        if tracker.latest_emotions.frustration > 0.7:
+            await self.alert_manager.send_alert(
+                AlertType.FRUSTRATION_DETECTED,
+                call_id=call_id,
+                message="High customer frustration detected",
+                severity="high",
+                recommend_action="Consider supervisor escalation"
+            )
+
+    async def get_fleet_sentiment(self) -> FleetSentimentStatus:
+        """
+        Get aggregate sentiment across all active calls.
+        """
+        if not self.active_calls:
+            return FleetSentimentStatus(
+                active_calls=0,
+                avg_sentiment=None
+            )
+
+        sentiments = [
+            tracker.current_sentiment
+            for tracker in self.active_calls.values()
+            if tracker.current_sentiment is not None
+        ]
+
+        at_risk_calls = [
+            call_id for call_id, tracker in self.active_calls.items()
+            if tracker.is_at_risk()
+        ]
+
+        return FleetSentimentStatus(
+            active_calls=len(self.active_calls),
+            avg_sentiment=np.mean(sentiments) if sentiments else None,
+            positive_calls=len([s for s in sentiments if s > 0.3]),
+            neutral_calls=len([s for s in sentiments if -0.3 <= s <= 0.3]),
+            negative_calls=len([s for s in sentiments if s < -0.3]),
+            at_risk_call_ids=at_risk_calls
+        )
+```
+
+## Call Quality Monitoring
+
+Automated quality monitoring ensures consistent voice AI performance across all interactions.
+
+### Quality Scoring Framework
+
+```
++-----------------------------------------------------------------------------+
+|                    QUALITY SCORING FRAMEWORK                                  |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  QUALITY DIMENSIONS                                                           |
+|  +----------------------------------------------------------------------+    |
+|  |                                                                        |    |
+|  |  ACCURACY (30%)                                                       |    |
+|  |  - Correct intent recognition                                         |    |
+|  |  - Accurate entity extraction                                         |    |
+|  |  - Factual response accuracy                                          |    |
+|  |  - Proper procedure following                                         |    |
+|  |                                                                        |    |
+|  |  CONVERSATION QUALITY (25%)                                           |    |
+|  |  - Natural flow and pacing                                            |    |
+|  |  - Appropriate response length                                        |    |
+|  |  - No unnecessary repetition                                          |    |
+|  |  - Good interruption handling                                         |    |
+|  |                                                                        |    |
+|  |  CUSTOMER EXPERIENCE (25%)                                            |    |
+|  |  - Customer sentiment trajectory                                      |    |
+|  |  - Resolution achieved                                                |    |
+|  |  - Effort required from customer                                      |    |
+|  |  - Wait times minimized                                               |    |
+|  |                                                                        |    |
+|  |  COMPLIANCE (20%)                                                     |    |
+|  |  - Required disclosures made                                          |    |
+|  |  - No prohibited statements                                           |    |
+|  |  - Privacy properly handled                                           |    |
+|  |  - Escalation protocols followed                                      |    |
+|  |                                                                        |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  SCORING SCALE: 0-100                                                         |
+|  - Excellent: 90-100                                                          |
+|  - Good: 80-89                                                                |
+|  - Acceptable: 70-79                                                          |
+|  - Needs Improvement: 60-69                                                   |
+|  - Failing: under 60                                                               |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### Automated Quality Assurance
+
+```python
+class AutomatedQA:
+    """
+    Automated quality assurance for voice AI calls.
+    """
+
+    def __init__(self):
+        self.accuracy_scorer = AccuracyScorer()
+        self.conversation_scorer = ConversationQualityScorer()
+        self.experience_scorer = CustomerExperienceScorer()
+        self.compliance_checker = ComplianceChecker()
+
+    async def score_call(
+        self,
+        call: CompletedCall,
+        ground_truth: Optional[GroundTruth] = None
+    ) -> QAScore:
+        """
+        Generate comprehensive quality score for a call.
+        """
+        # Score each dimension
+        accuracy_score = await self.accuracy_scorer.score(
+            call,
+            ground_truth
+        )
+
+        conversation_score = await self.conversation_scorer.score(call)
+
+        experience_score = await self.experience_scorer.score(call)
+
+        compliance_score = await self.compliance_checker.score(call)
+
+        # Calculate weighted total
+        weights = {
+            'accuracy': 0.30,
+            'conversation': 0.25,
+            'experience': 0.25,
+            'compliance': 0.20,
+        }
+
+        total_score = (
+            accuracy_score.score * weights['accuracy'] +
+            conversation_score.score * weights['conversation'] +
+            experience_score.score * weights['experience'] +
+            compliance_score.score * weights['compliance']
+        )
+
+        # Identify improvement opportunities
+        improvements = self._identify_improvements(
+            accuracy_score,
+            conversation_score,
+            experience_score,
+            compliance_score
+        )
+
+        return QAScore(
+            call_id=call.id,
+            total_score=total_score,
+            accuracy=accuracy_score,
+            conversation_quality=conversation_score,
+            customer_experience=experience_score,
+            compliance=compliance_score,
+            improvement_areas=improvements,
+            requires_review=total_score < 70 or compliance_score.score < 80
+        )
+
+    async def run_qa_sampling(
+        self,
+        sample_size: int,
+        time_range: TimeRange,
+        stratification: Optional[Dict] = None
+    ) -> QASamplingReport:
+        """
+        Run QA on a representative sample of calls.
+        """
+        # Get stratified sample
+        if stratification:
+            sample = await self._get_stratified_sample(
+                time_range,
+                sample_size,
+                stratification
+            )
+        else:
+            sample = await self._get_random_sample(time_range, sample_size)
+
+        # Score all calls
+        scores = []
+        for call in sample:
+            score = await self.score_call(call)
+            scores.append(score)
+
+        # Aggregate results
+        return QASamplingReport(
+            sample_size=len(scores),
+            time_range=time_range,
+            avg_score=np.mean([s.total_score for s in scores]),
+            score_distribution=self._calculate_distribution(scores),
+            dimension_averages={
+                'accuracy': np.mean([s.accuracy.score for s in scores]),
+                'conversation': np.mean([s.conversation_quality.score for s in scores]),
+                'experience': np.mean([s.customer_experience.score for s in scores]),
+                'compliance': np.mean([s.compliance.score for s in scores]),
+            },
+            common_issues=self._identify_common_issues(scores),
+            calls_requiring_review=[s.call_id for s in scores if s.requires_review]
+        )
+
+
+class ComplianceChecker:
+    """
+    Check compliance requirements in voice AI calls.
+    """
+
+    def __init__(self, compliance_rules: List[ComplianceRule]):
+        self.rules = compliance_rules
+
+    async def score(self, call: CompletedCall) -> ComplianceScore:
+        """
+        Score compliance across all rules.
+        """
+        violations = []
+        passed_rules = []
+
+        for rule in self.rules:
+            result = await self._check_rule(call, rule)
+            if result.passed:
+                passed_rules.append(rule.id)
+            else:
+                violations.append(ComplianceViolation(
+                    rule_id=rule.id,
+                    rule_name=rule.name,
+                    severity=rule.severity,
+                    details=result.details,
+                    turn_index=result.turn_index
+                ))
+
+        # Calculate score (critical violations heavily penalized)
+        base_score = len(passed_rules) / len(self.rules) * 100
+
+        for violation in violations:
+            if violation.severity == 'critical':
+                base_score -= 30
+            elif violation.severity == 'high':
+                base_score -= 15
+            elif violation.severity == 'medium':
+                base_score -= 5
+
+        return ComplianceScore(
+            score=max(0, base_score),
+            violations=violations,
+            passed_rules=passed_rules,
+            total_rules=len(self.rules)
+        )
+
+    # Example compliance rules
+    STANDARD_RULES = [
+        ComplianceRule(
+            id='disclosure_recording',
+            name='Recording Disclosure',
+            description='Must inform caller that call is being recorded',
+            severity='critical',
+            check_type='phrase_present',
+            check_params={'phrases': ['call may be recorded', 'call is being recorded']}
+        ),
+        ComplianceRule(
+            id='no_financial_advice',
+            name='No Financial Advice',
+            description='Must not provide specific financial advice',
+            severity='high',
+            check_type='phrase_absent',
+            check_params={'phrases': ['you should invest', 'I recommend buying']}
+        ),
+        ComplianceRule(
+            id='privacy_acknowledgment',
+            name='Privacy Handling',
+            description='Must acknowledge privacy requests',
+            severity='high',
+            check_type='conditional_response',
+            check_params={'trigger': 'privacy', 'required_response': 'privacy_acknowledgment'}
+        ),
+    ]
+```
+
+## A/B Testing Voice Experiences
+
+A/B testing allows systematic optimization of voice AI performance through controlled experiments.
+
+### A/B Testing Framework
+
+```python
+class VoiceABTestingFramework:
+    """
+    Framework for A/B testing voice AI experiences.
+    """
+
+    def __init__(self):
+        self.experiment_store = ExperimentStore()
+        self.assignment_service = AssignmentService()
+        self.metrics_collector = MetricsCollector()
+
+    async def create_experiment(
+        self,
+        experiment: ExperimentConfig
+    ) -> Experiment:
+        """
+        Create a new A/B test experiment.
+        """
+        # Validate experiment configuration
+        self._validate_config(experiment)
+
+        # Calculate required sample size
+        sample_size = self._calculate_sample_size(
+            baseline_rate=experiment.baseline_metric_value,
+            minimum_detectable_effect=experiment.mde,
+            statistical_power=0.8,
+            significance_level=0.05
+        )
+
+        experiment.required_sample_size = sample_size
+
+        # Create experiment record
+        created = await self.experiment_store.create(experiment)
+
+        return created
+
+    async def assign_variant(
+        self,
+        experiment_id: str,
+        caller_id: str
+    ) -> str:
+        """
+        Assign a caller to an experiment variant.
+        Uses consistent hashing for sticky assignment.
+        """
+        experiment = await self.experiment_store.get(experiment_id)
+
+        if not experiment.is_active():
+            return experiment.control_variant
+
+        # Consistent assignment based on caller ID
+        hash_value = hashlib.md5(
+            f"{experiment_id}:{caller_id}".encode()
+        ).hexdigest()
+        hash_int = int(hash_value[:8], 16)
+
+        # Determine variant based on traffic allocation
+        cumulative = 0
+        for variant, allocation in experiment.traffic_allocation.items():
+            cumulative += allocation
+            if hash_int % 100 < cumulative:
+                return variant
+
+        return experiment.control_variant
+
+    async def record_outcome(
+        self,
+        experiment_id: str,
+        caller_id: str,
+        variant: str,
+        metrics: Dict[str, float]
+    ):
+        """
+        Record experiment outcome for a call.
+        """
+        await self.metrics_collector.record(
+            experiment_id=experiment_id,
+            caller_id=caller_id,
+            variant=variant,
+            metrics=metrics,
+            timestamp=datetime.utcnow()
+        )
+
+        # Check if experiment has reached sample size
+        experiment = await self.experiment_store.get(experiment_id)
+        sample_counts = await self.metrics_collector.get_sample_counts(experiment_id)
+
+        if all(
+            count >= experiment.required_sample_size
+            for count in sample_counts.values()
+        ):
+            await self._analyze_experiment(experiment_id)
+
+    async def _analyze_experiment(
+        self,
+        experiment_id: str
+    ) -> ExperimentResults:
+        """
+        Analyze experiment results for statistical significance.
+        """
+        experiment = await self.experiment_store.get(experiment_id)
+        data = await self.metrics_collector.get_experiment_data(experiment_id)
+
+        results = {}
+        for metric_name in experiment.primary_metrics:
+            control_data = data[experiment.control_variant][metric_name]
+            treatment_data = data[experiment.treatment_variant][metric_name]
+
+            # Statistical test
+            stat_result = self._run_statistical_test(
+                control_data,
+                treatment_data,
+                test_type=experiment.statistical_test
+            )
+
+            results[metric_name] = MetricResult(
+                control_mean=np.mean(control_data),
+                treatment_mean=np.mean(treatment_data),
+                relative_lift=(np.mean(treatment_data) - np.mean(control_data)) / np.mean(control_data),
+                p_value=stat_result.p_value,
+                confidence_interval=stat_result.ci,
+                is_significant=stat_result.p_value < experiment.significance_level
+            )
+
+        return ExperimentResults(
+            experiment_id=experiment_id,
+            metrics=results,
+            recommendation=self._generate_recommendation(results),
+            completed_at=datetime.utcnow()
+        )
+
+    def _calculate_sample_size(
+        self,
+        baseline_rate: float,
+        minimum_detectable_effect: float,
+        statistical_power: float,
+        significance_level: float
+    ) -> int:
+        """
+        Calculate required sample size per variant.
+        """
+        # Using formula for proportion comparison
+        z_alpha = stats.norm.ppf(1 - significance_level / 2)
+        z_beta = stats.norm.ppf(statistical_power)
+
+        p1 = baseline_rate
+        p2 = baseline_rate * (1 + minimum_detectable_effect)
+        p_pooled = (p1 + p2) / 2
+
+        n = (
+            2 * p_pooled * (1 - p_pooled) * (z_alpha + z_beta) ** 2
+        ) / (p2 - p1) ** 2
+
+        return int(np.ceil(n))
+```
+
+### Voice-Specific A/B Test Examples
+
+| Test Area | Control | Treatment | Primary Metric |
+|-----------|---------|-----------|----------------|
+| Greeting Style | Formal greeting | Conversational greeting | CSAT |
+| Response Length | Detailed responses | Concise responses | AHT, FCR |
+| Confirmation Style | Repeat-back confirmation | Implied confirmation | Handle time |
+| TTS Voice | Voice A | Voice B | Caller preference |
+| Barge-in Sensitivity | Conservative (500ms) | Aggressive (300ms) | Interruption success |
+| LLM Prompt | Standard prompt | Enhanced prompt | Intent accuracy |
+
+## Dashboard Design
+
+Effective dashboards provide actionable insights at a glance for different stakeholders.
+
+### Dashboard Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                    VOICE AI DASHBOARD HIERARCHY                               |
++-----------------------------------------------------------------------------+
+|                                                                               |
+|  EXECUTIVE DASHBOARD                                                          |
+|  +----------------------------------------------------------------------+    |
+|  | Audience: C-suite, VP-level                                           |    |
+|  | Refresh: Daily                                                        |    |
+|  | Key Metrics:                                                          |    |
+|  |   - Total call volume & trend                                         |    |
+|  |   - Cost per call                                                     |    |
+|  |   - Containment rate                                                  |    |
+|  |   - Customer satisfaction score                                       |    |
+|  |   - ROI vs human agents                                               |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  OPERATIONS DASHBOARD                                                         |
+|  +----------------------------------------------------------------------+    |
+|  | Audience: Contact center managers                                     |    |
+|  | Refresh: Hourly / Real-time                                           |    |
+|  | Key Metrics:                                                          |    |
+|  |   - Current call volume                                               |    |
+|  |   - Queue depth                                                       |    |
+|  |   - Transfer rate by reason                                           |    |
+|  |   - Top intents today                                                 |    |
+|  |   - At-risk calls (live)                                              |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  ENGINEERING DASHBOARD                                                        |
+|  +----------------------------------------------------------------------+    |
+|  | Audience: Development team, SRE                                       |    |
+|  | Refresh: Real-time                                                    |    |
+|  | Key Metrics:                                                          |    |
+|  |   - Latency percentiles (p50, p95, p99)                              |    |
+|  |   - Error rates by component                                          |    |
+|  |   - GPU/CPU utilization                                               |    |
+|  |   - STT/LLM/TTS success rates                                        |    |
+|  |   - Model inference times                                             |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
+|  QUALITY DASHBOARD                                                            |
+|  +----------------------------------------------------------------------+    |
+|  | Audience: QA team, Training                                           |    |
+|  | Refresh: Daily                                                        |    |
+|  | Key Metrics:                                                          |    |
+|  |   - QA scores by dimension                                            |    |
+|  |   - Compliance violation trends                                       |    |
+|  |   - Common improvement areas                                          |    |
+|  |   - Intent recognition accuracy                                       |    |
+|  |   - Calls flagged for review                                          |    |
+|  +----------------------------------------------------------------------+    |
+|                                                                               |
++-----------------------------------------------------------------------------+
+```
+
+### Dashboard Implementation
+
+```python
+class VoiceAIDashboard:
+    """
+    Dashboard data aggregation for voice AI analytics.
+    """
+
+    def __init__(self):
+        self.metrics_store = MetricsStore()
+        self.cache = DashboardCache(ttl_seconds=60)
+
+    async def get_executive_dashboard(
+        self,
+        time_range: TimeRange
+    ) -> ExecutiveDashboard:
+        """
+        Generate executive-level dashboard data.
+        """
+        cache_key = f"executive_{time_range.start}_{time_range.end}"
+        cached = await self.cache.get(cache_key)
+        if cached:
+            return cached
+
+        # Aggregate key metrics
+        total_calls = await self.metrics_store.count_calls(time_range)
+        containment_rate = await self.metrics_store.avg_metric(
+            'containment_rate', time_range
+        )
+        csat = await self.metrics_store.avg_metric('csat_score', time_range)
+        cost_per_call = await self._calculate_cost_per_call(time_range)
+
+        # Trend calculations
+        previous_range = self._get_previous_period(time_range)
+        trends = {
+            'calls': await self._calculate_trend('call_count', time_range, previous_range),
+            'containment': await self._calculate_trend('containment_rate', time_range, previous_range),
+            'csat': await self._calculate_trend('csat_score', time_range, previous_range),
+        }
+
+        # Top-level insights
+        insights = await self._generate_executive_insights(time_range)
+
+        dashboard = ExecutiveDashboard(
+            time_range=time_range,
+            total_calls=total_calls,
+            containment_rate=containment_rate,
+            customer_satisfaction=csat,
+            cost_per_call=cost_per_call,
+            trends=trends,
+            insights=insights,
+            generated_at=datetime.utcnow()
+        )
+
+        await self.cache.set(cache_key, dashboard)
+        return dashboard
+
+    async def get_realtime_operations_dashboard(self) -> RealtimeDashboard:
+        """
+        Generate real-time operations dashboard.
+        """
+        # Current active calls
+        active_calls = await self.call_manager.get_active_calls()
+
+        # Real-time sentiment distribution
+        sentiment_dist = await self.sentiment_monitor.get_fleet_sentiment()
+
+        # Queue metrics
+        queue_metrics = await self.queue_manager.get_metrics()
+
+        # Current top intents
+        recent_intents = await self.metrics_store.get_intent_distribution(
+            time_range=TimeRange.last_hour()
+        )
+
+        # At-risk calls
+        at_risk = [
+            call for call in active_calls
+            if call.sentiment_score < -0.3 or call.error_count > 0
+        ]
+
+        return RealtimeDashboard(
+            active_call_count=len(active_calls),
+            calls_in_progress=len([c for c in active_calls if c.state == 'in_progress']),
+            sentiment_distribution=sentiment_dist,
+            queue_depth=queue_metrics.depth,
+            avg_wait_time=queue_metrics.avg_wait_seconds,
+            top_intents=recent_intents[:10],
+            at_risk_calls=[
+                AtRiskCall(
+                    call_id=call.id,
+                    reason=self._determine_risk_reason(call),
+                    duration_seconds=call.duration_seconds,
+                    sentiment_score=call.sentiment_score
+                )
+                for call in at_risk
+            ],
+            updated_at=datetime.utcnow()
+        )
+```
+
+## Alerting and Anomaly Detection
+
+Proactive alerting catches issues before they impact customers at scale.
+
+### Alerting System
+
+```python
+class VoiceAIAlertingSystem:
+    """
+    Alerting system for voice AI anomalies.
+    """
+
+    def __init__(self):
+        self.anomaly_detector = AnomalyDetector()
+        self.alert_router = AlertRouter()
+
+    # Alert definitions
+    ALERT_DEFINITIONS = [
+        AlertDefinition(
+            id='high_latency',
+            name='High Response Latency',
+            metric='e2e_latency_p95',
+            condition='> 800',
+            window_minutes=5,
+            severity='high',
+            channels=['pagerduty', 'slack']
+        ),
+        AlertDefinition(
+            id='low_containment',
+            name='Low Containment Rate',
+            metric='containment_rate',
+            condition='< 0.5',
+            window_minutes=60,
+            severity='medium',
+            channels=['slack', 'email']
+        ),
+        AlertDefinition(
+            id='negative_sentiment_spike',
+            name='Negative Sentiment Spike',
+            metric='negative_sentiment_rate',
+            condition='> 0.3',
+            window_minutes=30,
+            severity='high',
+            channels=['slack', 'pagerduty']
+        ),
+        AlertDefinition(
+            id='high_error_rate',
+            name='High Error Rate',
+            metric='call_error_rate',
+            condition='> 0.05',
+            window_minutes=10,
+            severity='critical',
+            channels=['pagerduty']
+        ),
+        AlertDefinition(
+            id='intent_accuracy_drop',
+            name='Intent Recognition Accuracy Drop',
+            metric='intent_accuracy',
+            condition='< 0.85',
+            window_minutes=60,
+            severity='medium',
+            channels=['slack']
+        ),
+    ]
+
+    async def evaluate_alerts(self):
+        """
+        Evaluate all alert conditions.
+        """
+        for alert_def in self.ALERT_DEFINITIONS:
+            try:
+                value = await self.metrics_store.get_metric(
+                    alert_def.metric,
+                    window_minutes=alert_def.window_minutes
+                )
+
+                triggered = self._evaluate_condition(
+                    value,
+                    alert_def.condition
+                )
+
+                if triggered:
+                    await self._fire_alert(alert_def, value)
+
+            except Exception as e:
+                logging.error(f"Error evaluating alert {alert_def.id}: {e}")
+
+    async def detect_anomalies(
+        self,
+        metrics: Dict[str, float]
+    ) -> List[Anomaly]:
+        """
+        Detect anomalies using ML-based detection.
+        """
+        anomalies = []
+
+        for metric_name, value in metrics.items():
+            # Get historical baseline
+            baseline = await self.metrics_store.get_baseline(
+                metric_name,
+                lookback_days=30
+            )
+
+            # Statistical anomaly detection
+            z_score = (value - baseline.mean) / baseline.std
+            if abs(z_score) > 3:
+                anomalies.append(Anomaly(
+                    metric=metric_name,
+                    value=value,
+                    expected_range=(baseline.mean - 2*baseline.std, baseline.mean + 2*baseline.std),
+                    z_score=z_score,
+                    severity='high' if abs(z_score) > 4 else 'medium'
+                ))
+
+            # ML-based anomaly detection for complex patterns
+            ml_anomaly = await self.anomaly_detector.detect(
+                metric_name,
+                value,
+                context=metrics
+            )
+            if ml_anomaly:
+                anomalies.append(ml_anomaly)
+
+        return anomalies
+
+
+class AnomalyDetector:
+    """
+    ML-based anomaly detection for voice AI metrics.
+    """
+
+    def __init__(self):
+        self.isolation_forest = IsolationForest(contamination=0.1)
+        self.prophet_models = {}
+
+    async def detect(
+        self,
+        metric_name: str,
+        value: float,
+        context: Dict[str, float]
+    ) -> Optional[Anomaly]:
+        """
+        Detect anomalies using multiple methods.
+        """
+        # Time-series anomaly detection (Prophet)
+        if metric_name in self.prophet_models:
+            forecast = self.prophet_models[metric_name].predict(
+                pd.DataFrame({'ds': [datetime.utcnow()]})
+            )
+            expected = forecast['yhat'].iloc[0]
+            lower = forecast['yhat_lower'].iloc[0]
+            upper = forecast['yhat_upper'].iloc[0]
+
+            if value < lower or value > upper:
+                return Anomaly(
+                    metric=metric_name,
+                    value=value,
+                    expected_range=(lower, upper),
+                    detection_method='prophet',
+                    severity='medium' if lower/2 < value < upper*2 else 'high'
+                )
+
+        # Multivariate anomaly detection (Isolation Forest)
+        feature_vector = [context.get(f, 0) for f in self.feature_order]
+        prediction = self.isolation_forest.predict([feature_vector])[0]
+
+        if prediction == -1:  # Anomaly
+            return Anomaly(
+                metric=metric_name,
+                value=value,
+                detection_method='isolation_forest',
+                severity='medium',
+                context=context
+            )
+
+        return None
+```
+
+## Summary
+
+Effective voice AI analytics requires:
+
+1. **Comprehensive metrics**: Track business KPIs (containment, CSAT, AHT, FCR) alongside technical metrics (latency, accuracy, error rates)
+
+2. **Conversation intelligence**: Extract insights from transcripts including intent sequences, topics, and customer journey patterns
+
+3. **Sentiment analysis**: Monitor customer emotions in real-time using multi-modal analysis of text and acoustic features
+
+4. **Automated quality monitoring**: Implement consistent quality scoring across accuracy, conversation quality, experience, and compliance dimensions
+
+5. **A/B testing**: Systematically optimize voice experiences through controlled experiments with proper statistical rigor
+
+6. **Actionable dashboards**: Provide role-appropriate views for executives, operations, engineering, and QA teams
+
+7. **Proactive alerting**: Catch anomalies early through threshold-based alerts and ML-powered detection
+
+The goal is to move from reactive troubleshooting to proactive optimization, using data to continuously improve voice AI performance and customer experience.

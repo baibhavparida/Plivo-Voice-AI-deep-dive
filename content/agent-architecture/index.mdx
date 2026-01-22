@@ -1,0 +1,189 @@
+---
+title: "Agent Architecture"
+description: "Design patterns and architectures for building robust voice AI agents"
+---
+
+# Voice AI Agent Architecture
+
+Building effective voice AI agents requires thoughtful architecture that handles the complexities of real-time conversation, error recovery, and multi-step task completion. This section covers proven design patterns and frameworks for building production-ready voice agents.
+
+## Topics in This Section
+
+### Design Patterns
+
+Architectural approaches for structuring voice AI agents.
+
+- **[Design Patterns](/topics/agent-architecture/design-patterns)** - Reactive, deliberative, and hybrid agent architectures
+
+### State Machines
+
+Managing conversation flow with finite state machines and statecharts.
+
+- **[State Machines](/topics/agent-architecture/state-machines)** - Model conversation flows, handle transitions, manage complex dialogs
+
+### Multi-Agent Systems
+
+Coordinating multiple specialized agents for complex workflows.
+
+- **[Multi-Agent Systems](/topics/agent-architecture/multi-agent-systems)** - Agent coordination, handoffs, and specialization
+
+### Orchestration Frameworks
+
+Tools and frameworks for building voice AI agents.
+
+- **[Orchestration Frameworks](/topics/agent-architecture/orchestration-frameworks)** - LangChain, LangGraph, and custom orchestration
+
+### Error Handling
+
+Graceful recovery and maintaining conversation flow when things go wrong.
+
+- **[Error Handling](/topics/agent-architecture/error-handling)** - Fallbacks, retries, and user communication strategies
+
+## Agent Architecture Patterns
+
+### Simple Pipeline
+
+The most basic architecture—linear flow from input to output:
+
+```
+User Speech → STT → LLM → TTS → Agent Speech
+```
+
+**Best for**: Simple Q&A, basic customer service, information lookup
+
+### State Machine Agent
+
+Explicit states and transitions for structured conversations:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    State Machine Agent                   │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│   ┌──────────┐     ┌──────────┐     ┌──────────┐        │
+│   │ Greeting │────▶│ Identify │────▶│ Resolve  │        │
+│   └──────────┘     │  Intent  │     │  Issue   │        │
+│        ▲           └──────────┘     └────┬─────┘        │
+│        │                │                │              │
+│        │                ▼                ▼              │
+│        │           ┌──────────┐    ┌──────────┐        │
+│        └───────────│ Fallback │    │ Closing  │        │
+│                    └──────────┘    └──────────┘        │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Best for**: Structured workflows, compliance-heavy industries, predictable conversations
+
+### ReAct Agent
+
+Reasoning and acting loop for complex problem-solving:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      ReAct Agent                         │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│   User Input                                             │
+│       │                                                  │
+│       ▼                                                  │
+│   ┌──────────────────────────────────────┐              │
+│   │           Reasoning Loop              │              │
+│   │  ┌─────────┐    ┌─────────┐          │              │
+│   │  │  Think  │───▶│   Act   │          │              │
+│   │  └─────────┘    └────┬────┘          │              │
+│   │       ▲              │               │              │
+│   │       │              ▼               │              │
+│   │       │         ┌─────────┐          │              │
+│   │       └─────────│ Observe │          │              │
+│   │                 └─────────┘          │              │
+│   └──────────────────────────────────────┘              │
+│       │                                                  │
+│       ▼                                                  │
+│   Response to User                                       │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Best for**: Complex tasks, multi-step processes, research-heavy queries
+
+### Multi-Agent System
+
+Specialized agents coordinated by a supervisor:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Multi-Agent System                     │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│                    ┌──────────────┐                      │
+│                    │  Supervisor  │                      │
+│                    │    Agent     │                      │
+│                    └──────┬───────┘                      │
+│                           │                              │
+│           ┌───────────────┼───────────────┐              │
+│           │               │               │              │
+│           ▼               ▼               ▼              │
+│    ┌────────────┐  ┌────────────┐  ┌────────────┐       │
+│    │  Booking   │  │   Lookup   │  │   Support  │       │
+│    │   Agent    │  │   Agent    │  │   Agent    │       │
+│    └────────────┘  └────────────┘  └────────────┘       │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Best for**: Complex enterprises, multiple domains, specialized expertise needed
+
+## Key Design Decisions
+
+### Synchronous vs Asynchronous
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Synchronous** | Simple, predictable | User waits during processing |
+| **Asynchronous** | Can handle long tasks | Complex state management |
+| **Hybrid** | Best of both | Implementation complexity |
+
+### Stateful vs Stateless
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Stateful** | Full context, natural flow | Scaling challenges |
+| **Stateless** | Easy scaling | Must reload context each turn |
+| **Hybrid** | Balanced | Need good caching strategy |
+
+### Deterministic vs Probabilistic
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Deterministic** (State machines) | Predictable, testable | Rigid, maintenance heavy |
+| **Probabilistic** (Pure LLM) | Flexible, natural | Unpredictable, hard to test |
+| **Hybrid** | Controlled flexibility | Complexity |
+
+## Architecture Checklist
+
+When designing your voice AI agent architecture, consider:
+
+- [ ] **Latency budget** - How fast must the agent respond?
+- [ ] **Error recovery** - What happens when things go wrong?
+- [ ] **Scalability** - How many concurrent conversations?
+- [ ] **State management** - How to track conversation state?
+- [ ] **Integration points** - What external systems are needed?
+- [ ] **Monitoring** - How to observe agent behavior?
+- [ ] **Testing** - How to validate agent responses?
+- [ ] **Compliance** - Any regulatory requirements?
+
+## Getting Started
+
+1. **[Design Patterns](/topics/agent-architecture/design-patterns)** - Understand the fundamental patterns
+2. **[State Machines](/topics/agent-architecture/state-machines)** - Learn structured conversation management
+3. **[Error Handling](/topics/agent-architecture/error-handling)** - Build resilient agents
+4. **[Orchestration Frameworks](/topics/agent-architecture/orchestration-frameworks)** - Choose your tools
+
+## Next Steps
+
+After understanding agent architecture:
+
+- **[Enterprise](/topics/enterprise)** - Scale and secure your agents
+- **[Implementation](/topics/implementation)** - Build and deploy your agents
+- **[Use Cases](/topics/use-cases)** - See real-world applications

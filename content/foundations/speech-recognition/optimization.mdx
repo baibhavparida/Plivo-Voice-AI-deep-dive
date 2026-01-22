@@ -1,0 +1,570 @@
+---
+title: "STT Optimization for Voice AI"
+description: "Comprehensive guide to optimizing Speech-to-Text performance for voice AI applications, covering latency tuning, vocabulary boosting, noise robustness, and multi-speaker handling."
+category: "foundations"
+tags:
+  - optimization
+  - performance
+  - latency
+  - vocabulary-boosting
+  - noise-robustness
+  - diarization
+  - voice-ai
+relatedTopics:
+  - overview
+  - streaming-vs-batch
+  - language-models
+  - provider-comparison
+lastUpdated: "2026-01-21"
+---
+
+# STT Optimization for Voice AI
+
+Optimizing Speech-to-Text performance is critical for building responsive voice AI agents. This guide covers practical techniques for reducing latency, improving accuracy, and handling challenging audio conditions.
+
+## Latency Optimization Techniques
+
+### Model Selection
+
+Choose streaming-optimized models designed for real-time applications:
+
+| Provider | Recommended Model | Streaming Latency |
+|----------|------------------|-------------------|
+| Deepgram | Nova-3 | ~100-150ms |
+| AssemblyAI | Universal-Streaming | ~300ms |
+| Google | Chirp (streaming mode) | ~400ms |
+
+{/* <Callout type="info">
+Test multiple providers with your actual audio characteristics. Benchmark accuracy and latency on representative samples before committing.
+</Callout> */}
+
+### Feature Configuration
+
+Disable non-essential features to reduce processing time:
+
+```json
+{
+  "model": "nova-3",
+  "streaming": true,
+  "interim_results": true,
+  "formatting": {
+    "punctuation": false,
+    "numerals": false,
+    "profanity_filter": false
+  },
+  "endpointing": {
+    "type": "semantic",
+    "silence_ms": 800
+  }
+}
+```
+
+**Impact of Disabling Formatting:**
+
+| Feature | Latency Savings |
+|---------|----------------|
+| Punctuation insertion | 50-100ms |
+| Number formatting | 20-50ms |
+| Profanity filtering | 10-30ms |
+| **Total potential savings** | **80-180ms** |
+
+{/* <Callout type="warning">
+Disabling punctuation impacts LLM comprehension. Consider enabling it for the final transcript while using unpunctuated interim results.
+</Callout> */}
+
+### Network Optimization
+
+Network latency often exceeds processing time. Optimize your connection:
+
+**1. Use Persistent WebSocket Connections**
+```python
+# Bad: New connection per utterance
+async def transcribe_utterance(audio):
+    async with websockets.connect(url) as ws:  # Connection overhead!
+        await ws.send(audio)
+        return await ws.recv()
+
+# Good: Reuse connection
+class PersistentSTTClient:
+    def __init__(self):
+        self.ws = None
+
+    async def connect(self):
+        self.ws = await websockets.connect(url)
+
+    async def transcribe(self, audio):
+        await self.ws.send(audio)
+        return await self.ws.recv()
+```
+
+**2. Co-locate Services**
+- Deploy application in same region as STT provider
+- Use provider's recommended regions for lowest latency
+- Consider multi-region for global applications
+
+**3. Enable Compression**
+```python
+# Opus codec for WebSocket streaming
+audio_config = {
+    "encoding": "opus",
+    "sample_rate": 16000,
+    "channels": 1
+}
+```
+
+**4. Consider gRPC**
+- Lower overhead than HTTP/WebSocket
+- Binary protocol reduces payload size
+- Native streaming support
+
+### Audio Pipeline Optimization
+
+Optimize the path from microphone to STT API:
+
+```
++-----------------------------------------------------------------------------+
+|                    OPTIMIZED AUDIO PIPELINE                                  |
+|                                                                              |
+|   Microphone -> VAD Gate -> Resampler -> Encoder -> WebSocket -> STT API    |
+|                  |                                                           |
+|                  +-> Skip silence frames (reduce bandwidth)                  |
+|                                                                              |
+|   Optimizations:                                                             |
+|   - VAD filters non-speech, reducing bandwidth                               |
+|   - Resample to 16kHz if not native                                         |
+|   - Opus/PCM16 encoding balances quality/size                               |
+|   - 100-200ms chunk size for balance                                        |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+**VAD-Gated Streaming:**
+```python
+import webrtcvad
+
+vad = webrtcvad.Vad(2)  # Aggressiveness 0-3
+
+async def stream_with_vad(audio_stream, stt_client):
+    for chunk in audio_stream:
+        if vad.is_speech(chunk, sample_rate=16000):
+            await stt_client.send(chunk)
+        # Skip non-speech chunks
+```
+
+## Custom Vocabulary and Domain Adaptation
+
+### Vocabulary Boosting (No Training Required)
+
+Most providers support runtime vocabulary boosting for domain-specific terms:
+
+**Deepgram:**
+```json
+{
+  "keywords": [
+    "Anthropic:2.0",
+    "Claude:2.0",
+    "transformer:1.5"
+  ]
+}
+```
+
+**Google Cloud:**
+```json
+{
+  "speechContexts": [{
+    "phrases": ["Anthropic", "Claude", "GPT"],
+    "boost": 15
+  }]
+}
+```
+
+**AssemblyAI:**
+```json
+{
+  "word_boost": ["Anthropic", "Claude"],
+  "boost_param": "high"
+}
+```
+
+**Boost values** typically range from 1.0 to 3.0 (or 1-20 depending on provider), increasing recognition probability for specified terms.
+
+### Boost Level Guidelines
+
+| Boost Level | Use Case | Risk |
+|-------------|----------|------|
+| Low (1.2-1.5) | Common terms that might be misrecognized | Minimal over-triggering |
+| Medium (1.5-2.0) | Domain-specific vocabulary | Moderate false positives |
+| High (2.0-3.0) | Rare terms critical to application | May over-trigger |
+
+{/* <Callout type="warning">
+Over-boosting can cause false recognitions. Test thoroughly with audio that does NOT contain boosted terms to ensure they are not hallucinated.
+</Callout> */}
+
+### Custom Language Models
+
+For persistent domain adaptation beyond runtime boosting:
+
+**1. Compile Domain Corpus**
+- Transcripts from your domain
+- Documentation and manuals
+- Expected user queries
+- Product catalogs
+
+**2. Train N-gram LM on Domain Text**
+```bash
+# Using KenLM
+lmplz -o 4 < domain_corpus.txt > domain.arpa
+build_binary domain.arpa domain.bin
+```
+
+**3. Interpolate with Base LM**
+```
+P(w) = lambda * P_domain(w) + (1-lambda) * P_base(w)
+```
+Typical lambda: 0.3-0.7 depending on domain specificity.
+
+### Full Fine-Tuning
+
+When vocabulary boosting is insufficient, consider model fine-tuning:
+
+**LoRA (Low-Rank Adaptation):**
+```
+W' = W + Delta_W = W + BA
+```
+Where B and A are low-rank matrices, reducing trainable parameters by 90%+.
+
+**Data Requirements:**
+
+| Adaptation Method | Data Required | Expected Improvement |
+|------------------|---------------|---------------------|
+| Vocabulary boosting | 0 hours | 10-30% on target terms |
+| Custom LM | 10-100 hours text | 20-40% on domain |
+| Full fine-tuning | 50-500 hours audio | 40-60% on domain |
+
+## Noise Robustness
+
+### Frontend Enhancement
+
+Apply speech enhancement before ASR:
+
+```
+Noisy Audio -> SE Model -> Enhanced Audio -> ASR
+```
+
+**Techniques:**
+
+| Method | Compute | Quality | Use Case |
+|--------|---------|---------|----------|
+| Spectral subtraction | Low | Basic | Simple noise |
+| Wiener filtering | Low | Good | Stationary noise |
+| Neural denoising | High | Best | Complex noise |
+
+**Neural Enhancement Models:**
+- **MP-SENet:** Multi-path speech enhancement
+- **DCCRN:** Deep complex convolution recurrent network
+- **RNNoise:** Lightweight RNN-based denoiser
+
+### Data Augmentation
+
+Training-time augmentation improves robustness:
+
+```python
+augmentations = [
+    AddBackgroundNoise(snr_db=(5, 20)),
+    AddReverb(room_size=(0.1, 0.5)),
+    SpeedPerturbation(factors=[0.9, 1.0, 1.1]),
+    SpecAugment(freq_masks=2, time_masks=2)
+]
+```
+
+**SpecAugment:** Masks random frequency bands and time segments during training, forcing the model to be robust to missing information.
+
+### Multi-Condition Training
+
+Train (or select) models exposed to diverse acoustic conditions:
+
+- Clean speech
+- Babble noise (multiple speakers)
+- Music background
+- Reverberant rooms
+- Telephony codecs (G.711, AMR)
+- Background noise (traffic, HVAC)
+
+**Provider Robustness:**
+- Whisper: Trained on extremely diverse data, very robust
+- Deepgram Nova-3: Strong noise handling
+- Google Chirp 3: Built-in denoiser
+
+## Multi-Speaker Handling
+
+### Speaker Diarization Integration
+
+**Pipeline Approach:**
+```
+Audio -> VAD -> Segmentation -> Speaker Embedding -> Clustering -> ASR per Segment
+```
+
+**End-to-End Approach (Sortformer):**
+- Joint ASR + diarization in single model
+- Arrival-time ordering resolves permutation
+- Better for overlapping speech
+
+### Provider Diarization Support
+
+| Provider | Diarization | Overlap Handling | Quality |
+|----------|-------------|------------------|---------|
+| Deepgram | Yes | Limited | Good |
+| AssemblyAI | Yes | Partial | Excellent |
+| Google Chirp | Yes | Good | Very Good |
+| Azure | Yes | Partial | Good |
+
+### Implementation Example
+
+```python
+# AssemblyAI diarization
+import assemblyai as aai
+
+config = aai.TranscriptionConfig(
+    speaker_labels=True,
+    speakers_expected=2
+)
+
+transcript = transcriber.transcribe(audio_url, config)
+
+for utterance in transcript.utterances:
+    print(f"Speaker {utterance.speaker}: {utterance.text}")
+```
+
+## Latency Budget Planning
+
+### Target: Sub-800ms Voice Agent Response
+
+```
++-----------------------------------------------------------------------------+
+|                    LATENCY BUDGET ALLOCATION                                 |
+|                                                                              |
+|   Component              Target        Achievable With                       |
+|   -------------------------------------------------------------------        |
+|   Audio capture/VAD      20-50ms       WebRTC, efficient VAD                |
+|   STT streaming          100-200ms     Deepgram, AssemblyAI                 |
+|   Endpointing            50-100ms      Semantic endpointing                 |
+|   LLM inference          200-350ms     Groq, optimized GPT-4                |
+|   TTS generation         75-150ms      ElevenLabs Turbo, Cartesia           |
+|   Network overhead       50-100ms      Co-location, persistent conn         |
+|   -------------------------------------------------------------------        |
+|   TOTAL                  495-950ms     Target: < 800ms P95                  |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Latency Measurement
+
+Always report percentile latencies, not just averages:
+
+```python
+import numpy as np
+
+def report_latencies(latencies):
+    return {
+        "p50": np.percentile(latencies, 50),
+        "p95": np.percentile(latencies, 95),
+        "p99": np.percentile(latencies, 99),
+        "mean": np.mean(latencies),
+        "max": np.max(latencies)
+    }
+```
+
+{/* <Callout type="info">
+P99 latency is critical for user experience. A system with great P50 but terrible P99 will frustrate users 1% of the time - which adds up quickly at scale.
+</Callout> */}
+
+## Error Handling and Resilience
+
+### Circuit Breaker Pattern
+
+```python
+class ResilientSTTClient:
+    def __init__(self, primary_provider, fallback_provider):
+        self.primary = primary_provider
+        self.fallback = fallback_provider
+        self.failure_count = 0
+        self.circuit_open = False
+
+    async def transcribe(self, audio):
+        if self.circuit_open:
+            return await self.fallback.transcribe(audio)
+
+        try:
+            result = await asyncio.wait_for(
+                self.primary.transcribe(audio),
+                timeout=5.0
+            )
+            self.failure_count = 0
+            return result
+        except (asyncio.TimeoutError, ConnectionError) as e:
+            self.failure_count += 1
+            if self.failure_count >= 3:
+                self.circuit_open = True
+                asyncio.create_task(self._reset_circuit())
+            return await self.fallback.transcribe(audio)
+
+    async def _reset_circuit(self):
+        await asyncio.sleep(30)
+        self.circuit_open = False
+        self.failure_count = 0
+```
+
+### Graceful Degradation
+
+```python
+async def transcribe_with_fallback(audio, providers):
+    """Try providers in order until one succeeds."""
+    for provider in providers:
+        try:
+            return await provider.transcribe(audio)
+        except Exception as e:
+            logger.warning(f"Provider {provider.name} failed: {e}")
+            continue
+    raise AllProvidersFailedError()
+```
+
+## Monitoring and Observability
+
+### Key Metrics to Track
+
+```python
+stt_metrics = {
+    "latency": {
+        "ttft_ms": Histogram("Time to first transcript"),
+        "final_latency_ms": Histogram("Time to final transcript"),
+        "e2e_latency_ms": Histogram("End-to-end pipeline latency")
+    },
+    "accuracy": {
+        "confidence_score": Histogram("ASR confidence scores"),
+        "user_corrections": Counter("User-initiated corrections")
+    },
+    "reliability": {
+        "timeout_rate": Counter("Transcription timeouts"),
+        "error_rate": Counter("API errors by type"),
+        "fallback_rate": Counter("Fallback provider usage")
+    },
+    "cost": {
+        "audio_minutes": Counter("Minutes transcribed"),
+        "cost_dollars": Counter("STT cost in dollars")
+    }
+}
+```
+
+### Alerting Thresholds
+
+| Metric | Warning | Critical |
+|--------|---------|----------|
+| P95 latency | > 300ms | > 500ms |
+| Error rate | > 1% | > 5% |
+| Timeout rate | > 0.5% | > 2% |
+| Fallback rate | > 5% | > 20% |
+
+## Testing Strategies
+
+### Unit Testing
+
+```python
+def test_transcript_normalization():
+    raw = "HELLO world 123"
+    normalized = normalize_transcript(raw)
+    assert normalized == "hello world one two three"
+
+def test_silence_detection():
+    silent_audio = generate_silence(1.0)
+    assert detect_speech(silent_audio) == False
+```
+
+### Integration Testing
+
+```python
+async def test_streaming_stt_integration():
+    client = StreamingSTTClient(api_key=TEST_KEY)
+    test_audio = load_test_audio("hello_world.wav")
+
+    transcripts = []
+    async def collect(text, is_final):
+        transcripts.append((text, is_final))
+
+    await client.connect(collect)
+    await client.send_audio(test_audio)
+    await client.close()
+
+    final_transcript = [t for t, f in transcripts if f][-1]
+    assert "hello" in final_transcript.lower()
+    assert "world" in final_transcript.lower()
+```
+
+### Load Testing
+
+```python
+async def test_concurrent_streams():
+    clients = [StreamingSTTClient(api_key=KEY) for _ in range(100)]
+    audio = load_test_audio("sample.wav")
+
+    start = time.time()
+    results = await asyncio.gather(*[
+        client.transcribe(audio) for client in clients
+    ])
+    duration = time.time() - start
+
+    assert all(r.success for r in results)
+    assert duration < 10.0  # 100 concurrent in under 10s
+```
+
+### Accuracy Testing
+
+```python
+def test_wer_on_test_set():
+    test_cases = load_test_set("test_utterances.json")
+    total_words = 0
+    total_errors = 0
+
+    for audio_path, reference in test_cases:
+        hypothesis = transcribe(audio_path)
+        wer = calculate_wer(reference, hypothesis)
+        total_words += len(reference.split())
+        total_errors += wer * len(reference.split())
+
+    overall_wer = total_errors / total_words
+    assert overall_wer < 0.10  # Less than 10% WER
+```
+
+## Quick Reference: Optimization Checklist
+
+### Before Production
+
+- [ ] Select streaming-optimized model
+- [ ] Benchmark latency with real audio
+- [ ] Configure appropriate chunk size
+- [ ] Set up vocabulary boosting for domain terms
+- [ ] Implement fallback provider
+- [ ] Add comprehensive monitoring
+- [ ] Test at expected load
+
+### Runtime Optimization
+
+- [ ] Use persistent connections
+- [ ] Enable VAD gating
+- [ ] Disable unnecessary formatting features
+- [ ] Co-locate with STT provider
+- [ ] Cache bias vocabulary
+
+### Ongoing Improvement
+
+- [ ] Monitor WER through user corrections
+- [ ] Collect misrecognized terms
+- [ ] Update vocabulary boosts regularly
+- [ ] Consider custom LM for persistent issues
+- [ ] Track latency percentiles
+
+## Further Reading
+
+- **[Overview](/topics/foundations/speech-recognition/overview)** - STT fundamentals
+- **[Streaming vs Batch](/topics/foundations/speech-recognition/streaming-vs-batch)** - Architecture choices
+- **[Provider Comparison](/topics/foundations/speech-recognition/provider-comparison)** - Choosing a provider
+- **[Language Models](/topics/foundations/speech-recognition/language-models)** - LM integration

@@ -1,0 +1,727 @@
+---
+title: "Getting Started with Voice AI Development"
+description: "Build your first voice AI agent in 15 minutes - from environment setup to a working conversational agent with speech recognition, language models, and speech synthesis"
+category: "implementation"
+tags:
+  - getting-started
+  - tutorial
+  - quickstart
+  - voice-agent
+  - development
+relatedTopics:
+  - sdk-reference
+  - api-reference
+  - code-examples
+lastUpdated: "2026-01-21"
+difficulty: beginner
+---
+
+# Getting Started with Voice AI Development
+
+This guide will walk you through building your first voice AI agent from scratch. By the end, you will have a working conversational agent that can listen, understand, and respond naturally using speech.
+
+## Prerequisites
+
+Before you begin, ensure you have the following set up in your development environment.
+
+### Development Environment
+
+| Requirement | Minimum Version | Recommended |
+|-------------|-----------------|-------------|
+| Python | 3.9+ | 3.11+ |
+| Node.js | 18+ | 20 LTS |
+| RAM | 4GB | 8GB+ |
+| Network | Stable broadband | Low-latency connection |
+
+### Required API Keys
+
+You will need API keys from the following services. All offer free tiers sufficient for development.
+
+```
++------------------------------------------------------------------+
+|                     REQUIRED API SERVICES                         |
++------------------------------------------------------------------+
+|                                                                   |
+|  SPEECH-TO-TEXT (choose one)                                      |
+|  +---------------------------+                                    |
+|  | - Deepgram                |  Real-time streaming STT           |
+|  | - AssemblyAI              |  High accuracy                     |
+|  | - Google Speech-to-Text   |  Multi-language support            |
+|  | - OpenAI Whisper API      |  Cost-effective                    |
+|  +---------------------------+                                    |
+|                                                                   |
+|  LARGE LANGUAGE MODEL (choose one)                                |
+|  +---------------------------+                                    |
+|  | - OpenAI GPT-4            |  Most capable                      |
+|  | - Anthropic Claude        |  Strong reasoning                  |
+|  | - Google Gemini           |  Fast responses                    |
+|  +---------------------------+                                    |
+|                                                                   |
+|  TEXT-TO-SPEECH (choose one)                                      |
+|  +---------------------------+                                    |
+|  | - ElevenLabs              |  Most natural voices               |
+|  | - OpenAI TTS              |  Simple integration                |
+|  | - Cartesia                |  Low latency streaming             |
+|  | - PlayHT                  |  Voice cloning options             |
+|  +---------------------------+                                    |
+|                                                                   |
+|  TELEPHONY (optional)                                             |
+|  +---------------------------+                                    |
+|  | - Plivo                   |  Global coverage, reliable         |
+|  | - Twilio                  |  Wide integration options          |
+|  +---------------------------+                                    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+### Environment Setup
+
+Create a project directory and set up your environment:
+
+```bash
+# Create project directory
+mkdir voice-ai-agent && cd voice-ai-agent
+
+# Create Python virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Create environment file for API keys
+touch .env
+```
+
+Add your API keys to the `.env` file:
+
+```bash
+# .env
+OPENAI_API_KEY=sk-your-openai-key
+DEEPGRAM_API_KEY=your-deepgram-key
+ELEVENLABS_API_KEY=your-elevenlabs-key
+
+# Optional: Telephony
+PLIVO_AUTH_ID=your-plivo-auth-id
+PLIVO_AUTH_TOKEN=your-plivo-auth-token
+```
+
+Install the required dependencies:
+
+```bash
+pip install openai deepgram-sdk elevenlabs python-dotenv websockets aiohttp
+```
+
+## Quick Start: Your First Voice AI Agent in 15 Minutes
+
+Let us build a complete voice AI agent that demonstrates the core pipeline: Speech-to-Text, LLM processing, and Text-to-Speech.
+
+### Step 1: Create the Basic Agent Structure
+
+Create a file named `voice_agent.py`:
+
+```python
+"""
+Simple Voice AI Agent
+Demonstrates the basic STT -> LLM -> TTS pipeline
+"""
+
+import os
+import asyncio
+from dotenv import load_dotenv
+from openai import OpenAI
+from deepgram import DeepgramClient, PrerecordedOptions
+import httpx
+
+load_dotenv()
+
+class VoiceAgent:
+    """A simple voice AI agent using the cascaded pipeline pattern"""
+
+    def __init__(self):
+        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.deepgram = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"))
+        self.elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+
+        # Conversation history for context
+        self.conversation_history = [
+            {
+                "role": "system",
+                "content": """You are a helpful voice assistant. Keep responses
+                concise and conversational - aim for 1-2 sentences when possible.
+                Speak naturally as if having a phone conversation."""
+            }
+        ]
+
+    async def transcribe(self, audio_data: bytes) -> str:
+        """Convert speech to text using Deepgram"""
+        options = PrerecordedOptions(
+            model="nova-2",
+            smart_format=True,
+            punctuate=True,
+        )
+
+        response = await asyncio.to_thread(
+            self.deepgram.listen.prerecorded.v("1").transcribe_file,
+            {"buffer": audio_data, "mimetype": "audio/wav"},
+            options
+        )
+
+        transcript = response.results.channels[0].alternatives[0].transcript
+        print(f"[STT] User said: {transcript}")
+        return transcript
+
+    async def generate_response(self, user_input: str) -> str:
+        """Generate a response using the LLM"""
+        self.conversation_history.append({
+            "role": "user",
+            "content": user_input
+        })
+
+        response = await asyncio.to_thread(
+            self.openai_client.chat.completions.create,
+            model="gpt-4-turbo-preview",
+            messages=self.conversation_history,
+            max_tokens=150,
+            temperature=0.7
+        )
+
+        assistant_message = response.choices[0].message.content
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": assistant_message
+        })
+
+        print(f"[LLM] Agent response: {assistant_message}")
+        return assistant_message
+
+    async def synthesize_speech(self, text: str) -> bytes:
+        """Convert text to speech using ElevenLabs"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
+                headers={
+                    "xi-api-key": self.elevenlabs_key,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "text": text,
+                    "model_id": "eleven_turbo_v2",
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75
+                    }
+                }
+            )
+
+            print(f"[TTS] Audio generated: {len(response.content)} bytes")
+            return response.content
+
+    async def process_audio(self, audio_data: bytes) -> bytes:
+        """Full pipeline: audio in -> audio out"""
+        # Step 1: Speech to Text
+        transcript = await self.transcribe(audio_data)
+
+        if not transcript.strip():
+            return await self.synthesize_speech("I didn't catch that. Could you repeat?")
+
+        # Step 2: Generate response
+        response_text = await self.generate_response(transcript)
+
+        # Step 3: Text to Speech
+        audio_response = await self.synthesize_speech(response_text)
+
+        return audio_response
+
+
+async def main():
+    """Test the voice agent with a sample interaction"""
+    agent = VoiceAgent()
+
+    # For testing without audio, we can simulate with text
+    print("\n=== Voice AI Agent Demo ===\n")
+
+    # Simulate a conversation
+    test_inputs = [
+        "Hello, what can you help me with today?",
+        "Can you tell me about the weather?",
+        "Thanks for your help!"
+    ]
+
+    for user_input in test_inputs:
+        print(f"\n[User]: {user_input}")
+        response = await agent.generate_response(user_input)
+        print(f"[Agent]: {response}")
+        print("-" * 50)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Step 2: Add Real-Time Streaming
+
+For production applications, streaming reduces latency significantly. Create `streaming_agent.py`:
+
+```python
+"""
+Streaming Voice AI Agent
+Demonstrates concurrent STT -> LLM -> TTS with streaming
+"""
+
+import os
+import asyncio
+import json
+from dotenv import load_dotenv
+from openai import AsyncOpenAI
+import websockets
+
+load_dotenv()
+
+class StreamingVoiceAgent:
+    """Voice agent with streaming for lower latency"""
+
+    def __init__(self):
+        self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.deepgram_key = os.getenv("DEEPGRAM_API_KEY")
+        self.elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+
+        self.system_prompt = """You are a helpful voice assistant. Keep responses
+        concise and conversational. Respond in 1-2 sentences."""
+
+    async def stream_stt(self, audio_stream):
+        """Stream audio to Deepgram and yield partial transcripts"""
+        uri = "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000"
+
+        async with websockets.connect(
+            uri,
+            extra_headers={"Authorization": f"Token {self.deepgram_key}"}
+        ) as ws:
+
+            async def send_audio():
+                async for chunk in audio_stream:
+                    await ws.send(chunk)
+                await ws.send(json.dumps({"type": "CloseStream"}))
+
+            async def receive_transcripts():
+                async for message in ws:
+                    data = json.loads(message)
+                    if data.get("is_final"):
+                        transcript = data["channel"]["alternatives"][0]["transcript"]
+                        if transcript:
+                            yield transcript
+
+            send_task = asyncio.create_task(send_audio())
+            async for transcript in receive_transcripts():
+                yield transcript
+            await send_task
+
+    async def stream_llm(self, prompt: str):
+        """Stream LLM response token by token"""
+        stream = await self.openai_client.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            stream=True,
+            max_tokens=150
+        )
+
+        async for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    async def stream_tts(self, text_stream):
+        """Stream text to ElevenLabs and yield audio chunks"""
+        uri = f"wss://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM/stream-input"
+
+        async with websockets.connect(
+            uri,
+            extra_headers={"xi-api-key": self.elevenlabs_key}
+        ) as ws:
+            # Send initial config
+            await ws.send(json.dumps({
+                "text": " ",
+                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+                "generation_config": {"chunk_length_schedule": [120, 160, 250]}
+            }))
+
+            async def send_text():
+                async for text_chunk in text_stream:
+                    await ws.send(json.dumps({"text": text_chunk}))
+                await ws.send(json.dumps({"text": ""}))  # Signal end
+
+            async def receive_audio():
+                async for message in ws:
+                    data = json.loads(message)
+                    if data.get("audio"):
+                        yield data["audio"]  # Base64 encoded audio
+
+            send_task = asyncio.create_task(send_text())
+            async for audio_chunk in receive_audio():
+                yield audio_chunk
+            await send_task
+
+    async def process_streaming(self, audio_stream):
+        """Full streaming pipeline: audio in -> audio out"""
+        # Collect transcript
+        full_transcript = ""
+        async for partial in self.stream_stt(audio_stream):
+            full_transcript += partial + " "
+            print(f"[STT Partial]: {partial}")
+
+        print(f"[STT Final]: {full_transcript.strip()}")
+
+        # Stream LLM to TTS
+        async def llm_to_tts():
+            sentence_buffer = ""
+            async for token in self.stream_llm(full_transcript):
+                sentence_buffer += token
+                # Yield on sentence boundaries for natural TTS
+                if token.endswith(('.', '!', '?', ',')):
+                    yield sentence_buffer
+                    sentence_buffer = ""
+            if sentence_buffer:
+                yield sentence_buffer
+
+        # Stream audio output
+        async for audio_chunk in self.stream_tts(llm_to_tts()):
+            yield audio_chunk
+```
+
+### Step 3: Add Telephony Integration
+
+To connect your agent to phone calls, add telephony support. Create `phone_agent.py`:
+
+```python
+"""
+Phone-Enabled Voice AI Agent
+Connects voice AI to telephone networks
+"""
+
+import os
+from flask import Flask, request, Response
+from dotenv import load_dotenv
+import plivo
+
+load_dotenv()
+
+app = Flask(__name__)
+
+# Initialize Plivo client
+plivo_client = plivo.RestClient(
+    auth_id=os.getenv("PLIVO_AUTH_ID"),
+    auth_token=os.getenv("PLIVO_AUTH_TOKEN")
+)
+
+@app.route("/voice/incoming", methods=["POST"])
+def handle_incoming_call():
+    """Handle incoming phone calls"""
+    call_uuid = request.form.get("CallUUID")
+    from_number = request.form.get("From")
+
+    print(f"Incoming call from {from_number}, UUID: {call_uuid}")
+
+    # Create XML response to handle the call
+    response = plivo.XML()
+
+    # Greet the caller
+    response.addSpeak(
+        "Welcome to our AI assistant. How can I help you today?",
+        voice="Polly.Amy"
+    )
+
+    # Stream audio to your voice agent
+    response.addStream(
+        f"wss://your-server.com/voice/stream/{call_uuid}",
+        bidirectional=True,
+        contentType="audio/x-l16;rate=8000"
+    )
+
+    return Response(str(response), mimetype="application/xml")
+
+
+@app.route("/voice/stream/<call_uuid>", methods=["GET"])
+def handle_stream(call_uuid):
+    """WebSocket endpoint for bidirectional audio streaming"""
+    # This would be upgraded to WebSocket
+    # Integration with StreamingVoiceAgent goes here
+    pass
+
+
+@app.route("/voice/make-call", methods=["POST"])
+def make_outbound_call():
+    """Initiate an outbound call"""
+    data = request.json
+    to_number = data.get("to")
+
+    response = plivo_client.calls.create(
+        from_=os.getenv("PLIVO_PHONE_NUMBER"),
+        to_=to_number,
+        answer_url="https://your-server.com/voice/outbound-answer",
+        answer_method="POST"
+    )
+
+    return {"call_uuid": response.request_uuid}
+
+
+if __name__ == "__main__":
+    app.run(port=5000, debug=True)
+```
+
+## Testing Your Agent
+
+### Unit Testing
+
+Create `test_agent.py`:
+
+```python
+"""
+Tests for Voice AI Agent
+"""
+
+import pytest
+import asyncio
+from unittest.mock import Mock, patch, AsyncMock
+from voice_agent import VoiceAgent
+
+@pytest.fixture
+def agent():
+    """Create a test agent instance"""
+    with patch.dict('os.environ', {
+        'OPENAI_API_KEY': 'test-key',
+        'DEEPGRAM_API_KEY': 'test-key',
+        'ELEVENLABS_API_KEY': 'test-key'
+    }):
+        return VoiceAgent()
+
+@pytest.mark.asyncio
+async def test_response_generation(agent):
+    """Test LLM response generation"""
+    with patch.object(agent.openai_client.chat.completions, 'create') as mock:
+        mock.return_value = Mock(
+            choices=[Mock(message=Mock(content="Hello! How can I help?"))]
+        )
+
+        response = await agent.generate_response("Hello")
+
+        assert response == "Hello! How can I help?"
+        assert len(agent.conversation_history) == 3  # system + user + assistant
+
+@pytest.mark.asyncio
+async def test_conversation_context(agent):
+    """Test that conversation history is maintained"""
+    with patch.object(agent.openai_client.chat.completions, 'create') as mock:
+        mock.return_value = Mock(
+            choices=[Mock(message=Mock(content="Response"))]
+        )
+
+        await agent.generate_response("First message")
+        await agent.generate_response("Second message")
+
+        # Should have system + 2 user messages + 2 assistant messages
+        assert len(agent.conversation_history) == 5
+
+@pytest.mark.asyncio
+async def test_empty_transcript_handling(agent):
+    """Test handling of empty or silent audio"""
+    with patch.object(agent, 'transcribe', return_value=""):
+        with patch.object(agent, 'synthesize_speech') as mock_tts:
+            mock_tts.return_value = b"audio_data"
+
+            result = await agent.process_audio(b"silent_audio")
+
+            # Should return a clarification prompt
+            mock_tts.assert_called_once()
+            assert "didn't catch" in mock_tts.call_args[0][0].lower()
+```
+
+### Integration Testing
+
+```python
+"""
+Integration tests with real API calls (use sparingly)
+"""
+
+import pytest
+import os
+from voice_agent import VoiceAgent
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="Requires API keys"
+)
+@pytest.mark.asyncio
+async def test_full_pipeline():
+    """Test complete STT -> LLM -> TTS pipeline"""
+    agent = VoiceAgent()
+
+    # Test with text input (simulating STT output)
+    response = await agent.generate_response("What is 2 + 2?")
+
+    # Should mention "4" or "four"
+    assert "4" in response.lower() or "four" in response.lower()
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_tts_output():
+    """Test TTS produces valid audio"""
+    agent = VoiceAgent()
+
+    audio = await agent.synthesize_speech("Hello world")
+
+    # Should return non-empty audio data
+    assert len(audio) > 1000  # Reasonable minimum for audio
+```
+
+### Load Testing
+
+```python
+"""
+Load testing for voice agent concurrency
+"""
+
+import asyncio
+import time
+from voice_agent import VoiceAgent
+
+async def simulate_call(agent_id: int, num_turns: int = 3):
+    """Simulate a single call with multiple conversation turns"""
+    agent = VoiceAgent()
+
+    start = time.time()
+    for turn in range(num_turns):
+        await agent.generate_response(f"Test message {turn} from agent {agent_id}")
+
+    duration = time.time() - start
+    return agent_id, duration
+
+async def load_test(concurrent_calls: int = 10):
+    """Run concurrent calls to test system capacity"""
+    print(f"Starting load test with {concurrent_calls} concurrent calls...")
+
+    start = time.time()
+    tasks = [simulate_call(i) for i in range(concurrent_calls)]
+    results = await asyncio.gather(*tasks)
+    total_time = time.time() - start
+
+    durations = [r[1] for r in results]
+    avg_duration = sum(durations) / len(durations)
+
+    print(f"Total time: {total_time:.2f}s")
+    print(f"Average call duration: {avg_duration:.2f}s")
+    print(f"Calls per second: {concurrent_calls / total_time:.2f}")
+
+if __name__ == "__main__":
+    asyncio.run(load_test(10))
+```
+
+## Next Steps and Learning Path
+
+Now that you have a working voice AI agent, here is the recommended path for deepening your knowledge and building production-ready applications.
+
+### Immediate Next Steps
+
+```
++------------------------------------------------------------------+
+|                    LEARNING PATH                                  |
++------------------------------------------------------------------+
+|                                                                   |
+|  PHASE 1: Fundamentals (Week 1-2)                                |
+|  +----------------------------------------------------------+    |
+|  | - Speech Recognition Deep-Dive                            |    |
+|  |   /foundations/speech-recognition/overview                |    |
+|  | - Speech Synthesis Techniques                             |    |
+|  |   /foundations/speech-synthesis/overview                  |    |
+|  | - Audio Pipeline Basics                                   |    |
+|  |   /infrastructure/audio-pipeline                          |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  PHASE 2: Architecture (Week 3-4)                                |
+|  +----------------------------------------------------------+    |
+|  | - Design Patterns for Voice AI                            |    |
+|  |   /agent-architecture/design-patterns                     |    |
+|  | - State Machine Implementation                            |    |
+|  |   /agent-architecture/state-machines                      |    |
+|  | - Error Handling Strategies                               |    |
+|  |   /agent-architecture/error-handling                      |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  PHASE 3: LLM Integration (Week 5-6)                             |
+|  +----------------------------------------------------------+    |
+|  | - Prompt Engineering for Voice                            |    |
+|  |   /llm-integration/prompt-engineering                     |    |
+|  | - Function Calling                                        |    |
+|  |   /llm-integration/function-calling                       |    |
+|  | - Context Management                                      |    |
+|  |   /llm-integration/context-management                     |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  PHASE 4: Production (Week 7-8)                                  |
+|  +----------------------------------------------------------+    |
+|  | - Deployment Strategies                                   |    |
+|  |   /implementation/deployment                              |    |
+|  | - Security and Compliance                                 |    |
+|  |   /enterprise/security-compliance                         |    |
+|  | - Scalability Patterns                                    |    |
+|  |   /enterprise/scalability                                 |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+### Key Concepts to Master
+
+| Area | Concepts | Priority |
+|------|----------|----------|
+| Latency Optimization | Streaming, chunking, parallel processing | High |
+| Conversation Design | Turn-taking, barge-in, error recovery | High |
+| Audio Quality | Noise cancellation, echo handling, VAD | Medium |
+| Scaling | Connection pooling, load balancing, caching | Medium |
+| Monitoring | Latency tracking, quality metrics, alerting | Medium |
+| Security | Authentication, encryption, data handling | High |
+
+### Production Considerations
+
+Before deploying to production, ensure you address:
+
+1. **Error Handling**: Graceful degradation when services fail
+2. **Monitoring**: Track latency, errors, and conversation quality
+3. **Security**: Secure API keys, encrypt audio data, handle PII
+4. **Scaling**: Design for concurrent calls and traffic spikes
+5. **Testing**: Comprehensive unit, integration, and load tests
+
+## Summary
+
+You have now built a functional voice AI agent that demonstrates the core pipeline architecture. The key components are:
+
+1. **Speech-to-Text**: Converting user speech to text using streaming APIs
+2. **Language Model**: Processing user intent and generating responses
+3. **Text-to-Speech**: Converting responses back to natural speech
+4. **Orchestration**: Managing the flow between components
+
+Continue to the [SDK Reference](/topics/implementation/sdk-reference) for detailed documentation on available tools and libraries, or explore the [Code Examples](/topics/implementation/code-examples) for more advanced patterns.
+
+<RelatedTopics
+  topics={[
+    {
+      title: "SDK Reference",
+      href: "/topics/implementation/sdk-reference",
+      description: "Comprehensive guide to available SDKs for Python, Node.js, and Go"
+    },
+    {
+      title: "API Reference",
+      href: "/topics/implementation/api-reference",
+      description: "REST and WebSocket API documentation for voice AI services"
+    },
+    {
+      title: "Code Examples",
+      href: "/topics/implementation/code-examples",
+      description: "Production-ready code examples for common voice AI patterns"
+    },
+    {
+      title: "Deployment Guide",
+      href: "/topics/implementation/deployment",
+      description: "Deploy your voice AI agent to production environments"
+    }
+  ]}
+/>

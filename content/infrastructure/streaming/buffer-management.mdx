@@ -1,0 +1,869 @@
+---
+title: "Buffer Management for Voice AI"
+description: "Strategies and techniques for managing audio buffers in real-time voice AI applications"
+---
+
+# Buffer Management for Voice AI
+
+Effective buffer management is critical for achieving low-latency, smooth voice AI experiences. This guide covers buffer design patterns, jitter handling, memory management, and optimization techniques for real-time audio streaming.
+
+## Why Buffer Management Matters
+
+Voice AI systems must balance competing requirements:
+
+```
+Low Latency <-----> Stability
+    |                   |
+    |   Buffer Size     |
+    |       ↓          |
+Small buffers        Large buffers
+- Lower latency      - Higher latency
+- Risk of underruns  - More stability
+- Audio glitches     - Smoother playback
+```
+
+### Impact on User Experience
+
+| Buffer Issue | User Experience | Severity |
+|--------------|-----------------|----------|
+| **Buffer underrun** | Audio dropouts, silence | High |
+| **Buffer overrun** | Increased latency | Medium |
+| **Jitter** | Choppy, robotic audio | High |
+| **Memory leak** | System degradation | Critical |
+
+## Buffer Architecture
+
+### Audio Pipeline Buffers
+
+A typical voice AI system has multiple buffer stages:
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Capture   │───▶│   Network   │───▶│   Playback  │
+│   Buffer    │    │   Buffer    │    │   Buffer    │
+│   (Ring)    │    │   (Jitter)  │    │   (Ring)    │
+└─────────────┘    └─────────────┘    └─────────────┘
+      │                   │                  │
+   10-50ms            50-200ms           20-100ms
+```
+
+### Ring Buffer Implementation
+
+Ring buffers (circular buffers) are ideal for audio streaming:
+
+```typescript
+class AudioRingBuffer {
+  private buffer: Float32Array;
+  private writePos: number = 0;
+  private readPos: number = 0;
+  private available: number = 0;
+
+  constructor(private capacity: number) {
+    this.buffer = new Float32Array(capacity);
+  }
+
+  write(data: Float32Array): number {
+    const toWrite = Math.min(data.length, this.capacity - this.available);
+
+    for (let i = 0; i < toWrite; i++) {
+      this.buffer[this.writePos] = data[i];
+      this.writePos = (this.writePos + 1) % this.capacity;
+    }
+
+    this.available += toWrite;
+    return toWrite;
+  }
+
+  read(output: Float32Array): number {
+    const toRead = Math.min(output.length, this.available);
+
+    for (let i = 0; i < toRead; i++) {
+      output[i] = this.buffer[this.readPos];
+      this.readPos = (this.readPos + 1) % this.capacity;
+    }
+
+    this.available -= toRead;
+    return toRead;
+  }
+
+  getAvailable(): number {
+    return this.available;
+  }
+
+  getFreeSpace(): number {
+    return this.capacity - this.available;
+  }
+
+  clear(): void {
+    this.writePos = 0;
+    this.readPos = 0;
+    this.available = 0;
+  }
+
+  // Get fill ratio for monitoring
+  getFillRatio(): number {
+    return this.available / this.capacity;
+  }
+}
+```
+
+### Lock-Free Ring Buffer
+
+For multi-threaded scenarios, use lock-free implementations:
+
+```typescript
+class LockFreeRingBuffer {
+  private buffer: SharedArrayBuffer;
+  private data: Float32Array;
+  private writeIndex: Uint32Array;
+  private readIndex: Uint32Array;
+  private capacity: number;
+
+  constructor(capacity: number) {
+    this.capacity = capacity;
+
+    // Shared memory for cross-thread access
+    const dataBuffer = new SharedArrayBuffer(capacity * 4); // Float32
+    const indexBuffer = new SharedArrayBuffer(8); // 2 x Uint32
+
+    this.data = new Float32Array(dataBuffer);
+    this.writeIndex = new Uint32Array(indexBuffer, 0, 1);
+    this.readIndex = new Uint32Array(indexBuffer, 4, 1);
+  }
+
+  write(sample: number): boolean {
+    const write = Atomics.load(this.writeIndex, 0);
+    const read = Atomics.load(this.readIndex, 0);
+
+    const nextWrite = (write + 1) % this.capacity;
+
+    if (nextWrite === read) {
+      return false; // Buffer full
+    }
+
+    this.data[write] = sample;
+    Atomics.store(this.writeIndex, 0, nextWrite);
+
+    return true;
+  }
+
+  read(): number | null {
+    const write = Atomics.load(this.writeIndex, 0);
+    const read = Atomics.load(this.readIndex, 0);
+
+    if (read === write) {
+      return null; // Buffer empty
+    }
+
+    const sample = this.data[read];
+    const nextRead = (read + 1) % this.capacity;
+    Atomics.store(this.readIndex, 0, nextRead);
+
+    return sample;
+  }
+
+  available(): number {
+    const write = Atomics.load(this.writeIndex, 0);
+    const read = Atomics.load(this.readIndex, 0);
+
+    if (write >= read) {
+      return write - read;
+    }
+    return this.capacity - read + write;
+  }
+}
+```
+
+## Jitter Buffer Design
+
+### What is Jitter?
+
+Network jitter causes audio packets to arrive at irregular intervals:
+
+```
+Expected:  |----100ms----|----100ms----|----100ms----|
+           P1           P2           P3           P4
+
+Actual:    |--80ms--|------120ms-------|---90ms---|
+           P1       P2                 P3         P4
+```
+
+### Adaptive Jitter Buffer
+
+```python
+from collections import deque
+from dataclasses import dataclass
+from typing import Optional
+import time
+
+@dataclass
+class AudioPacket:
+    sequence: int
+    timestamp: float
+    data: bytes
+    arrival_time: float
+
+class AdaptiveJitterBuffer:
+    def __init__(
+        self,
+        min_delay_ms: int = 20,
+        max_delay_ms: int = 200,
+        target_delay_ms: int = 60
+    ):
+        self.min_delay = min_delay_ms / 1000
+        self.max_delay = max_delay_ms / 1000
+        self.target_delay = target_delay_ms / 1000
+
+        self.buffer: deque[AudioPacket] = deque()
+        self.jitter_history: deque[float] = deque(maxlen=100)
+        self.current_delay = target_delay_ms / 1000
+
+        self.last_sequence = -1
+        self.last_play_time = 0
+        self.packets_lost = 0
+        self.packets_late = 0
+
+    def put(self, packet: AudioPacket) -> None:
+        """Add packet to buffer, maintaining sequence order."""
+        packet.arrival_time = time.time()
+
+        # Track jitter
+        if len(self.buffer) > 0:
+            expected_interval = 0.02  # 20ms packets
+            actual_interval = packet.arrival_time - self.buffer[-1].arrival_time
+            jitter = abs(actual_interval - expected_interval)
+            self.jitter_history.append(jitter)
+
+        # Insert in sequence order
+        inserted = False
+        for i, existing in enumerate(self.buffer):
+            if packet.sequence < existing.sequence:
+                self.buffer.insert(i, packet)
+                inserted = True
+                break
+            elif packet.sequence == existing.sequence:
+                # Duplicate, ignore
+                return
+
+        if not inserted:
+            self.buffer.append(packet)
+
+        # Adapt delay based on jitter
+        self._adapt_delay()
+
+    def get(self) -> Optional[bytes]:
+        """Get next packet for playback, handling gaps."""
+        if not self.buffer:
+            return None
+
+        current_time = time.time()
+        packet = self.buffer[0]
+
+        # Check if packet is ready for playback
+        ready_time = packet.arrival_time + self.current_delay
+        if current_time < ready_time:
+            return None  # Not ready yet
+
+        self.buffer.popleft()
+
+        # Check for lost packets
+        expected_sequence = self.last_sequence + 1
+        if packet.sequence > expected_sequence:
+            lost_count = packet.sequence - expected_sequence
+            self.packets_lost += lost_count
+            # Could insert comfort noise or interpolation here
+
+        # Check if packet is late
+        if packet.sequence < expected_sequence:
+            self.packets_late += 1
+            return self.get()  # Skip late packet, get next
+
+        self.last_sequence = packet.sequence
+        self.last_play_time = current_time
+
+        return packet.data
+
+    def _adapt_delay(self) -> None:
+        """Dynamically adjust buffer delay based on jitter."""
+        if len(self.jitter_history) < 10:
+            return
+
+        # Calculate 95th percentile jitter
+        sorted_jitter = sorted(self.jitter_history)
+        p95_jitter = sorted_jitter[int(len(sorted_jitter) * 0.95)]
+
+        # Target delay should cover jitter with margin
+        ideal_delay = p95_jitter * 2.5
+
+        # Smooth adjustment
+        adjustment_rate = 0.1
+        if ideal_delay > self.current_delay:
+            # Increase delay gradually
+            self.current_delay = min(
+                self.max_delay,
+                self.current_delay + (ideal_delay - self.current_delay) * adjustment_rate
+            )
+        else:
+            # Decrease delay more slowly
+            self.current_delay = max(
+                self.min_delay,
+                self.current_delay - (self.current_delay - ideal_delay) * adjustment_rate * 0.5
+            )
+
+    def get_stats(self) -> dict:
+        """Return buffer statistics."""
+        return {
+            'current_delay_ms': self.current_delay * 1000,
+            'buffer_size': len(self.buffer),
+            'packets_lost': self.packets_lost,
+            'packets_late': self.packets_late,
+            'avg_jitter_ms': (sum(self.jitter_history) / len(self.jitter_history) * 1000)
+                             if self.jitter_history else 0
+        }
+```
+
+## Buffer Sizing Strategies
+
+### Calculating Optimal Buffer Size
+
+```python
+def calculate_buffer_size(
+    sample_rate: int,
+    channels: int,
+    latency_budget_ms: float,
+    safety_margin: float = 1.5
+) -> int:
+    """
+    Calculate optimal buffer size based on latency requirements.
+
+    Args:
+        sample_rate: Audio sample rate (e.g., 16000)
+        channels: Number of audio channels
+        latency_budget_ms: Target latency in milliseconds
+        safety_margin: Multiplier for safety (1.5 = 50% extra)
+
+    Returns:
+        Buffer size in samples
+    """
+    # Samples per millisecond
+    samples_per_ms = sample_rate / 1000
+
+    # Base buffer size
+    base_samples = int(samples_per_ms * latency_budget_ms)
+
+    # Apply safety margin and round to power of 2
+    target_samples = int(base_samples * safety_margin)
+    buffer_size = 1
+    while buffer_size < target_samples:
+        buffer_size *= 2
+
+    return buffer_size * channels
+
+
+# Example calculations
+print(calculate_buffer_size(16000, 1, 20))   # ~512 samples
+print(calculate_buffer_size(16000, 1, 50))   # ~2048 samples
+print(calculate_buffer_size(48000, 2, 20))   # ~4096 samples
+```
+
+### Dynamic Buffer Sizing
+
+```typescript
+class DynamicBufferManager {
+  private minSize: number;
+  private maxSize: number;
+  private currentSize: number;
+  private underrunCount: number = 0;
+  private overrunCount: number = 0;
+  private windowSize: number = 100;
+  private adjustmentThreshold: number = 5;
+
+  constructor(
+    minSizeMs: number,
+    maxSizeMs: number,
+    sampleRate: number
+  ) {
+    this.minSize = Math.floor(sampleRate * minSizeMs / 1000);
+    this.maxSize = Math.floor(sampleRate * maxSizeMs / 1000);
+    this.currentSize = Math.floor((this.minSize + this.maxSize) / 2);
+  }
+
+  reportUnderrun(): void {
+    this.underrunCount++;
+    this.maybeAdjust();
+  }
+
+  reportOverrun(): void {
+    this.overrunCount++;
+    this.maybeAdjust();
+  }
+
+  private maybeAdjust(): void {
+    const totalEvents = this.underrunCount + this.overrunCount;
+
+    if (totalEvents >= this.windowSize) {
+      if (this.underrunCount > this.adjustmentThreshold) {
+        // Too many underruns, increase buffer
+        this.currentSize = Math.min(
+          this.maxSize,
+          Math.floor(this.currentSize * 1.25)
+        );
+      } else if (this.overrunCount > this.adjustmentThreshold) {
+        // Too many overruns (high latency), decrease buffer
+        this.currentSize = Math.max(
+          this.minSize,
+          Math.floor(this.currentSize * 0.9)
+        );
+      }
+
+      // Reset counters
+      this.underrunCount = 0;
+      this.overrunCount = 0;
+    }
+  }
+
+  getSize(): number {
+    return this.currentSize;
+  }
+
+  getLatencyMs(sampleRate: number): number {
+    return (this.currentSize / sampleRate) * 1000;
+  }
+}
+```
+
+## Memory Management
+
+### Preventing Memory Leaks
+
+```typescript
+class ManagedAudioBuffer {
+  private pools: Map<number, Float32Array[]> = new Map();
+  private maxPoolSize: number = 50;
+  private activeBuffers: Set<Float32Array> = new Set();
+
+  acquire(size: number): Float32Array {
+    // Normalize size to power of 2
+    const normalizedSize = this.normalizeToPowerOf2(size);
+
+    let pool = this.pools.get(normalizedSize);
+    if (!pool) {
+      pool = [];
+      this.pools.set(normalizedSize, pool);
+    }
+
+    let buffer: Float32Array;
+    if (pool.length > 0) {
+      buffer = pool.pop()!;
+      buffer.fill(0); // Clear previous data
+    } else {
+      buffer = new Float32Array(normalizedSize);
+    }
+
+    this.activeBuffers.add(buffer);
+    return buffer;
+  }
+
+  release(buffer: Float32Array): void {
+    if (!this.activeBuffers.has(buffer)) {
+      console.warn('Releasing buffer not tracked as active');
+      return;
+    }
+
+    this.activeBuffers.delete(buffer);
+
+    const size = buffer.length;
+    let pool = this.pools.get(size);
+
+    if (pool && pool.length < this.maxPoolSize) {
+      pool.push(buffer);
+    }
+    // If pool is full, buffer will be garbage collected
+  }
+
+  private normalizeToPowerOf2(n: number): number {
+    let power = 1;
+    while (power < n) power *= 2;
+    return power;
+  }
+
+  getStats(): object {
+    const stats: any = {
+      activeBuffers: this.activeBuffers.size,
+      pools: {}
+    };
+
+    this.pools.forEach((pool, size) => {
+      stats.pools[size] = pool.length;
+    });
+
+    return stats;
+  }
+
+  // Periodic cleanup
+  cleanup(): void {
+    this.pools.forEach((pool, size) => {
+      // Keep only half the pool
+      const keep = Math.floor(pool.length / 2);
+      pool.splice(0, pool.length - keep);
+    });
+  }
+}
+```
+
+### Buffer Pool Pattern
+
+```python
+from typing import Dict, List, Optional
+import numpy as np
+from threading import Lock
+
+class AudioBufferPool:
+    """Thread-safe buffer pool with automatic sizing."""
+
+    def __init__(self, max_pool_size: int = 100):
+        self.max_pool_size = max_pool_size
+        self.pools: Dict[int, List[np.ndarray]] = {}
+        self.lock = Lock()
+        self.stats = {
+            'allocations': 0,
+            'reuses': 0,
+            'releases': 0
+        }
+
+    def acquire(self, size: int, dtype=np.float32) -> np.ndarray:
+        """Get a buffer from the pool or create a new one."""
+        normalized_size = self._normalize_size(size)
+
+        with self.lock:
+            pool = self.pools.get(normalized_size, [])
+
+            if pool:
+                buffer = pool.pop()
+                buffer[:size] = 0  # Clear only needed portion
+                self.stats['reuses'] += 1
+                return buffer[:size]
+
+            self.stats['allocations'] += 1
+
+        # Allocate outside lock
+        return np.zeros(normalized_size, dtype=dtype)[:size]
+
+    def release(self, buffer: np.ndarray) -> None:
+        """Return a buffer to the pool."""
+        size = len(buffer.base) if buffer.base is not None else len(buffer)
+
+        with self.lock:
+            self.stats['releases'] += 1
+
+            if size not in self.pools:
+                self.pools[size] = []
+
+            if len(self.pools[size]) < self.max_pool_size:
+                # Return base array to pool
+                base = buffer.base if buffer.base is not None else buffer
+                self.pools[size].append(base)
+
+    def _normalize_size(self, size: int) -> int:
+        """Round up to power of 2."""
+        if size <= 0:
+            return 1
+        power = 1
+        while power < size:
+            power *= 2
+        return power
+
+    def get_stats(self) -> dict:
+        """Return pool statistics."""
+        with self.lock:
+            pool_sizes = {k: len(v) for k, v in self.pools.items()}
+            return {
+                **self.stats,
+                'pool_sizes': pool_sizes,
+                'hit_rate': self.stats['reuses'] /
+                           (self.stats['allocations'] + self.stats['reuses'])
+                           if (self.stats['allocations'] + self.stats['reuses']) > 0
+                           else 0
+            }
+```
+
+## Handling Buffer Events
+
+### Underrun Recovery
+
+```typescript
+class UnderrunRecovery {
+  private lastSamples: Float32Array;
+  private fadeLength: number;
+
+  constructor(sampleRate: number, fadeMs: number = 5) {
+    this.fadeLength = Math.floor(sampleRate * fadeMs / 1000);
+    this.lastSamples = new Float32Array(this.fadeLength);
+  }
+
+  generateComfortNoise(length: number): Float32Array {
+    const noise = new Float32Array(length);
+
+    // Generate pink noise at low level
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      noise[i] = (b0 + b1 + b2) * 0.02; // Low level
+    }
+
+    // Fade from last samples
+    for (let i = 0; i < this.fadeLength && i < length; i++) {
+      const fade = 1 - (i / this.fadeLength);
+      noise[i] = this.lastSamples[i] * fade + noise[i] * (1 - fade);
+    }
+
+    return noise;
+  }
+
+  updateLastSamples(samples: Float32Array): void {
+    const startIndex = Math.max(0, samples.length - this.fadeLength);
+    for (let i = 0; i < this.fadeLength; i++) {
+      const srcIndex = startIndex + i;
+      if (srcIndex < samples.length) {
+        this.lastSamples[i] = samples[srcIndex];
+      }
+    }
+  }
+
+  crossfadeRecovery(
+    incoming: Float32Array,
+    gapDuration: number
+  ): Float32Array {
+    const output = new Float32Array(incoming.length);
+
+    // Quick fade in for recovered audio
+    const fadeIn = Math.min(this.fadeLength, incoming.length);
+    for (let i = 0; i < fadeIn; i++) {
+      const fade = i / fadeIn;
+      output[i] = incoming[i] * fade;
+    }
+
+    // Rest of audio unchanged
+    for (let i = fadeIn; i < incoming.length; i++) {
+      output[i] = incoming[i];
+    }
+
+    return output;
+  }
+}
+```
+
+### Overrun Handling
+
+```python
+class OverrunHandler:
+    """Handle buffer overruns by discarding or time-stretching."""
+
+    def __init__(self, sample_rate: int, max_discard_ms: float = 50):
+        self.sample_rate = sample_rate
+        self.max_discard_samples = int(sample_rate * max_discard_ms / 1000)
+
+    def handle_overrun(
+        self,
+        buffer: np.ndarray,
+        target_length: int
+    ) -> np.ndarray:
+        """
+        Reduce buffer size to target length while minimizing artifacts.
+        """
+        excess = len(buffer) - target_length
+
+        if excess <= 0:
+            return buffer
+
+        if excess <= self.max_discard_samples:
+            # Small overrun: discard from beginning with crossfade
+            return self._crossfade_discard(buffer, excess)
+        else:
+            # Large overrun: time-stretch to maintain pitch
+            return self._time_stretch(buffer, target_length)
+
+    def _crossfade_discard(
+        self,
+        buffer: np.ndarray,
+        discard_samples: int
+    ) -> np.ndarray:
+        """Discard samples with crossfade to avoid clicks."""
+        fade_length = min(256, discard_samples // 2)
+
+        result = buffer[discard_samples:].copy()
+
+        # Crossfade at junction
+        for i in range(fade_length):
+            fade = i / fade_length
+            old_sample = buffer[discard_samples - fade_length + i]
+            new_sample = result[i]
+            result[i] = old_sample * (1 - fade) + new_sample * fade
+
+        return result
+
+    def _time_stretch(
+        self,
+        buffer: np.ndarray,
+        target_length: int
+    ) -> np.ndarray:
+        """Time-stretch audio to target length using WSOLA."""
+        from scipy.signal import resample
+
+        # Simple resampling (for production, use proper WSOLA)
+        return resample(buffer, target_length)
+```
+
+## Monitoring and Metrics
+
+### Buffer Health Monitoring
+
+```typescript
+interface BufferMetrics {
+  fillLevel: number;        // 0.0 - 1.0
+  underruns: number;
+  overruns: number;
+  avgLatencyMs: number;
+  jitterMs: number;
+}
+
+class BufferMonitor {
+  private metrics: BufferMetrics = {
+    fillLevel: 0,
+    underruns: 0,
+    overruns: 0,
+    avgLatencyMs: 0,
+    jitterMs: 0
+  };
+
+  private fillHistory: number[] = [];
+  private latencyHistory: number[] = [];
+  private historyLength: number = 100;
+  private alertThresholds = {
+    lowFill: 0.2,
+    highFill: 0.9,
+    maxJitter: 50,
+    maxUnderrunRate: 0.01
+  };
+
+  update(
+    currentFill: number,
+    bufferLatencyMs: number
+  ): void {
+    // Update fill history
+    this.fillHistory.push(currentFill);
+    if (this.fillHistory.length > this.historyLength) {
+      this.fillHistory.shift();
+    }
+
+    // Update latency history
+    this.latencyHistory.push(bufferLatencyMs);
+    if (this.latencyHistory.length > this.historyLength) {
+      this.latencyHistory.shift();
+    }
+
+    // Calculate metrics
+    this.metrics.fillLevel = currentFill;
+    this.metrics.avgLatencyMs = this.average(this.latencyHistory);
+    this.metrics.jitterMs = this.standardDeviation(this.latencyHistory);
+
+    // Check for events
+    if (currentFill < 0.05) {
+      this.metrics.underruns++;
+    }
+    if (currentFill > 0.95) {
+      this.metrics.overruns++;
+    }
+  }
+
+  getMetrics(): BufferMetrics {
+    return { ...this.metrics };
+  }
+
+  getAlerts(): string[] {
+    const alerts: string[] = [];
+
+    if (this.metrics.fillLevel < this.alertThresholds.lowFill) {
+      alerts.push(`Low buffer fill: ${(this.metrics.fillLevel * 100).toFixed(1)}%`);
+    }
+
+    if (this.metrics.fillLevel > this.alertThresholds.highFill) {
+      alerts.push(`High buffer fill: ${(this.metrics.fillLevel * 100).toFixed(1)}%`);
+    }
+
+    if (this.metrics.jitterMs > this.alertThresholds.maxJitter) {
+      alerts.push(`High jitter: ${this.metrics.jitterMs.toFixed(1)}ms`);
+    }
+
+    const totalSamples = this.fillHistory.length;
+    const underrunRate = this.metrics.underruns / totalSamples;
+    if (underrunRate > this.alertThresholds.maxUnderrunRate) {
+      alerts.push(`High underrun rate: ${(underrunRate * 100).toFixed(2)}%`);
+    }
+
+    return alerts;
+  }
+
+  private average(arr: number[]): number {
+    if (arr.length === 0) return 0;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }
+
+  private standardDeviation(arr: number[]): number {
+    if (arr.length === 0) return 0;
+    const avg = this.average(arr);
+    const squareDiffs = arr.map(value => Math.pow(value - avg, 2));
+    return Math.sqrt(this.average(squareDiffs));
+  }
+}
+```
+
+## Best Practices
+
+### Buffer Management Checklist
+
+1. **Size buffers appropriately**
+   - Start with 20-50ms for capture
+   - Use 50-200ms for jitter buffers
+   - Monitor and adjust dynamically
+
+2. **Use lock-free structures when possible**
+   - Ring buffers for audio threads
+   - Atomic operations for cross-thread access
+   - Avoid locks in audio callbacks
+
+3. **Implement proper memory management**
+   - Use buffer pools
+   - Avoid allocations in real-time paths
+   - Monitor for memory leaks
+
+4. **Handle edge cases gracefully**
+   - Underrun: Use comfort noise or interpolation
+   - Overrun: Time-stretch or smart discard
+   - Gap: Crossfade to avoid clicks
+
+5. **Monitor continuously**
+   - Track fill levels
+   - Count underruns/overruns
+   - Measure jitter
+   - Alert on anomalies
+
+### Common Pitfalls
+
+| Pitfall | Impact | Solution |
+|---------|--------|----------|
+| Fixed buffer size | Poor adaptation | Dynamic sizing |
+| No jitter handling | Choppy audio | Jitter buffer |
+| Memory allocation in audio thread | Glitches | Buffer pools |
+| Ignoring underruns | Silent drops | Comfort noise |
+| No monitoring | Undetected issues | Metrics + alerts |
+
+## Related Topics
+
+- **[WebSocket Protocols](/topics/infrastructure/streaming/websocket-protocols)** - Network streaming for voice
+- **[gRPC Streaming](/topics/infrastructure/streaming/grpc-streaming)** - High-performance streaming
+- **[Audio Pipeline](/topics/infrastructure/audio-pipeline)** - End-to-end audio processing
+- **[Latency Optimization](/topics/foundations/latency-optimization)** - Reducing system delay

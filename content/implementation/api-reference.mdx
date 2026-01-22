@@ -1,0 +1,1309 @@
+---
+title: "Voice AI API Reference"
+description: "Complete API reference for voice AI development - REST APIs, WebSocket protocols, authentication, rate limiting, webhooks, and API versioning strategies"
+category: "implementation"
+tags:
+  - api
+  - rest
+  - websocket
+  - authentication
+  - webhooks
+  - rate-limiting
+relatedTopics:
+  - sdk-reference
+  - code-examples
+  - getting-started
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Voice AI API Reference
+
+This reference guide covers the API patterns used in voice AI development, including REST APIs for control operations, WebSocket APIs for real-time streaming, authentication methods, and best practices for production integrations.
+
+## API Architecture Overview
+
+Voice AI systems typically use a combination of REST and WebSocket APIs for different purposes.
+
+```
++------------------------------------------------------------------+
+|                    VOICE AI API ARCHITECTURE                      |
++------------------------------------------------------------------+
+|                                                                   |
+|  REST APIs (Control Plane)                                        |
+|  +----------------------------------------------------------+    |
+|  | - Call initiation and management                          |    |
+|  | - Configuration and settings                              |    |
+|  | - Analytics and reporting                                 |    |
+|  | - Account and billing operations                          |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  WebSocket APIs (Data Plane)                                      |
+|  +----------------------------------------------------------+    |
+|  | - Real-time audio streaming                               |    |
+|  | - Live transcription                                      |    |
+|  | - Text-to-speech streaming                                |    |
+|  | - Bidirectional voice communication                       |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  Webhooks (Event Notifications)                                   |
+|  +----------------------------------------------------------+    |
+|  | - Call status updates                                     |    |
+|  | - Transcription completion                                |    |
+|  | - Error notifications                                     |    |
+|  | - Billing events                                          |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+## REST API vs WebSocket APIs
+
+### When to Use REST APIs
+
+| Use Case | Protocol | Reason |
+|----------|----------|--------|
+| Initiate outbound call | REST | One-time action |
+| Get call details | REST | Request-response pattern |
+| Update call settings | REST | Configuration change |
+| Batch transcription | REST | Non-real-time processing |
+| List recordings | REST | Pagination support |
+
+### When to Use WebSocket APIs
+
+| Use Case | Protocol | Reason |
+|----------|----------|--------|
+| Live audio streaming | WebSocket | Continuous bidirectional data |
+| Real-time transcription | WebSocket | Low-latency streaming |
+| TTS audio streaming | WebSocket | Chunked audio delivery |
+| Voice agent interaction | WebSocket | Full-duplex communication |
+
+## Authentication
+
+### API Key Authentication
+
+The most common authentication method for voice AI services.
+
+```
++------------------------------------------------------------------+
+|                    API KEY AUTHENTICATION                         |
++------------------------------------------------------------------+
+|                                                                   |
+|  Header-Based (Recommended)                                       |
+|  +----------------------------------------------------------+    |
+|  | Authorization: Bearer sk_live_abc123...                   |    |
+|  | X-API-Key: abc123...                                      |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  Query Parameter (Legacy/Fallback)                               |
+|  +----------------------------------------------------------+    |
+|  | https://api.example.com/v1/calls?api_key=abc123...        |    |
+|  | (Not recommended - keys visible in logs)                  |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+#### Python Implementation
+
+```python
+"""
+API authentication patterns
+"""
+
+import os
+import httpx
+from typing import Optional
+
+class APIClient:
+    """Base API client with authentication"""
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        timeout: float = 30.0
+    ):
+        self.api_key = api_key
+        self.base_url = base_url.rstrip('/')
+        self.timeout = timeout
+        self._client: Optional[httpx.AsyncClient] = None
+
+    @property
+    def headers(self) -> dict:
+        """Standard headers for API requests"""
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "VoiceAI-Client/1.0"
+        }
+
+    async def get_client(self) -> httpx.AsyncClient:
+        """Get or create HTTP client"""
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                headers=self.headers,
+                timeout=self.timeout
+            )
+        return self._client
+
+    async def request(
+        self,
+        method: str,
+        endpoint: str,
+        **kwargs
+    ) -> dict:
+        """Make authenticated API request"""
+        client = await self.get_client()
+        response = await client.request(method, endpoint, **kwargs)
+        response.raise_for_status()
+        return response.json()
+
+    async def close(self):
+        """Close the HTTP client"""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+```
+
+### Basic Authentication
+
+Used by some telephony providers for API access.
+
+```python
+"""
+Basic authentication for telephony APIs
+"""
+
+import base64
+import httpx
+
+class BasicAuthClient:
+    """Client using HTTP Basic Authentication"""
+
+    def __init__(self, auth_id: str, auth_token: str, base_url: str):
+        self.auth_id = auth_id
+        self.auth_token = auth_token
+        self.base_url = base_url
+
+    @property
+    def auth_header(self) -> str:
+        """Generate Basic Auth header"""
+        credentials = f"{self.auth_id}:{self.auth_token}"
+        encoded = base64.b64encode(credentials.encode()).decode()
+        return f"Basic {encoded}"
+
+    async def request(self, method: str, endpoint: str, **kwargs) -> dict:
+        """Make authenticated request"""
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method,
+                f"{self.base_url}{endpoint}",
+                headers={"Authorization": self.auth_header},
+                **kwargs
+            )
+            response.raise_for_status()
+            return response.json()
+
+
+# Example: Plivo-style authentication
+class TelephonyClient(BasicAuthClient):
+    """Telephony API client with Basic Auth"""
+
+    def __init__(self, auth_id: str, auth_token: str):
+        super().__init__(
+            auth_id=auth_id,
+            auth_token=auth_token,
+            base_url="https://api.plivo.com/v1"
+        )
+
+    async def make_call(
+        self,
+        from_number: str,
+        to_number: str,
+        answer_url: str
+    ) -> dict:
+        """Initiate an outbound call"""
+        return await self.request(
+            "POST",
+            f"/Account/{self.auth_id}/Call/",
+            json={
+                "from": from_number,
+                "to": to_number,
+                "answer_url": answer_url,
+                "answer_method": "POST"
+            }
+        )
+
+    async def get_call(self, call_uuid: str) -> dict:
+        """Get call details"""
+        return await self.request(
+            "GET",
+            f"/Account/{self.auth_id}/Call/{call_uuid}/"
+        )
+```
+
+### OAuth 2.0 Authentication
+
+For services requiring delegated access or user-level permissions.
+
+```python
+"""
+OAuth 2.0 authentication flow
+"""
+
+import time
+import httpx
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class OAuthToken:
+    """OAuth token container"""
+    access_token: str
+    token_type: str
+    expires_in: int
+    refresh_token: Optional[str] = None
+    created_at: float = None
+
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = time.time()
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if token has expired"""
+        return time.time() > (self.created_at + self.expires_in - 60)
+
+
+class OAuthClient:
+    """OAuth 2.0 client implementation"""
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        token_url: str,
+        base_url: str
+    ):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token_url = token_url
+        self.base_url = base_url
+        self._token: Optional[OAuthToken] = None
+
+    async def get_token(self) -> OAuthToken:
+        """Get valid access token, refreshing if needed"""
+        if self._token is None or self._token.is_expired:
+            await self._refresh_token()
+        return self._token
+
+    async def _refresh_token(self):
+        """Obtain new access token"""
+        async with httpx.AsyncClient() as client:
+            # Client credentials flow
+            response = await client.post(
+                self.token_url,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "scope": "voice:read voice:write"
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            self._token = OAuthToken(
+                access_token=data["access_token"],
+                token_type=data["token_type"],
+                expires_in=data["expires_in"],
+                refresh_token=data.get("refresh_token")
+            )
+
+    async def request(self, method: str, endpoint: str, **kwargs) -> dict:
+        """Make authenticated request with auto-refresh"""
+        token = await self.get_token()
+
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method,
+                f"{self.base_url}{endpoint}",
+                headers={"Authorization": f"Bearer {token.access_token}"},
+                **kwargs
+            )
+
+            # Handle token expiration
+            if response.status_code == 401:
+                await self._refresh_token()
+                token = await self.get_token()
+                response = await client.request(
+                    method,
+                    f"{self.base_url}{endpoint}",
+                    headers={"Authorization": f"Bearer {token.access_token}"},
+                    **kwargs
+                )
+
+            response.raise_for_status()
+            return response.json()
+```
+
+### JWT Authentication
+
+For WebSocket connections and stateless authentication.
+
+```python
+"""
+JWT authentication for WebSocket connections
+"""
+
+import jwt
+import time
+from typing import Optional
+
+class JWTAuthenticator:
+    """Generate and validate JWTs for API authentication"""
+
+    def __init__(
+        self,
+        secret_key: str,
+        algorithm: str = "HS256",
+        token_lifetime: int = 3600
+    ):
+        self.secret_key = secret_key
+        self.algorithm = algorithm
+        self.token_lifetime = token_lifetime
+
+    def generate_token(
+        self,
+        user_id: str,
+        scopes: list[str] = None,
+        metadata: dict = None
+    ) -> str:
+        """Generate a JWT for API authentication"""
+        now = int(time.time())
+
+        payload = {
+            "sub": user_id,
+            "iat": now,
+            "exp": now + self.token_lifetime,
+            "scopes": scopes or ["voice:*"],
+        }
+
+        if metadata:
+            payload["metadata"] = metadata
+
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
+    def validate_token(self, token: str) -> Optional[dict]:
+        """Validate JWT and return payload"""
+        try:
+            payload = jwt.decode(
+                token,
+                self.secret_key,
+                algorithms=[self.algorithm]
+            )
+            return payload
+        except jwt.ExpiredSignatureError:
+            return None
+        except jwt.InvalidTokenError:
+            return None
+
+
+# WebSocket authentication example
+class AuthenticatedWebSocket:
+    """WebSocket client with JWT authentication"""
+
+    def __init__(self, url: str, authenticator: JWTAuthenticator):
+        self.url = url
+        self.authenticator = authenticator
+
+    async def connect(self, user_id: str):
+        """Connect to WebSocket with JWT auth"""
+        import websockets
+
+        token = self.authenticator.generate_token(user_id)
+
+        # Include token in connection
+        ws_url = f"{self.url}?token={token}"
+
+        # Or use header-based auth
+        headers = {"Authorization": f"Bearer {token}"}
+
+        self.ws = await websockets.connect(ws_url, extra_headers=headers)
+        return self.ws
+```
+
+## Common Endpoints
+
+### Call Management APIs
+
+```
++------------------------------------------------------------------+
+|                    CALL MANAGEMENT ENDPOINTS                      |
++------------------------------------------------------------------+
+|                                                                   |
+|  POST /v1/calls                                                   |
+|  +----------------------------------------------------------+    |
+|  | Create a new outbound call                                |    |
+|  |                                                           |    |
+|  | Request Body:                                             |    |
+|  | {                                                         |    |
+|  |   "from": "+14155550000",                                |    |
+|  |   "to": "+14155551234",                                  |    |
+|  |   "answer_url": "https://your-server.com/answer",        |    |
+|  |   "answer_method": "POST",                               |    |
+|  |   "ring_timeout": 30,                                    |    |
+|  |   "machine_detection": true                              |    |
+|  | }                                                         |    |
+|  |                                                           |    |
+|  | Response: 201 Created                                     |    |
+|  | {                                                         |    |
+|  |   "call_uuid": "abc123-def456-...",                      |    |
+|  |   "status": "queued"                                     |    |
+|  | }                                                         |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  GET /v1/calls/{call_uuid}                                       |
+|  +----------------------------------------------------------+    |
+|  | Get call details                                          |    |
+|  |                                                           |    |
+|  | Response: 200 OK                                          |    |
+|  | {                                                         |    |
+|  |   "call_uuid": "abc123-def456-...",                      |    |
+|  |   "from": "+14155550000",                                |    |
+|  |   "to": "+14155551234",                                  |    |
+|  |   "status": "in-progress",                               |    |
+|  |   "direction": "outbound",                               |    |
+|  |   "duration": 45,                                        |    |
+|  |   "start_time": "2024-01-15T10:30:00Z"                   |    |
+|  | }                                                         |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  DELETE /v1/calls/{call_uuid}                                    |
+|  +----------------------------------------------------------+    |
+|  | Terminate an active call                                  |    |
+|  |                                                           |    |
+|  | Response: 204 No Content                                  |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  POST /v1/calls/{call_uuid}/transfer                             |
+|  +----------------------------------------------------------+    |
+|  | Transfer call to new destination                          |    |
+|  |                                                           |    |
+|  | Request Body:                                             |    |
+|  | {                                                         |    |
+|  |   "url": "https://your-server.com/transfer-handler",     |    |
+|  |   "method": "POST"                                        |    |
+|  | }                                                         |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+#### Implementation
+
+```python
+"""
+Call management API implementation
+"""
+
+from dataclasses import dataclass
+from typing import Optional, Literal
+from enum import Enum
+
+class CallStatus(Enum):
+    QUEUED = "queued"
+    RINGING = "ringing"
+    IN_PROGRESS = "in-progress"
+    COMPLETED = "completed"
+    BUSY = "busy"
+    FAILED = "failed"
+    NO_ANSWER = "no-answer"
+    CANCELED = "canceled"
+
+@dataclass
+class Call:
+    """Call resource representation"""
+    call_uuid: str
+    from_number: str
+    to_number: str
+    status: CallStatus
+    direction: Literal["inbound", "outbound"]
+    duration: Optional[int] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    hangup_cause: Optional[str] = None
+
+class CallsAPI:
+    """Call management API client"""
+
+    def __init__(self, client: APIClient):
+        self.client = client
+
+    async def create(
+        self,
+        from_number: str,
+        to_number: str,
+        answer_url: str,
+        answer_method: str = "POST",
+        ring_timeout: int = 30,
+        machine_detection: bool = False,
+        status_callback_url: Optional[str] = None
+    ) -> Call:
+        """Create an outbound call"""
+        payload = {
+            "from": from_number,
+            "to": to_number,
+            "answer_url": answer_url,
+            "answer_method": answer_method,
+            "ring_timeout": ring_timeout
+        }
+
+        if machine_detection:
+            payload["machine_detection"] = True
+            payload["machine_detection_time"] = 5000
+
+        if status_callback_url:
+            payload["status_callback_url"] = status_callback_url
+            payload["status_callback_method"] = "POST"
+
+        response = await self.client.request("POST", "/v1/calls", json=payload)
+
+        return Call(
+            call_uuid=response["call_uuid"],
+            from_number=from_number,
+            to_number=to_number,
+            status=CallStatus.QUEUED,
+            direction="outbound"
+        )
+
+    async def get(self, call_uuid: str) -> Call:
+        """Get call details"""
+        response = await self.client.request("GET", f"/v1/calls/{call_uuid}")
+
+        return Call(
+            call_uuid=response["call_uuid"],
+            from_number=response["from"],
+            to_number=response["to"],
+            status=CallStatus(response["status"]),
+            direction=response["direction"],
+            duration=response.get("duration"),
+            start_time=response.get("start_time"),
+            end_time=response.get("end_time")
+        )
+
+    async def hangup(self, call_uuid: str) -> bool:
+        """Terminate a call"""
+        try:
+            await self.client.request("DELETE", f"/v1/calls/{call_uuid}")
+            return True
+        except Exception:
+            return False
+
+    async def transfer(
+        self,
+        call_uuid: str,
+        url: str,
+        method: str = "POST"
+    ) -> bool:
+        """Transfer call to new handler"""
+        try:
+            await self.client.request(
+                "POST",
+                f"/v1/calls/{call_uuid}/transfer",
+                json={"url": url, "method": method}
+            )
+            return True
+        except Exception:
+            return False
+```
+
+### Audio Streaming APIs
+
+```
++------------------------------------------------------------------+
+|                    AUDIO STREAMING ENDPOINTS                      |
++------------------------------------------------------------------+
+|                                                                   |
+|  WebSocket: wss://api.example.com/v1/audio/stream                |
+|  +----------------------------------------------------------+    |
+|  | Bidirectional audio streaming                             |    |
+|  |                                                           |    |
+|  | Connection Parameters:                                    |    |
+|  | - encoding: linear16, mulaw, alaw                        |    |
+|  | - sample_rate: 8000, 16000, 24000, 48000                 |    |
+|  | - channels: 1 (mono) or 2 (stereo)                       |    |
+|  |                                                           |    |
+|  | Client -> Server Messages:                                |    |
+|  | {                                                         |    |
+|  |   "type": "audio",                                        |    |
+|  |   "data": "<base64-encoded-audio>"                       |    |
+|  | }                                                         |    |
+|  |                                                           |    |
+|  | Server -> Client Messages:                                |    |
+|  | {                                                         |    |
+|  |   "type": "audio",                                        |    |
+|  |   "data": "<base64-encoded-audio>"                       |    |
+|  | }                                                         |    |
+|  | {                                                         |    |
+|  |   "type": "transcript",                                   |    |
+|  |   "text": "Hello, how can I help?",                      |    |
+|  |   "is_final": true                                        |    |
+|  | }                                                         |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+#### WebSocket Implementation
+
+```python
+"""
+Audio streaming WebSocket implementation
+"""
+
+import asyncio
+import json
+import base64
+from typing import AsyncIterator, Callable, Optional
+import websockets
+from dataclasses import dataclass
+from enum import Enum
+
+class AudioEncoding(Enum):
+    LINEAR16 = "linear16"
+    MULAW = "mulaw"
+    ALAW = "alaw"
+
+@dataclass
+class AudioConfig:
+    """Audio stream configuration"""
+    encoding: AudioEncoding = AudioEncoding.LINEAR16
+    sample_rate: int = 16000
+    channels: int = 1
+
+class AudioStreamClient:
+    """WebSocket client for audio streaming"""
+
+    def __init__(
+        self,
+        url: str,
+        api_key: str,
+        config: AudioConfig = None
+    ):
+        self.url = url
+        self.api_key = api_key
+        self.config = config or AudioConfig()
+        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self._receive_task: Optional[asyncio.Task] = None
+
+    async def connect(self) -> None:
+        """Establish WebSocket connection"""
+        # Build connection URL with parameters
+        params = (
+            f"?encoding={self.config.encoding.value}"
+            f"&sample_rate={self.config.sample_rate}"
+            f"&channels={self.config.channels}"
+        )
+
+        self.ws = await websockets.connect(
+            f"{self.url}{params}",
+            extra_headers={"Authorization": f"Bearer {self.api_key}"},
+            ping_interval=20,
+            ping_timeout=10
+        )
+
+    async def send_audio(self, audio_data: bytes) -> None:
+        """Send audio chunk to server"""
+        if not self.ws:
+            raise RuntimeError("Not connected")
+
+        message = {
+            "type": "audio",
+            "data": base64.b64encode(audio_data).decode()
+        }
+        await self.ws.send(json.dumps(message))
+
+    async def receive_messages(self) -> AsyncIterator[dict]:
+        """Receive messages from server"""
+        if not self.ws:
+            raise RuntimeError("Not connected")
+
+        async for message in self.ws:
+            data = json.loads(message)
+            yield data
+
+    async def stream_audio(
+        self,
+        audio_source: AsyncIterator[bytes],
+        on_transcript: Callable[[str, bool], None] = None,
+        on_audio: Callable[[bytes], None] = None
+    ) -> None:
+        """
+        Full-duplex audio streaming
+
+        Args:
+            audio_source: Async iterator yielding audio chunks
+            on_transcript: Callback for transcription results
+            on_audio: Callback for received audio
+        """
+        await self.connect()
+
+        async def send_loop():
+            async for chunk in audio_source:
+                await self.send_audio(chunk)
+
+        async def receive_loop():
+            async for message in self.receive_messages():
+                msg_type = message.get("type")
+
+                if msg_type == "transcript" and on_transcript:
+                    on_transcript(
+                        message.get("text", ""),
+                        message.get("is_final", False)
+                    )
+                elif msg_type == "audio" and on_audio:
+                    audio = base64.b64decode(message.get("data", ""))
+                    on_audio(audio)
+
+        await asyncio.gather(send_loop(), receive_loop())
+
+    async def close(self) -> None:
+        """Close the connection"""
+        if self.ws:
+            await self.ws.close()
+            self.ws = None
+
+
+# Usage example
+async def stream_conversation():
+    client = AudioStreamClient(
+        url="wss://api.example.com/v1/audio/stream",
+        api_key="your-api-key"
+    )
+
+    def on_transcript(text: str, is_final: bool):
+        prefix = "[FINAL]" if is_final else "[PARTIAL]"
+        print(f"{prefix} {text}")
+
+    def on_audio(audio: bytes):
+        # Play or process received audio
+        print(f"Received {len(audio)} bytes of audio")
+
+    # Simulate audio source
+    async def audio_source():
+        for _ in range(100):
+            yield b"\x00" * 320  # 20ms of silence at 16kHz
+            await asyncio.sleep(0.02)
+
+    await client.stream_audio(
+        audio_source=audio_source(),
+        on_transcript=on_transcript,
+        on_audio=on_audio
+    )
+```
+
+### Transcription APIs
+
+```
++------------------------------------------------------------------+
+|                    TRANSCRIPTION ENDPOINTS                        |
++------------------------------------------------------------------+
+|                                                                   |
+|  POST /v1/transcription (Batch)                                  |
+|  +----------------------------------------------------------+    |
+|  | Transcribe audio file                                     |    |
+|  |                                                           |    |
+|  | Request (multipart/form-data):                            |    |
+|  | - audio: <file>                                           |    |
+|  | - model: "nova-2"                                         |    |
+|  | - language: "en-US"                                       |    |
+|  |                                                           |    |
+|  | Response: 200 OK                                          |    |
+|  | {                                                         |    |
+|  |   "transcript": "Hello, how are you today?",             |    |
+|  |   "confidence": 0.98,                                     |    |
+|  |   "words": [                                              |    |
+|  |     {"word": "Hello", "start": 0.0, "end": 0.5},         |    |
+|  |     ...                                                   |    |
+|  |   ],                                                      |    |
+|  |   "duration": 2.5                                         |    |
+|  | }                                                         |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  WebSocket: wss://api.example.com/v1/transcription/stream        |
+|  +----------------------------------------------------------+    |
+|  | Real-time transcription                                   |    |
+|  |                                                           |    |
+|  | Connection: Send audio chunks, receive transcripts        |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+## Rate Limiting and Quotas
+
+### Understanding Rate Limits
+
+```
++------------------------------------------------------------------+
+|                    RATE LIMITING PATTERNS                         |
++------------------------------------------------------------------+
+|                                                                   |
+|  Rate Limit Headers                                               |
+|  +----------------------------------------------------------+    |
+|  | X-RateLimit-Limit: 100         # Requests per window      |    |
+|  | X-RateLimit-Remaining: 95      # Remaining requests       |    |
+|  | X-RateLimit-Reset: 1705312800  # Unix timestamp of reset  |    |
+|  | Retry-After: 30                # Seconds until retry OK   |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  Common Limits by Service Type                                    |
+|  +------------------------+-------------------+---------------+   |
+|  | Service                | Rate Limit        | Burst Limit   |   |
+|  +------------------------+-------------------+---------------+   |
+|  | LLM APIs               | 60 req/min        | 10 req/sec    |   |
+|  | STT Streaming          | 100 concurrent    | -             |   |
+|  | TTS                    | 100 req/min       | 20 req/sec    |   |
+|  | Telephony              | 50 calls/sec      | 100 calls     |   |
+|  +------------------------+-------------------+---------------+   |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+### Handling Rate Limits
+
+```python
+"""
+Rate limiting handler with exponential backoff
+"""
+
+import asyncio
+import time
+from typing import Optional
+from dataclasses import dataclass
+
+@dataclass
+class RateLimitInfo:
+    """Rate limit status from response headers"""
+    limit: int
+    remaining: int
+    reset_time: float
+    retry_after: Optional[float] = None
+
+class RateLimiter:
+    """Client-side rate limiting"""
+
+    def __init__(
+        self,
+        requests_per_minute: int = 60,
+        max_retries: int = 3,
+        base_delay: float = 1.0
+    ):
+        self.requests_per_minute = requests_per_minute
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.request_times: list[float] = []
+
+    async def acquire(self) -> None:
+        """Wait if necessary to stay within rate limits"""
+        now = time.time()
+
+        # Remove requests older than 1 minute
+        self.request_times = [
+            t for t in self.request_times
+            if now - t < 60
+        ]
+
+        # Check if at limit
+        if len(self.request_times) >= self.requests_per_minute:
+            # Wait until oldest request expires
+            wait_time = 60 - (now - self.request_times[0])
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+
+        self.request_times.append(time.time())
+
+    def parse_headers(self, headers: dict) -> Optional[RateLimitInfo]:
+        """Parse rate limit info from response headers"""
+        try:
+            return RateLimitInfo(
+                limit=int(headers.get("X-RateLimit-Limit", 0)),
+                remaining=int(headers.get("X-RateLimit-Remaining", 0)),
+                reset_time=float(headers.get("X-RateLimit-Reset", 0)),
+                retry_after=float(headers.get("Retry-After")) if "Retry-After" in headers else None
+            )
+        except (ValueError, TypeError):
+            return None
+
+
+class RateLimitedClient:
+    """API client with rate limiting"""
+
+    def __init__(self, base_client, rate_limiter: RateLimiter):
+        self.client = base_client
+        self.limiter = rate_limiter
+
+    async def request(self, method: str, endpoint: str, **kwargs) -> dict:
+        """Make rate-limited request with retries"""
+        last_error = None
+
+        for attempt in range(self.limiter.max_retries):
+            await self.limiter.acquire()
+
+            try:
+                response = await self.client.request(method, endpoint, **kwargs)
+                return response
+
+            except Exception as e:
+                last_error = e
+
+                # Check for rate limit error (429)
+                if hasattr(e, 'status_code') and e.status_code == 429:
+                    # Parse retry-after
+                    retry_after = getattr(e, 'retry_after', None)
+                    if retry_after:
+                        await asyncio.sleep(float(retry_after))
+                    else:
+                        # Exponential backoff
+                        delay = self.limiter.base_delay * (2 ** attempt)
+                        await asyncio.sleep(delay)
+                else:
+                    raise
+
+        raise last_error
+```
+
+## Webhook Handling
+
+### Webhook Security
+
+```python
+"""
+Webhook signature validation
+"""
+
+import hmac
+import hashlib
+import time
+from typing import Optional
+
+class WebhookValidator:
+    """Validate incoming webhook requests"""
+
+    def __init__(
+        self,
+        secret: str,
+        tolerance_seconds: int = 300
+    ):
+        self.secret = secret
+        self.tolerance = tolerance_seconds
+
+    def validate_signature(
+        self,
+        payload: bytes,
+        signature: str,
+        timestamp: Optional[str] = None
+    ) -> bool:
+        """
+        Validate webhook signature
+
+        Args:
+            payload: Raw request body
+            signature: Signature from header
+            timestamp: Optional timestamp for replay protection
+        """
+        # Check timestamp if provided
+        if timestamp:
+            try:
+                ts = int(timestamp)
+                if abs(time.time() - ts) > self.tolerance:
+                    return False
+            except ValueError:
+                return False
+
+        # Compute expected signature
+        if timestamp:
+            signed_payload = f"{timestamp}.{payload.decode()}"
+        else:
+            signed_payload = payload.decode()
+
+        expected = hmac.new(
+            self.secret.encode(),
+            signed_payload.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        # Constant-time comparison
+        return hmac.compare_digest(signature, expected)
+
+
+# Flask webhook handler example
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+validator = WebhookValidator(secret="your-webhook-secret")
+
+@app.route("/webhooks/call-status", methods=["POST"])
+def handle_call_status():
+    """Handle call status webhook"""
+    # Get signature from headers
+    signature = request.headers.get("X-Webhook-Signature")
+    timestamp = request.headers.get("X-Webhook-Timestamp")
+
+    if not signature:
+        abort(401, "Missing signature")
+
+    # Validate signature
+    if not validator.validate_signature(
+        request.data,
+        signature,
+        timestamp
+    ):
+        abort(401, "Invalid signature")
+
+    # Process webhook
+    data = request.json
+    call_uuid = data.get("call_uuid")
+    status = data.get("status")
+
+    print(f"Call {call_uuid} status: {status}")
+
+    # Always return 200 quickly to acknowledge
+    return "", 200
+```
+
+### Common Webhook Events
+
+```
++------------------------------------------------------------------+
+|                    WEBHOOK EVENT TYPES                            |
++------------------------------------------------------------------+
+|                                                                   |
+|  Call Events                                                      |
+|  +----------------------------------------------------------+    |
+|  | call.initiated    - Call has been initiated               |    |
+|  | call.ringing      - Remote party is ringing               |    |
+|  | call.answered     - Call was answered                     |    |
+|  | call.completed    - Call ended normally                   |    |
+|  | call.failed       - Call failed to connect                |    |
+|  | call.busy         - Remote party was busy                 |    |
+|  | call.no-answer    - No answer before timeout              |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  Transcription Events                                             |
+|  +----------------------------------------------------------+    |
+|  | transcription.started   - Transcription began             |    |
+|  | transcription.partial   - Interim result available        |    |
+|  | transcription.final     - Final transcript ready          |    |
+|  | transcription.error     - Transcription failed            |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  Recording Events                                                 |
+|  +----------------------------------------------------------+    |
+|  | recording.started  - Recording has begun                  |    |
+|  | recording.stopped  - Recording was stopped                |    |
+|  | recording.ready    - Recording file is available          |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+## API Versioning
+
+### Versioning Strategies
+
+```
++------------------------------------------------------------------+
+|                    API VERSIONING APPROACHES                      |
++------------------------------------------------------------------+
+|                                                                   |
+|  URL Path Versioning (Recommended)                               |
+|  +----------------------------------------------------------+    |
+|  | https://api.example.com/v1/calls                          |    |
+|  | https://api.example.com/v2/calls                          |    |
+|  |                                                           |    |
+|  | Pros: Clear, cacheable, easy to route                     |    |
+|  | Cons: URL changes between versions                        |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  Header Versioning                                                |
+|  +----------------------------------------------------------+    |
+|  | X-API-Version: 2024-01-15                                 |    |
+|  | Accept: application/vnd.example.v2+json                   |    |
+|  |                                                           |    |
+|  | Pros: Clean URLs, flexible                                |    |
+|  | Cons: Less discoverable, caching issues                   |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
+|  Query Parameter Versioning                                      |
+|  +----------------------------------------------------------+    |
+|  | https://api.example.com/calls?version=2                   |    |
+|  |                                                           |    |
+|  | Pros: Simple to implement                                 |    |
+|  | Cons: Can be forgotten, pollutes URLs                     |    |
+|  +----------------------------------------------------------+    |
+|                                                                   |
++------------------------------------------------------------------+
+```
+
+### Handling Version Differences
+
+```python
+"""
+API version handling
+"""
+
+from typing import Protocol, TypeVar, Generic
+from abc import abstractmethod
+
+T = TypeVar('T')
+
+class APIVersion:
+    """API version identifier"""
+
+    def __init__(self, version: str):
+        self.version = version
+        parts = version.lstrip('v').split('.')
+        self.major = int(parts[0])
+        self.minor = int(parts[1]) if len(parts) > 1 else 0
+
+    def __str__(self) -> str:
+        return self.version
+
+    def __ge__(self, other: 'APIVersion') -> bool:
+        return (self.major, self.minor) >= (other.major, other.minor)
+
+
+class VersionedClient:
+    """Client that handles multiple API versions"""
+
+    def __init__(self, base_url: str, api_key: str, version: str = "v1"):
+        self.base_url = base_url
+        self.api_key = api_key
+        self.version = APIVersion(version)
+
+    @property
+    def versioned_url(self) -> str:
+        """Get URL with version prefix"""
+        return f"{self.base_url}/{self.version}"
+
+    def format_call_response(self, data: dict) -> dict:
+        """Format call response based on API version"""
+        if self.version >= APIVersion("v2"):
+            # V2 uses snake_case consistently
+            return {
+                "call_uuid": data.get("call_uuid") or data.get("callUUID"),
+                "from_number": data.get("from_number") or data.get("from"),
+                "to_number": data.get("to_number") or data.get("to"),
+                "status": data.get("status"),
+                "created_at": data.get("created_at") or data.get("createdAt")
+            }
+        else:
+            # V1 legacy format
+            return data
+
+
+# Migration helper
+class APIMigrationHelper:
+    """Help migrate between API versions"""
+
+    @staticmethod
+    def v1_to_v2_call_request(v1_request: dict) -> dict:
+        """Convert v1 call request to v2 format"""
+        return {
+            "from_number": v1_request.get("from"),
+            "to_number": v1_request.get("to"),
+            "answer_url": v1_request.get("answer_url"),
+            "answer_method": v1_request.get("answer_method", "POST"),
+            "timeout_seconds": v1_request.get("ring_timeout", 30),
+            "machine_detection": {
+                "enabled": v1_request.get("machine_detection", False),
+                "timeout_ms": v1_request.get("machine_detection_time", 5000)
+            }
+        }
+
+    @staticmethod
+    def v2_to_v1_call_response(v2_response: dict) -> dict:
+        """Convert v2 call response to v1 format for backwards compatibility"""
+        return {
+            "callUUID": v2_response.get("call_uuid"),
+            "from": v2_response.get("from_number"),
+            "to": v2_response.get("to_number"),
+            "status": v2_response.get("status"),
+            "createdAt": v2_response.get("created_at")
+        }
+```
+
+## Error Responses
+
+### Standard Error Format
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "The 'to' parameter is required",
+    "details": {
+      "field": "to",
+      "reason": "missing"
+    },
+    "request_id": "req_abc123",
+    "documentation_url": "https://docs.example.com/errors/invalid_request"
+  }
+}
+```
+
+### Common Error Codes
+
+| HTTP Status | Error Code | Description |
+|-------------|------------|-------------|
+| 400 | invalid_request | Malformed request |
+| 401 | unauthorized | Invalid or missing API key |
+| 403 | forbidden | Insufficient permissions |
+| 404 | not_found | Resource does not exist |
+| 409 | conflict | Resource state conflict |
+| 422 | validation_error | Request validation failed |
+| 429 | rate_limited | Too many requests |
+| 500 | internal_error | Server error |
+| 503 | service_unavailable | Temporary outage |
+
+## Summary
+
+This API reference covers the essential patterns for voice AI integration:
+
+1. **REST APIs** for control plane operations (calls, configuration)
+2. **WebSocket APIs** for real-time audio streaming
+3. **Multiple authentication options** (API keys, Basic Auth, OAuth, JWT)
+4. **Rate limiting** with client-side handling and backoff
+5. **Webhook security** with signature validation
+6. **API versioning** for forward compatibility
+
+For working implementations, continue to the [Code Examples](/topics/implementation/code-examples) section, or review the [SDK Reference](/topics/implementation/sdk-reference) for language-specific guidance.
+
+<RelatedTopics
+  topics={[
+    {
+      title: "SDK Reference",
+      href: "/topics/implementation/sdk-reference",
+      description: "Language-specific SDK documentation for Python, Node.js, and Go"
+    },
+    {
+      title: "Code Examples",
+      href: "/topics/implementation/code-examples",
+      description: "Production-ready code examples and patterns"
+    },
+    {
+      title: "Deployment Guide",
+      href: "/topics/implementation/deployment",
+      description: "Deploy voice AI applications to production"
+    },
+    {
+      title: "Error Handling",
+      href: "/topics/agent-architecture/error-handling",
+      description: "Comprehensive error handling strategies for voice AI"
+    }
+  ]}
+/>

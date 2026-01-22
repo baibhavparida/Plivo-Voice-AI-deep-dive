@@ -1,0 +1,116 @@
+---
+title: "Infrastructure"
+description: "Technical infrastructure components for building production voice AI systems"
+---
+
+# Voice AI Infrastructure
+
+Building production-ready voice AI systems requires robust infrastructure that can handle real-time audio processing, telephony integration, and low-latency streaming. This section covers the essential infrastructure components you need to deploy voice AI at scale.
+
+## Infrastructure Components
+
+### Audio Pipeline
+
+The audio pipeline processes incoming speech and prepares outgoing audio for optimal quality and clarity.
+
+- [Signal Processing](/topics/infrastructure/audio-pipeline/signal-processing) - Digital audio fundamentals: sampling, encoding, filtering
+- [Noise Cancellation](/topics/infrastructure/audio-pipeline/noise-cancellation) - Removing background noise for clearer speech
+- [Echo Cancellation](/topics/infrastructure/audio-pipeline/echo-cancellation) - Preventing audio feedback in full-duplex calls
+- [Voice Activity Detection](/topics/infrastructure/audio-pipeline/voice-activity-detection) - Detecting when users are speaking
+
+### Telephony
+
+Connect your voice AI to phone networks and enable real-time voice communication.
+
+- [SIP Protocol](/topics/infrastructure/telephony/sip-protocol) - Session Initiation Protocol for call management
+- [WebRTC](/topics/infrastructure/telephony/webrtc) - Browser-based real-time communication
+- [PSTN Integration](/topics/infrastructure/telephony/pstn-integration) - Connecting to traditional phone networks
+- [Call Routing](/topics/infrastructure/telephony/call-routing) - Intelligent call distribution and IVR integration
+
+### Streaming
+
+Real-time streaming infrastructure for low-latency voice communication.
+
+- [WebSocket Protocols](/topics/infrastructure/streaming/websocket-protocols) - Bidirectional real-time audio streaming
+- [gRPC Streaming](/topics/infrastructure/streaming/grpc-streaming) - High-performance service communication
+- [Buffer Management](/topics/infrastructure/streaming/buffer-management) - Managing audio buffers for smooth playback
+- [Latency Optimization](/topics/infrastructure/streaming/latency-optimization) - Minimizing end-to-end delay
+
+## Architecture Overview
+
+A typical voice AI infrastructure stack looks like this:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Voice AI Infrastructure                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
+│  │   Telephony  │    │    Audio     │    │   Streaming  │       │
+│  │              │    │   Pipeline   │    │              │       │
+│  │  • SIP/SRTP  │───▶│  • DSP       │───▶│  • WebSocket │       │
+│  │  • WebRTC    │    │  • AEC/NC    │    │  • gRPC      │       │
+│  │  • PSTN      │    │  • VAD       │    │  • Buffers   │       │
+│  └──────────────┘    └──────────────┘    └──────────────┘       │
+│         │                   │                   │                │
+│         └───────────────────┼───────────────────┘                │
+│                             ▼                                    │
+│                    ┌──────────────┐                              │
+│                    │  Voice AI    │                              │
+│                    │   Engine     │                              │
+│                    │  (STT/LLM/   │                              │
+│                    │    TTS)      │                              │
+│                    └──────────────┘                              │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Key Metrics
+
+| Metric | Target | Description |
+|--------|--------|-------------|
+| **End-to-end latency** | < 500ms | Time from user speech end to agent speech start |
+| **Audio quality (MOS)** | > 4.0 | Mean Opinion Score for voice quality |
+| **Jitter** | < 30ms | Variation in packet arrival times |
+| **Packet loss** | < 1% | Percentage of lost audio packets |
+| **Concurrent calls** | Varies | Number of simultaneous conversations |
+
+## Latency Budget
+
+In a typical voice AI system, latency is distributed across components:
+
+| Component | Typical Latency | Notes |
+|-----------|-----------------|-------|
+| Network (user → server) | 20-50ms | Depends on geography |
+| Audio buffering | 20-60ms | Trade-off with quality |
+| Speech recognition | 100-300ms | Streaming reduces this |
+| LLM processing | 200-500ms | Model and prompt dependent |
+| Speech synthesis | 50-200ms | Streaming helps |
+| Network (server → user) | 20-50ms | Depends on geography |
+| **Total** | **400-1200ms** | Target < 500ms for natural feel |
+
+## Getting Started
+
+If you're setting up voice AI infrastructure:
+
+1. **Start with [Signal Processing](/topics/infrastructure/audio-pipeline/signal-processing)** - Understand audio fundamentals
+2. **Learn about [VAD](/topics/infrastructure/audio-pipeline/voice-activity-detection)** - Critical for turn-taking
+3. **Choose your telephony approach** - [WebRTC](/topics/infrastructure/telephony/webrtc) for web, [SIP](/topics/infrastructure/telephony/sip-protocol) for phone
+4. **Optimize for latency** - See [Latency Optimization](/topics/infrastructure/streaming/latency-optimization)
+
+## Provider Considerations
+
+When selecting infrastructure providers, consider:
+
+- **Telephony**: Plivo, Twilio, Vonage, Telnyx
+- **WebRTC**: Daily, LiveKit, Agora, Vonage
+- **Streaming**: Custom WebSocket, gRPC, or managed services
+- **Audio Processing**: Krisp, NVIDIA Maxine, or built-in SDK features
+
+## Next Steps
+
+After understanding infrastructure:
+
+- **[LLM Integration](/topics/llm-integration)** - Add intelligence to your voice AI
+- **[Agent Architecture](/topics/agent-architecture)** - Design patterns for agents
+- **[Enterprise](/topics/enterprise)** - Scale and secure your deployment

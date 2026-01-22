@@ -1,0 +1,1432 @@
+---
+title: "Sales and Outbound Voice AI"
+description: "Comprehensive guide to implementing voice AI for sales automation, including lead qualification, appointment setting, follow-up calls, and compliance with TCPA and do-not-call regulations"
+category: Use Cases
+tags:
+  - sales
+  - outbound
+  - lead-qualification
+  - tcpa
+  - crm-integration
+related:
+  - customer-service
+  - financial-services
+  - hospitality
+lastUpdated: "2025-01-21"
+difficulty: intermediate
+---
+
+# Sales and Outbound Voice AI
+
+Sales and outbound voice AI automates high-volume calling tasks while maintaining personalized engagement. From lead qualification to appointment setting and follow-up calls, voice AI enables sales organizations to scale their outreach while improving efficiency and compliance.
+
+## Sales Voice AI Landscape
+
+```
++-------------------------------------------------------------------------+
+|                    SALES VOICE AI APPLICATIONS                           |
++-------------------------------------------------------------------------+
+|                                                                          |
+|  INBOUND                OUTBOUND               HYBRID                    |
+|  +------------------+  +------------------+  +------------------+        |
+|  | Lead             |  | Cold Outreach    |  | Scheduled        |        |
+|  | Qualification    |  | Campaigns        |  | Callbacks        |        |
+|  +------------------+  +------------------+  +------------------+        |
+|  | Product          |  | Lead             |  | Demo             |        |
+|  | Inquiries        |  | Nurturing        |  | Scheduling       |        |
+|  +------------------+  +------------------+  +------------------+        |
+|  | Quote            |  | Appointment      |  | Follow-up        |        |
+|  | Requests         |  | Setting          |  | After Events     |        |
+|  +------------------+  +------------------+  +------------------+        |
+|  | Sales Support    |  | Survey &         |  | Win-back         |        |
+|  |                  |  | Feedback         |  | Campaigns        |        |
+|  +------------------+  +------------------+  +------------------+        |
+|                                                                          |
++-------------------------------------------------------------------------+
+```
+
+## Lead Qualification
+
+Voice AI can qualify leads at scale, gathering key information and scoring prospects before human sales engagement.
+
+### Lead Qualification System
+
+```python
+class LeadQualificationAgent:
+    """Voice AI agent for lead qualification"""
+
+    def __init__(self, config: SalesConfig):
+        self.crm = CRMIntegration(config.crm)
+        self.qualification_framework = QualificationFramework(config.scoring)
+        self.calendar_service = CalendarService(config.calendar)
+        self.analytics = SalesAnalytics(config.analytics)
+
+    async def handle_inbound_inquiry(
+        self,
+        call: InboundCall
+    ) -> QualificationResult:
+        """Handle and qualify inbound sales inquiry"""
+
+        # Check if existing lead
+        existing_lead = await self.crm.find_lead_by_phone(call.caller_id)
+
+        if existing_lead:
+            await call.speak(
+                f"Hello {existing_lead.first_name}, thank you for calling "
+                f"{self.config.company_name}. How can I help you today?"
+            )
+        else:
+            await call.speak(
+                f"Thank you for calling {self.config.company_name}. "
+                f"I'm here to help you learn about our solutions. "
+                f"May I start by getting your name?"
+            )
+            contact_info = await self.collect_contact_info(call)
+            existing_lead = await self.crm.create_lead(contact_info)
+
+        # Understand their interest
+        await call.speak(
+            "What brings you to us today? Are you looking to solve a "
+            "specific challenge, or exploring options?"
+        )
+
+        interest_response = await call.listen()
+        interest = await self.analyze_interest(interest_response)
+
+        # Run BANT qualification
+        qualification_data = await self.collect_bant_data(
+            call, existing_lead, interest
+        )
+
+        # Score the lead
+        score = self.qualification_framework.score(qualification_data)
+
+        # Update CRM
+        await self.crm.update_lead(
+            lead_id=existing_lead.id,
+            qualification_data=qualification_data,
+            score=score
+        )
+
+        # Route based on score
+        if score.is_sales_ready:
+            await self.route_to_sales(call, existing_lead, qualification_data)
+        elif score.is_marketing_qualified:
+            await self.schedule_nurturing(call, existing_lead)
+        else:
+            await self.provide_resources(call, existing_lead, interest)
+
+        return QualificationResult(
+            lead_id=existing_lead.id,
+            score=score,
+            qualification_data=qualification_data
+        )
+
+    async def collect_bant_data(
+        self,
+        call: Call,
+        lead: Lead,
+        interest: InterestAnalysis
+    ) -> BANTData:
+        """Collect BANT (Budget, Authority, Need, Timeline) qualification data"""
+
+        bant = BANTData()
+
+        # Budget
+        bant.budget = await self.assess_budget(call, interest)
+
+        # Authority
+        bant.authority = await self.assess_authority(call, lead)
+
+        # Need
+        bant.need = await self.assess_need(call, interest)
+
+        # Timeline
+        bant.timeline = await self.assess_timeline(call)
+
+        return bant
+
+    async def assess_budget(
+        self,
+        call: Call,
+        interest: InterestAnalysis
+    ) -> BudgetAssessment:
+        """Assess budget qualification"""
+
+        # Indirect budget question based on company size/interest
+        if interest.solution_area:
+            await call.speak(
+                f"To help recommend the right solution for "
+                f"{interest.solution_area}, could you give me a sense of "
+                f"the scope you're considering? For instance, how many "
+                f"users or locations would this cover?"
+            )
+        else:
+            await call.speak(
+                "To better understand your needs, could you tell me a bit "
+                "about your organization's size and the scope of what "
+                "you're looking for?"
+            )
+
+        response = await call.listen()
+
+        # Extract budget signals
+        budget_signals = await self.nlp_engine.extract_budget_signals(response)
+
+        # Estimate budget range based on signals
+        estimated_range = self.estimate_budget_range(budget_signals)
+
+        # If unclear, ask more directly
+        if estimated_range.confidence < 0.5:
+            await call.speak(
+                "Have you established a budget for this initiative, "
+                "or are you still in the exploration phase?"
+            )
+            budget_response = await call.listen()
+            budget_status = await self.classify_budget_status(budget_response)
+
+            return BudgetAssessment(
+                has_budget=budget_status.has_budget,
+                budget_range=estimated_range,
+                budget_stage=budget_status.stage
+            )
+
+        return BudgetAssessment(
+            has_budget=True,
+            budget_range=estimated_range,
+            budget_stage="established"
+        )
+
+    async def assess_authority(
+        self,
+        call: Call,
+        lead: Lead
+    ) -> AuthorityAssessment:
+        """Assess decision-making authority"""
+
+        await call.speak(
+            "So I can make sure I'm providing the most relevant information, "
+            "what's your role in evaluating solutions like ours?"
+        )
+
+        response = await call.listen()
+
+        # Extract role and authority signals
+        role_info = await self.nlp_engine.extract_role_info(response)
+
+        # Ask about decision process
+        await call.speak(
+            "And when it comes to making a decision on a solution like this, "
+            "who else would typically be involved?"
+        )
+
+        process_response = await call.listen()
+        decision_process = await self.nlp_engine.extract_decision_process(
+            process_response
+        )
+
+        return AuthorityAssessment(
+            role=role_info.role,
+            is_decision_maker=role_info.is_decision_maker,
+            influencer_level=role_info.influence_level,
+            buying_committee=decision_process.stakeholders,
+            decision_process=decision_process.process_type
+        )
+
+    async def assess_need(
+        self,
+        call: Call,
+        interest: InterestAnalysis
+    ) -> NeedAssessment:
+        """Assess need/pain point qualification"""
+
+        if interest.pain_points:
+            # Follow up on identified pain points
+            pain_point = interest.pain_points[0]
+            await call.speak(
+                f"You mentioned {pain_point}. Could you tell me more about "
+                f"how that's impacting your business today?"
+            )
+        else:
+            await call.speak(
+                "What challenges are you hoping to address? What does success "
+                "look like for you?"
+            )
+
+        response = await call.listen()
+
+        # Analyze need severity and specificity
+        need_analysis = await self.nlp_engine.analyze_need(response)
+
+        # Quantify impact if possible
+        if need_analysis.has_measurable_impact:
+            await call.speak(
+                "Do you have a sense of how much this is costing you in terms "
+                "of time, money, or other resources?"
+            )
+            impact_response = await call.listen()
+            need_analysis.quantified_impact = await self.parse_impact(
+                impact_response
+            )
+
+        return NeedAssessment(
+            pain_points=need_analysis.pain_points,
+            severity=need_analysis.severity,
+            specificity=need_analysis.specificity,
+            quantified_impact=need_analysis.quantified_impact,
+            use_cases=need_analysis.use_cases
+        )
+
+    async def assess_timeline(
+        self,
+        call: Call
+    ) -> TimelineAssessment:
+        """Assess purchase timeline"""
+
+        await call.speak(
+            "What's driving your timeline on this? Is there a particular "
+            "date or event you're working toward?"
+        )
+
+        response = await call.listen()
+
+        timeline_info = await self.nlp_engine.extract_timeline(response)
+
+        return TimelineAssessment(
+            urgency=timeline_info.urgency,
+            target_date=timeline_info.target_date,
+            driver=timeline_info.driver,
+            buying_stage=timeline_info.buying_stage
+        )
+```
+
+### Lead Scoring Framework
+
+```python
+class QualificationFramework:
+    """Lead scoring and qualification framework"""
+
+    def __init__(self, config: ScoringConfig):
+        self.config = config
+        self.ml_scorer = MLLeadScorer(config.model)
+
+    def score(self, bant_data: BANTData) -> LeadScore:
+        """Score lead based on BANT data"""
+
+        scores = {
+            'budget': self.score_budget(bant_data.budget),
+            'authority': self.score_authority(bant_data.authority),
+            'need': self.score_need(bant_data.need),
+            'timeline': self.score_timeline(bant_data.timeline)
+        }
+
+        # Weighted total
+        weights = self.config.bant_weights
+        total_score = sum(
+            scores[k] * weights[k] for k in scores
+        )
+
+        # Determine qualification status
+        is_mql = total_score >= self.config.mql_threshold
+        is_sql = total_score >= self.config.sql_threshold
+
+        # ML enhancement for conversion probability
+        conversion_probability = self.ml_scorer.predict_conversion(bant_data)
+
+        return LeadScore(
+            total_score=total_score,
+            component_scores=scores,
+            is_marketing_qualified=is_mql,
+            is_sales_ready=is_sql,
+            conversion_probability=conversion_probability,
+            recommended_action=self.get_recommended_action(
+                total_score, bant_data
+            )
+        )
+
+    def score_budget(self, budget: BudgetAssessment) -> float:
+        """Score budget qualification"""
+
+        if not budget.has_budget:
+            return 0.2
+
+        if budget.budget_range:
+            if budget.budget_range.min >= self.config.ideal_deal_size:
+                return 1.0
+            elif budget.budget_range.min >= self.config.min_deal_size:
+                return 0.7
+            else:
+                return 0.4
+
+        if budget.budget_stage == "established":
+            return 0.8
+        elif budget.budget_stage == "planning":
+            return 0.5
+
+        return 0.3
+
+    def score_authority(self, authority: AuthorityAssessment) -> float:
+        """Score authority qualification"""
+
+        if authority.is_decision_maker:
+            return 1.0
+
+        if authority.influencer_level == "high":
+            return 0.8
+        elif authority.influencer_level == "medium":
+            return 0.6
+
+        # Bonus for knowing the buying committee
+        if authority.buying_committee and len(authority.buying_committee) > 0:
+            return 0.5
+
+        return 0.3
+
+    def score_need(self, need: NeedAssessment) -> float:
+        """Score need qualification"""
+
+        base_score = 0.0
+
+        # Severity
+        severity_scores = {"critical": 1.0, "high": 0.8, "medium": 0.5, "low": 0.2}
+        base_score += severity_scores.get(need.severity, 0.3) * 0.4
+
+        # Specificity
+        specificity_scores = {"very_specific": 1.0, "specific": 0.7, "general": 0.4}
+        base_score += specificity_scores.get(need.specificity, 0.3) * 0.3
+
+        # Quantified impact bonus
+        if need.quantified_impact:
+            base_score += 0.2
+
+        # Use case alignment
+        if need.use_cases:
+            alignment = self.calculate_use_case_alignment(need.use_cases)
+            base_score += alignment * 0.1
+
+        return min(base_score, 1.0)
+
+    def score_timeline(self, timeline: TimelineAssessment) -> float:
+        """Score timeline qualification"""
+
+        urgency_scores = {
+            "immediate": 1.0,
+            "this_quarter": 0.9,
+            "this_half": 0.7,
+            "this_year": 0.5,
+            "exploratory": 0.2
+        }
+
+        base_score = urgency_scores.get(timeline.urgency, 0.3)
+
+        # Bonus for specific target date
+        if timeline.target_date:
+            days_until = (timeline.target_date - date.today()).days
+            if days_until <= 30:
+                base_score = min(base_score + 0.2, 1.0)
+            elif days_until <= 90:
+                base_score = min(base_score + 0.1, 1.0)
+
+        # Driver bonus (event-driven is more urgent)
+        if timeline.driver in ["contract_expiration", "compliance_deadline", "event"]:
+            base_score = min(base_score + 0.15, 1.0)
+
+        return base_score
+```
+
+## Appointment Setting
+
+Voice AI excels at high-volume appointment setting, handling scheduling logistics and calendar coordination.
+
+### Appointment Setting Agent
+
+```python
+class AppointmentSettingAgent:
+    """Voice AI agent for setting sales appointments"""
+
+    def __init__(self, config: AppointmentConfig):
+        self.calendar = CalendarIntegration(config.calendar)
+        self.crm = CRMIntegration(config.crm)
+        self.sales_team = SalesTeamManager(config.sales_team)
+
+    async def set_appointment_outbound(
+        self,
+        lead: Lead,
+        campaign: OutboundCampaign
+    ) -> AppointmentResult:
+        """Make outbound call to set appointment"""
+
+        # Check compliance before calling
+        compliance = await self.check_calling_compliance(lead)
+        if not compliance.can_call:
+            return AppointmentResult(
+                success=False,
+                reason=compliance.reason
+            )
+
+        call = await self.telephony.make_call(
+            to=lead.phone,
+            caller_id=campaign.caller_id
+        )
+
+        if not call.answered:
+            await self.handle_no_answer(lead, campaign)
+            return AppointmentResult(success=False, reason="no_answer")
+
+        # Opening
+        await call.speak(
+            f"Hi, this is {self.config.assistant_name} from "
+            f"{self.config.company_name}. Am I speaking with {lead.first_name}?"
+        )
+
+        response = await call.listen()
+
+        if not await self.confirm_identity(response, lead):
+            await call.speak(
+                "I'm sorry, I may have the wrong number. Have a great day."
+            )
+            await call.end()
+            return AppointmentResult(success=False, reason="wrong_contact")
+
+        # Personalized value prop
+        value_prop = self.generate_value_prop(lead, campaign)
+        await call.speak(value_prop)
+
+        # Interest check
+        await call.speak(
+            "Would you have 15 minutes this week for a brief conversation "
+            "to see if there might be a fit?"
+        )
+
+        response = await call.listen()
+        intent = await self.classify_response_intent(response)
+
+        if intent == ResponseIntent.INTERESTED:
+            return await self.schedule_appointment(call, lead, campaign)
+        elif intent == ResponseIntent.NOT_NOW:
+            return await self.handle_not_now(call, lead, campaign)
+        elif intent == ResponseIntent.NOT_INTERESTED:
+            return await self.handle_not_interested(call, lead, campaign)
+        elif intent == ResponseIntent.QUESTION:
+            return await self.handle_question(call, lead, campaign, response)
+        else:
+            return await self.handle_unclear(call, lead, campaign)
+
+    async def schedule_appointment(
+        self,
+        call: Call,
+        lead: Lead,
+        campaign: OutboundCampaign
+    ) -> AppointmentResult:
+        """Schedule the appointment"""
+
+        # Find appropriate sales rep
+        rep = await self.sales_team.get_best_rep_for_lead(lead)
+
+        # Get available slots
+        available_slots = await self.calendar.get_available_slots(
+            rep_id=rep.id,
+            duration_minutes=campaign.meeting_duration,
+            days_ahead=7
+        )
+
+        if not available_slots:
+            await call.speak(
+                f"{rep.first_name}'s calendar is quite full this week. "
+                f"Let me check next week's availability."
+            )
+            available_slots = await self.calendar.get_available_slots(
+                rep_id=rep.id,
+                duration_minutes=campaign.meeting_duration,
+                days_ahead=14,
+                skip_days=7
+            )
+
+        # Present options
+        slot_options = self.format_slot_options(available_slots[:4])
+        await call.speak(
+            f"I have some times available with {rep.first_name}: {slot_options}. "
+            f"What works best for you?"
+        )
+
+        response = await call.listen()
+        selected_slot = await self.match_time_preference(response, available_slots)
+
+        if not selected_slot:
+            await call.speak(
+                "I didn't quite catch that. Could you tell me which day "
+                "and time works best?"
+            )
+            response = await call.listen()
+            selected_slot = await self.match_time_preference(response, available_slots)
+
+        if not selected_slot:
+            # Offer to send calendar link
+            await call.speak(
+                "Let me send you a link where you can pick a time that "
+                "works perfectly for your schedule. Would that be helpful?"
+            )
+            if await self.confirm_affirmative(call):
+                await self.send_booking_link(lead, rep, campaign)
+                return AppointmentResult(
+                    success=True,
+                    type="booking_link_sent",
+                    rep=rep
+                )
+
+        # Confirm appointment
+        await call.speak(
+            f"Perfect. I'm booking you for {selected_slot.formatted_datetime} "
+            f"with {rep.first_name} {rep.last_name}. You'll receive a "
+            f"calendar invite and reminder at {lead.email}. "
+            f"Is that the best email to reach you?"
+        )
+
+        response = await call.listen()
+        if not await self.nlp_engine.is_affirmative(response):
+            # Get correct email
+            email = await self.collect_email(call)
+            lead.email = email
+
+        # Book the appointment
+        appointment = await self.calendar.book_appointment(
+            slot=selected_slot,
+            lead=lead,
+            rep=rep,
+            meeting_type=campaign.meeting_type
+        )
+
+        # Update CRM
+        await self.crm.log_appointment(
+            lead_id=lead.id,
+            appointment=appointment,
+            campaign_id=campaign.id,
+            booked_by="voice_ai"
+        )
+
+        await call.speak(
+            f"You're all set! {rep.first_name} is looking forward to speaking "
+            f"with you. Have a great day!"
+        )
+
+        return AppointmentResult(
+            success=True,
+            appointment=appointment,
+            rep=rep
+        )
+
+    def generate_value_prop(
+        self,
+        lead: Lead,
+        campaign: OutboundCampaign
+    ) -> str:
+        """Generate personalized value proposition"""
+
+        # Use lead data for personalization
+        personalizations = []
+
+        if lead.company_size:
+            if lead.company_size == "enterprise":
+                personalizations.append("enterprise organizations like yours")
+            elif lead.company_size == "mid_market":
+                personalizations.append("growing companies like yours")
+
+        if lead.industry:
+            personalizations.append(f"companies in {lead.industry}")
+
+        if lead.lead_source == "content_download":
+            personalizations.append(
+                f"based on your interest in {lead.content_title}"
+            )
+
+        base_value_prop = campaign.value_proposition
+
+        if personalizations:
+            context = f"We've been helping {personalizations[0]}"
+            return f"{context} {base_value_prop}"
+
+        return f"We help companies {base_value_prop}"
+```
+
+## Follow-up Calls
+
+Automated follow-up calls maintain engagement without overwhelming sales teams.
+
+### Follow-up Campaign System
+
+```python
+class FollowUpCampaignSystem:
+    """Automated follow-up call campaigns"""
+
+    def __init__(self, config: FollowUpConfig):
+        self.campaign_manager = CampaignManager(config.campaigns)
+        self.timing_optimizer = CallTimingOptimizer(config.timing)
+        self.personalization_engine = PersonalizationEngine(config.personalization)
+
+    async def execute_followup(
+        self,
+        followup: ScheduledFollowUp
+    ) -> FollowUpResult:
+        """Execute scheduled follow-up call"""
+
+        lead = await self.crm.get_lead(followup.lead_id)
+
+        # Check optimal timing
+        if not await self.timing_optimizer.is_optimal_time(lead):
+            # Reschedule for better time
+            new_time = await self.timing_optimizer.get_next_optimal_time(lead)
+            await self.campaign_manager.reschedule_followup(followup, new_time)
+            return FollowUpResult(status="rescheduled", new_time=new_time)
+
+        call = await self.telephony.make_call(
+            to=lead.phone,
+            caller_id=followup.campaign.caller_id
+        )
+
+        if not call.answered:
+            return await self.handle_no_answer_followup(lead, followup)
+
+        # Get previous interaction context
+        context = await self.crm.get_interaction_history(lead.id)
+
+        # Personalized opening based on context
+        opening = self.personalization_engine.generate_followup_opening(
+            lead, context, followup.reason
+        )
+        await call.speak(opening)
+
+        response = await call.listen()
+        intent = await self.classify_followup_response(response)
+
+        if intent == FollowUpIntent.READY_TO_PROCEED:
+            return await self.handle_ready_to_proceed(call, lead, followup)
+        elif intent == FollowUpIntent.NEED_MORE_INFO:
+            return await self.handle_need_more_info(call, lead, followup)
+        elif intent == FollowUpIntent.NOT_INTERESTED:
+            return await self.handle_not_interested(call, lead, followup)
+        elif intent == FollowUpIntent.BAD_TIMING:
+            return await self.handle_bad_timing(call, lead, followup)
+        else:
+            return await self.handle_conversation(call, lead, followup)
+
+    async def handle_ready_to_proceed(
+        self,
+        call: Call,
+        lead: Lead,
+        followup: ScheduledFollowUp
+    ) -> FollowUpResult:
+        """Handle lead ready to proceed"""
+
+        await call.speak(
+            "That's great to hear! Let me connect you with the right person "
+            "on our team who can help you move forward."
+        )
+
+        # Find available rep
+        rep = await self.sales_team.get_available_rep_for_lead(lead)
+
+        if rep and rep.is_available_now:
+            # Warm transfer
+            await call.speak(
+                f"I have {rep.first_name} available right now. "
+                f"Let me transfer you."
+            )
+
+            await call.transfer(
+                to=rep.extension,
+                announce=f"Hot lead transfer: {lead.first_name} from {lead.company}"
+            )
+
+            return FollowUpResult(
+                status="transferred",
+                outcome="hot_transfer",
+                rep=rep
+            )
+        else:
+            # Schedule callback
+            await call.speak(
+                "Let me schedule a call with a specialist. What time works "
+                "best for you today or tomorrow?"
+            )
+            appointment = await self.schedule_callback(call, lead)
+
+            return FollowUpResult(
+                status="completed",
+                outcome="callback_scheduled",
+                appointment=appointment
+            )
+
+    async def handle_bad_timing(
+        self,
+        call: Call,
+        lead: Lead,
+        followup: ScheduledFollowUp
+    ) -> FollowUpResult:
+        """Handle bad timing response"""
+
+        await call.speak(
+            "I completely understand. When would be a better time to connect?"
+        )
+
+        response = await call.listen()
+        preferred_time = await self.nlp_engine.parse_future_time(response)
+
+        if preferred_time:
+            await call.speak(
+                f"I'll give you a call back {preferred_time.formatted}. "
+                f"Have a great day, {lead.first_name}!"
+            )
+
+            # Schedule callback
+            await self.campaign_manager.schedule_followup(
+                lead_id=lead.id,
+                scheduled_time=preferred_time.datetime,
+                reason="callback_requested",
+                campaign_id=followup.campaign.id
+            )
+
+            return FollowUpResult(
+                status="completed",
+                outcome="callback_scheduled",
+                callback_time=preferred_time.datetime
+            )
+        else:
+            await call.speak(
+                "No problem at all. I'll follow up in a few days. "
+                "Have a great day!"
+            )
+
+            return FollowUpResult(
+                status="completed",
+                outcome="will_retry_later"
+            )
+```
+
+## Survey and Feedback Collection
+
+Voice AI can collect valuable feedback through post-interaction and satisfaction surveys.
+
+### Survey System
+
+```python
+class VoiceSurveySystem:
+    """Voice-based survey and feedback collection"""
+
+    def __init__(self, config: SurveyConfig):
+        self.survey_engine = SurveyEngine(config.surveys)
+        self.analytics = SurveyAnalytics(config.analytics)
+        self.sentiment_analyzer = SentimentAnalyzer()
+
+    async def conduct_survey(
+        self,
+        survey: Survey,
+        contact: Contact
+    ) -> SurveyResult:
+        """Conduct voice survey"""
+
+        call = await self.telephony.make_call(
+            to=contact.phone,
+            caller_id=survey.caller_id
+        )
+
+        if not call.answered:
+            return SurveyResult(status="no_answer")
+
+        # Introduction
+        await call.speak(
+            f"Hi {contact.first_name}, this is {self.config.company_name} "
+            f"calling to get your quick feedback on your recent experience. "
+            f"This will only take about {survey.estimated_minutes} minutes. "
+            f"Do you have a moment?"
+        )
+
+        response = await call.listen()
+        if not await self.nlp_engine.is_affirmative(response):
+            await call.speak(
+                "No problem. Thank you for your time. Have a great day!"
+            )
+            return SurveyResult(status="declined")
+
+        # Conduct survey
+        responses = {}
+        sentiment_scores = []
+
+        for question in survey.questions:
+            response_data = await self.ask_question(call, question)
+            responses[question.id] = response_data
+
+            if response_data.text:
+                sentiment = await self.sentiment_analyzer.analyze(
+                    response_data.text
+                )
+                sentiment_scores.append(sentiment.score)
+
+            # Check for strong negative sentiment - offer escalation
+            if sentiment and sentiment.score < -0.7:
+                escalate = await self.offer_escalation(call, contact)
+                if escalate:
+                    responses[question.id].escalation_requested = True
+
+        # Closing
+        await call.speak(
+            "Thank you so much for your feedback. It really helps us improve. "
+            "Have a wonderful day!"
+        )
+
+        # Calculate results
+        overall_sentiment = mean(sentiment_scores) if sentiment_scores else 0
+
+        # Store results
+        result = SurveyResult(
+            status="completed",
+            responses=responses,
+            overall_sentiment=overall_sentiment,
+            nps_score=self.extract_nps_score(responses, survey)
+        )
+
+        await self.store_survey_result(survey.id, contact.id, result)
+
+        return result
+
+    async def ask_question(
+        self,
+        call: Call,
+        question: SurveyQuestion
+    ) -> SurveyResponse:
+        """Ask a single survey question"""
+
+        await call.speak(question.text)
+
+        if question.type == QuestionType.RATING:
+            await call.speak(question.rating_instruction)
+
+            response = await call.listen()
+            rating = await self.nlp_engine.parse_rating(
+                response,
+                min_value=question.min_rating,
+                max_value=question.max_rating
+            )
+
+            return SurveyResponse(
+                question_id=question.id,
+                rating=rating,
+                raw_response=response
+            )
+
+        elif question.type == QuestionType.OPEN_ENDED:
+            response = await call.listen(timeout_seconds=30)
+
+            return SurveyResponse(
+                question_id=question.id,
+                text=response,
+                raw_response=response
+            )
+
+        elif question.type == QuestionType.YES_NO:
+            response = await call.listen()
+            is_yes = await self.nlp_engine.is_affirmative(response)
+
+            return SurveyResponse(
+                question_id=question.id,
+                boolean_value=is_yes,
+                raw_response=response
+            )
+
+        elif question.type == QuestionType.MULTIPLE_CHOICE:
+            options_text = ", ".join([
+                f"{i+1} for {opt}" for i, opt in enumerate(question.options)
+            ])
+            await call.speak(f"Your options are: {options_text}")
+
+            response = await call.listen()
+            selected = await self.nlp_engine.match_option(
+                response, question.options
+            )
+
+            return SurveyResponse(
+                question_id=question.id,
+                selected_option=selected,
+                raw_response=response
+            )
+
+    async def offer_escalation(
+        self,
+        call: Call,
+        contact: Contact
+    ) -> bool:
+        """Offer escalation to human for negative feedback"""
+
+        await call.speak(
+            "I'm sorry to hear about your experience. Would you like me to "
+            "have someone from our customer success team reach out to you "
+            "to address this?"
+        )
+
+        response = await call.listen()
+        wants_escalation = await self.nlp_engine.is_affirmative(response)
+
+        if wants_escalation:
+            await call.speak(
+                "Absolutely. A member of our team will reach out within "
+                "one business day. Is there anything specific you'd like "
+                "them to address?"
+            )
+
+            concerns = await call.listen()
+
+            # Create escalation ticket
+            await self.create_escalation(contact, concerns)
+
+            await call.speak(
+                "I've noted your concerns. Thank you for bringing this to "
+                "our attention."
+            )
+
+        return wants_escalation
+```
+
+## Campaign Management
+
+Managing outbound campaigns at scale requires intelligent orchestration and optimization.
+
+### Campaign Orchestration
+
+```python
+class OutboundCampaignManager:
+    """Manage large-scale outbound voice campaigns"""
+
+    def __init__(self, config: CampaignConfig):
+        self.dialer = PredictiveDialer(config.dialer)
+        self.compliance = ComplianceEngine(config.compliance)
+        self.analytics = CampaignAnalytics(config.analytics)
+        self.optimization = CampaignOptimizer(config.optimization)
+
+    async def execute_campaign(
+        self,
+        campaign: OutboundCampaign
+    ) -> CampaignExecutionResult:
+        """Execute outbound campaign"""
+
+        # Load and filter call list
+        call_list = await self.load_call_list(campaign)
+        filtered_list = await self.compliance.filter_list(call_list, campaign)
+
+        # Log filtering results
+        await self.analytics.log_list_filtering(
+            campaign_id=campaign.id,
+            original_size=len(call_list),
+            filtered_size=len(filtered_list),
+            filters_applied=self.compliance.last_filters
+        )
+
+        # Prioritize calls
+        prioritized_list = await self.optimization.prioritize_calls(
+            filtered_list, campaign
+        )
+
+        # Execute with rate limiting
+        results = []
+        concurrent_calls = campaign.max_concurrent_calls
+
+        async with asyncio.Semaphore(concurrent_calls) as semaphore:
+            tasks = []
+
+            for lead in prioritized_list:
+                async with semaphore:
+                    # Check calling window
+                    if not await self.compliance.in_calling_window(lead):
+                        continue
+
+                    task = asyncio.create_task(
+                        self.make_campaign_call(lead, campaign)
+                    )
+                    tasks.append(task)
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Generate campaign summary
+        summary = self.generate_campaign_summary(results, campaign)
+
+        return CampaignExecutionResult(
+            campaign_id=campaign.id,
+            calls_attempted=len(results),
+            summary=summary
+        )
+
+    async def make_campaign_call(
+        self,
+        lead: Lead,
+        campaign: OutboundCampaign
+    ) -> CallResult:
+        """Make individual campaign call"""
+
+        # Pre-call compliance check
+        compliance_check = await self.compliance.pre_call_check(lead, campaign)
+
+        if not compliance_check.passed:
+            return CallResult(
+                lead_id=lead.id,
+                status="compliance_blocked",
+                reason=compliance_check.reason
+            )
+
+        # Select call handler based on campaign type
+        if campaign.type == CampaignType.APPOINTMENT_SETTING:
+            agent = AppointmentSettingAgent(self.config)
+            return await agent.set_appointment_outbound(lead, campaign)
+        elif campaign.type == CampaignType.LEAD_QUALIFICATION:
+            agent = LeadQualificationAgent(self.config)
+            return await agent.qualify_outbound(lead, campaign)
+        elif campaign.type == CampaignType.SURVEY:
+            agent = VoiceSurveySystem(self.config)
+            return await agent.conduct_survey(campaign.survey, lead)
+        else:
+            agent = GeneralOutboundAgent(self.config)
+            return await agent.handle_call(lead, campaign)
+
+    async def optimize_campaign_realtime(
+        self,
+        campaign: OutboundCampaign
+    ) -> None:
+        """Real-time campaign optimization"""
+
+        while campaign.is_active:
+            # Get current performance metrics
+            metrics = await self.analytics.get_realtime_metrics(campaign.id)
+
+            # Adjust calling patterns based on connect rates
+            if metrics.connect_rate < 0.15:
+                # Low connect rate - adjust timing or list
+                optimal_times = await self.optimization.find_optimal_times(
+                    campaign, metrics
+                )
+                await self.adjust_calling_schedule(campaign, optimal_times)
+
+            # Adjust messaging based on conversion rates
+            if metrics.conversion_rate < campaign.target_conversion:
+                # Test alternative scripts
+                await self.optimization.test_alternative_script(campaign)
+
+            # Pacing adjustments
+            if metrics.current_pace < campaign.target_pace:
+                await self.dialer.increase_attempts(campaign)
+            elif metrics.current_pace > campaign.target_pace * 1.2:
+                await self.dialer.decrease_attempts(campaign)
+
+            await asyncio.sleep(300)  # Check every 5 minutes
+```
+
+## CRM Integration
+
+Seamless CRM integration ensures all voice interactions are captured and actionable.
+
+### CRM Integration Patterns
+
+```python
+class SalesCRMIntegration:
+    """CRM integration for sales voice AI"""
+
+    def __init__(self, config: CRMConfig):
+        self.crm_client = self.init_crm_client(config)
+        self.field_mapper = FieldMapper(config.field_mapping)
+        self.automation_rules = AutomationRules(config.automation)
+
+    async def log_call_activity(
+        self,
+        call: CompletedCall,
+        outcome: CallOutcome
+    ) -> str:
+        """Log call activity to CRM"""
+
+        # Map call data to CRM fields
+        activity_data = self.field_mapper.map_call_to_activity({
+            'subject': self.generate_activity_subject(call, outcome),
+            'description': call.transcript_summary,
+            'duration': call.duration_seconds,
+            'outcome': outcome.status,
+            'type': 'Voice AI Call',
+            'lead_id': call.lead_id,
+            'direction': call.direction,
+            'recording_url': call.recording_url
+        })
+
+        # Create activity in CRM
+        activity_id = await self.crm_client.create_activity(activity_data)
+
+        # Update lead status based on outcome
+        await self.update_lead_status(call.lead_id, outcome)
+
+        # Trigger automation rules
+        await self.automation_rules.process_call_outcome(
+            call, outcome, activity_id
+        )
+
+        return activity_id
+
+    async def update_lead_status(
+        self,
+        lead_id: str,
+        outcome: CallOutcome
+    ) -> None:
+        """Update lead status based on call outcome"""
+
+        status_mapping = {
+            OutcomeStatus.APPOINTMENT_SET: "Qualified - Appointment Set",
+            OutcomeStatus.INTERESTED: "Qualified - Interested",
+            OutcomeStatus.NOT_INTERESTED: "Disqualified - Not Interested",
+            OutcomeStatus.DO_NOT_CALL: "Disqualified - DNC",
+            OutcomeStatus.BAD_NUMBER: "Disqualified - Bad Number",
+            OutcomeStatus.NO_ANSWER: None,  # Don't change status
+            OutcomeStatus.CALLBACK_REQUESTED: "Working - Callback Pending"
+        }
+
+        new_status = status_mapping.get(outcome.status)
+
+        if new_status:
+            await self.crm_client.update_lead(
+                lead_id,
+                {'status': new_status}
+            )
+
+        # Update lead score if qualification data collected
+        if outcome.qualification_data:
+            score = self.calculate_score(outcome.qualification_data)
+            await self.crm_client.update_lead(
+                lead_id,
+                {'lead_score': score}
+            )
+
+    async def sync_appointment_to_crm(
+        self,
+        appointment: Appointment,
+        lead: Lead
+    ) -> None:
+        """Sync booked appointment to CRM"""
+
+        # Create event in CRM
+        event_data = {
+            'subject': f"Sales Meeting - {lead.first_name} {lead.last_name}",
+            'start_time': appointment.start_time,
+            'end_time': appointment.end_time,
+            'related_to': {
+                'type': 'Lead',
+                'id': lead.id
+            },
+            'assigned_to': appointment.rep_id,
+            'description': self.generate_meeting_description(appointment, lead),
+            'reminder_minutes': 30
+        }
+
+        await self.crm_client.create_event(event_data)
+
+        # Create task for prep
+        prep_task = {
+            'subject': f"Prepare for call with {lead.company}",
+            'due_date': appointment.start_time - timedelta(hours=1),
+            'assigned_to': appointment.rep_id,
+            'related_to': {'type': 'Lead', 'id': lead.id},
+            'description': self.generate_prep_notes(lead)
+        }
+
+        await self.crm_client.create_task(prep_task)
+```
+
+## Compliance (TCPA, Do-Not-Call)
+
+Outbound voice AI must strictly comply with TCPA and do-not-call regulations.
+
+### Compliance Engine
+
+```python
+class TCPAComplianceEngine:
+    """TCPA and DNC compliance for outbound calling"""
+
+    def __init__(self, config: ComplianceConfig):
+        self.dnc_service = DNCService(config.dnc)
+        self.consent_manager = ConsentManager(config.consent)
+        self.calling_hours = CallingHoursService(config.hours)
+        self.audit_logger = ComplianceAuditLogger(config.audit)
+
+    async def pre_call_check(
+        self,
+        lead: Lead,
+        campaign: OutboundCampaign
+    ) -> ComplianceCheckResult:
+        """Comprehensive pre-call compliance check"""
+
+        violations = []
+        warnings = []
+
+        # 1. Check DNC lists
+        dnc_result = await self.check_dnc_lists(lead.phone)
+        if dnc_result.on_dnc:
+            violations.append(ComplianceViolation(
+                type="DNC",
+                description=f"Number on {dnc_result.list_type} DNC list",
+                severity="blocking"
+            ))
+
+        # 2. Check consent
+        consent = await self.consent_manager.get_consent(
+            phone=lead.phone,
+            purpose=campaign.purpose
+        )
+
+        if campaign.requires_express_consent and not consent.has_express_consent:
+            violations.append(ComplianceViolation(
+                type="CONSENT",
+                description="Express consent not on file",
+                severity="blocking"
+            ))
+
+        # 3. Check calling hours
+        timezone = await self.get_timezone(lead.phone)
+        if not self.calling_hours.is_within_hours(timezone):
+            violations.append(ComplianceViolation(
+                type="CALLING_HOURS",
+                description=f"Outside calling hours for {timezone}",
+                severity="blocking"
+            ))
+
+        # 4. Check call frequency limits
+        recent_calls = await self.get_recent_call_count(lead.phone)
+        if recent_calls >= campaign.max_attempts:
+            violations.append(ComplianceViolation(
+                type="FREQUENCY",
+                description=f"Max attempts ({campaign.max_attempts}) reached",
+                severity="blocking"
+            ))
+
+        # 5. Check wireless status for ATDS
+        if campaign.uses_autodialer:
+            wireless_status = await self.check_wireless_status(lead.phone)
+            if wireless_status.is_wireless and not consent.has_tcpa_wireless_consent:
+                violations.append(ComplianceViolation(
+                    type="TCPA_WIRELESS",
+                    description="TCPA consent required for wireless with autodialer",
+                    severity="blocking"
+                ))
+
+        # Log compliance check
+        await self.audit_logger.log_compliance_check(
+            phone=lead.phone,
+            campaign_id=campaign.id,
+            result=len(violations) == 0,
+            violations=violations,
+            warnings=warnings
+        )
+
+        return ComplianceCheckResult(
+            passed=len(violations) == 0,
+            violations=violations,
+            warnings=warnings
+        )
+
+    async def check_dnc_lists(self, phone: str) -> DNCCheckResult:
+        """Check phone against all DNC lists"""
+
+        results = await asyncio.gather(
+            self.dnc_service.check_national_dnc(phone),
+            self.dnc_service.check_state_dnc(phone),
+            self.dnc_service.check_internal_dnc(phone)
+        )
+
+        national, state, internal = results
+
+        if internal.on_list:
+            return DNCCheckResult(on_dnc=True, list_type="internal")
+        if national.on_list:
+            return DNCCheckResult(on_dnc=True, list_type="national")
+        if state.on_list:
+            return DNCCheckResult(on_dnc=True, list_type=f"state_{state.state}")
+
+        return DNCCheckResult(on_dnc=False)
+
+    async def process_dnc_request(
+        self,
+        phone: str,
+        requested_via: str
+    ) -> None:
+        """Process do-not-call request from customer"""
+
+        # Add to internal DNC immediately
+        await self.dnc_service.add_to_internal_dnc(
+            phone=phone,
+            requested_at=datetime.now(),
+            requested_via=requested_via
+        )
+
+        # Cancel any pending calls
+        await self.cancel_pending_calls(phone)
+
+        # Log for compliance
+        await self.audit_logger.log_dnc_request(
+            phone=phone,
+            requested_via=requested_via,
+            processed_at=datetime.now()
+        )
+
+
+class CallingHoursService:
+    """Manage TCPA calling hours by timezone"""
+
+    # TCPA: 8am - 9pm local time
+    DEFAULT_START_HOUR = 8
+    DEFAULT_END_HOUR = 21
+
+    def is_within_hours(
+        self,
+        timezone: str,
+        custom_hours: Optional[CallingHours] = None
+    ) -> bool:
+        """Check if current time is within calling hours"""
+
+        tz = pytz.timezone(timezone)
+        local_time = datetime.now(tz)
+
+        start_hour = custom_hours.start if custom_hours else self.DEFAULT_START_HOUR
+        end_hour = custom_hours.end if custom_hours else self.DEFAULT_END_HOUR
+
+        return start_hour <= local_time.hour < end_hour
+
+    def get_next_calling_window(
+        self,
+        timezone: str
+    ) -> datetime:
+        """Get next available calling window start"""
+
+        tz = pytz.timezone(timezone)
+        local_time = datetime.now(tz)
+
+        if local_time.hour < self.DEFAULT_START_HOUR:
+            # Before start - can call at start today
+            return local_time.replace(
+                hour=self.DEFAULT_START_HOUR,
+                minute=0,
+                second=0
+            )
+        elif local_time.hour >= self.DEFAULT_END_HOUR:
+            # After end - can call tomorrow
+            next_day = local_time + timedelta(days=1)
+            return next_day.replace(
+                hour=self.DEFAULT_START_HOUR,
+                minute=0,
+                second=0
+            )
+        else:
+            # Within hours
+            return local_time
+```
+
+## Summary
+
+Sales and outbound voice AI enables organizations to scale their outreach while maintaining personalized engagement and strict regulatory compliance. Key success factors include:
+
+1. **Implement robust lead qualification** using frameworks like BANT with AI-powered conversation
+2. **Optimize appointment setting** with intelligent scheduling and calendar integration
+3. **Design effective follow-up campaigns** with personalization based on interaction history
+4. **Integrate deeply with CRM** to capture all interactions and trigger automation
+5. **Maintain strict TCPA/DNC compliance** with comprehensive pre-call checks and consent management
+6. **Continuously optimize** campaigns based on real-time performance metrics
+
+The most successful sales voice AI deployments combine automation efficiency with personalization quality, ensuring that AI-driven outreach feels helpful rather than intrusive to prospects.

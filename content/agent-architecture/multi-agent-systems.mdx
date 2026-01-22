@@ -1,0 +1,1012 @@
+---
+title: "Multi-Agent Systems for Voice AI"
+description: "Designing and implementing multi-agent architectures for complex voice AI applications"
+---
+
+# Multi-Agent Systems for Voice AI
+
+Multi-agent systems enable sophisticated voice AI applications by decomposing complex conversations into specialized, collaborating agents. This guide covers architectural patterns, coordination strategies, and implementation techniques for building robust multi-agent voice systems.
+
+## Why Multi-Agent Architecture?
+
+Single-agent systems struggle with complex scenarios:
+
+| Challenge | Single Agent | Multi-Agent |
+|-----------|--------------|-------------|
+| **Domain expertise** | Jack of all trades | Specialists per domain |
+| **Context window** | Limited by model | Distributed across agents |
+| **Latency** | Sequential processing | Parallel specialists |
+| **Maintainability** | Monolithic prompts | Modular, testable |
+| **Scalability** | Vertical only | Horizontal possible |
+
+### When to Use Multi-Agent
+
+```
+Single Agent:
+├── Simple Q&A
+├── Basic form filling
+├── Single-domain tasks
+└── Short conversations
+
+Multi-Agent:
+├── Cross-domain workflows
+├── Complex decision trees
+├── Long-running conversations
+├── Handoffs between specialists
+└── Enterprise integrations
+```
+
+## Architecture Patterns
+
+### Pattern 1: Orchestrator + Specialists
+
+```
+                    ┌─────────────────┐
+                    │   Orchestrator  │
+                    │     Agent       │
+                    └────────┬────────┘
+                             │
+        ┌────────────┬───────┼───────┬────────────┐
+        ▼            ▼       ▼       ▼            ▼
+  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+  │ Booking  │ │ Support  │ │ Billing  │ │ General  │
+  │ Agent    │ │ Agent    │ │ Agent    │ │ Agent    │
+  └──────────┘ └──────────┘ └──────────┘ └──────────┘
+```
+
+**Use when**: Clear domain boundaries, predictable routing
+
+```python
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
+from enum import Enum
+
+class AgentType(Enum):
+    BOOKING = "booking"
+    SUPPORT = "support"
+    BILLING = "billing"
+    GENERAL = "general"
+
+@dataclass
+class AgentResponse:
+    text: str
+    confidence: float
+    next_agent: Optional[AgentType] = None
+    context_update: Optional[Dict[str, Any]] = None
+    requires_handoff: bool = False
+
+class OrchestratorAgent:
+    def __init__(self, llm_client, agents: Dict[AgentType, 'SpecialistAgent']):
+        self.llm = llm_client
+        self.agents = agents
+        self.current_agent = AgentType.GENERAL
+        self.conversation_context = {}
+
+    async def process_utterance(
+        self,
+        user_input: str,
+        session_context: Dict[str, Any]
+    ) -> AgentResponse:
+        # Step 1: Classify intent and determine agent
+        routing_decision = await self._route_to_agent(user_input, session_context)
+
+        # Step 2: Handle agent transition if needed
+        if routing_decision.agent != self.current_agent:
+            await self._handle_handoff(
+                from_agent=self.current_agent,
+                to_agent=routing_decision.agent,
+                context=session_context
+            )
+            self.current_agent = routing_decision.agent
+
+        # Step 3: Process with specialist agent
+        specialist = self.agents[self.current_agent]
+        response = await specialist.process(
+            user_input=user_input,
+            context={**session_context, **self.conversation_context},
+            routing_context=routing_decision.context
+        )
+
+        # Step 4: Update shared context
+        if response.context_update:
+            self.conversation_context.update(response.context_update)
+
+        # Step 5: Check for handoff request
+        if response.requires_handoff and response.next_agent:
+            return await self._process_handoff(response, session_context)
+
+        return response
+
+    async def _route_to_agent(
+        self,
+        user_input: str,
+        context: Dict[str, Any]
+    ) -> 'RoutingDecision':
+        """Use LLM to classify intent and route to appropriate agent."""
+        routing_prompt = f"""
+        Analyze this user input and determine the best agent to handle it.
+
+        User input: {user_input}
+
+        Current context:
+        - Current agent: {self.current_agent.value}
+        - Previous topics: {context.get('previous_topics', [])}
+        - Customer tier: {context.get('customer_tier', 'standard')}
+
+        Available agents:
+        - booking: Flight, hotel, car reservations and modifications
+        - support: Technical issues, complaints, general help
+        - billing: Payments, invoices, refunds, pricing
+        - general: Greetings, general questions, unclear intent
+
+        Respond with JSON:
+        {{
+            "agent": "<agent_name>",
+            "confidence": 0.0 to 1.0,
+            "reasoning": "<brief explanation>",
+            "extracted_entities": {{}}
+        }}
+        """
+
+        response = await self.llm.complete(routing_prompt, json_mode=True)
+        return RoutingDecision.from_llm_response(response)
+
+    async def _handle_handoff(
+        self,
+        from_agent: AgentType,
+        to_agent: AgentType,
+        context: Dict[str, Any]
+    ) -> None:
+        """Manage context transfer during agent handoff."""
+        # Get summary from outgoing agent
+        outgoing = self.agents[from_agent]
+        summary = await outgoing.get_handoff_summary(context)
+
+        # Prepare incoming agent
+        incoming = self.agents[to_agent]
+        await incoming.receive_handoff(summary, context)
+
+
+class SpecialistAgent:
+    """Base class for specialist agents."""
+
+    def __init__(self, llm_client, system_prompt: str, tools: list):
+        self.llm = llm_client
+        self.system_prompt = system_prompt
+        self.tools = tools
+        self.local_context = {}
+
+    async def process(
+        self,
+        user_input: str,
+        context: Dict[str, Any],
+        routing_context: Optional[Dict[str, Any]] = None
+    ) -> AgentResponse:
+        """Process user input with specialist knowledge."""
+        raise NotImplementedError
+
+    async def get_handoff_summary(self, context: Dict[str, Any]) -> str:
+        """Generate summary for handoff to another agent."""
+        summary_prompt = f"""
+        Summarize the current conversation state for handoff:
+        - Key information gathered
+        - Pending tasks
+        - Customer sentiment
+        - Important context
+
+        Context: {context}
+        Local state: {self.local_context}
+        """
+        return await self.llm.complete(summary_prompt)
+
+    async def receive_handoff(
+        self,
+        summary: str,
+        context: Dict[str, Any]
+    ) -> None:
+        """Receive handoff from another agent."""
+        self.local_context['handoff_summary'] = summary
+        self.local_context['handoff_context'] = context
+```
+
+### Pattern 2: Peer-to-Peer Collaboration
+
+```
+  ┌──────────────────────────────────────────────────┐
+  │                Message Bus / Event Stream        │
+  └──────────────────────────────────────────────────┘
+           │           │           │           │
+           ▼           ▼           ▼           ▼
+      ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐
+      │ Agent  │◄─┤ Agent  │◄─┤ Agent  │◄─┤ Agent  │
+      │   A    │─►│   B    │─►│   C    │─►│   D    │
+      └────────┘  └────────┘  └────────┘  └────────┘
+```
+
+**Use when**: Agents need to collaborate dynamically, no clear hierarchy
+
+```python
+import asyncio
+from typing import Callable, Dict, List, Any
+from dataclasses import dataclass, field
+
+@dataclass
+class AgentMessage:
+    sender: str
+    receiver: str  # "*" for broadcast
+    message_type: str
+    payload: Dict[str, Any]
+    correlation_id: str
+    timestamp: float = field(default_factory=lambda: asyncio.get_event_loop().time())
+
+class MessageBus:
+    def __init__(self):
+        self.subscribers: Dict[str, List[Callable]] = {}
+        self.message_queue: asyncio.Queue = asyncio.Queue()
+
+    async def publish(self, message: AgentMessage) -> None:
+        """Publish message to bus."""
+        await self.message_queue.put(message)
+
+    def subscribe(self, agent_id: str, handler: Callable) -> None:
+        """Subscribe agent to messages."""
+        if agent_id not in self.subscribers:
+            self.subscribers[agent_id] = []
+        self.subscribers[agent_id].append(handler)
+
+    async def start(self) -> None:
+        """Start message distribution loop."""
+        while True:
+            message = await self.message_queue.get()
+            await self._distribute(message)
+
+    async def _distribute(self, message: AgentMessage) -> None:
+        """Distribute message to subscribers."""
+        if message.receiver == "*":
+            # Broadcast
+            for agent_id, handlers in self.subscribers.items():
+                if agent_id != message.sender:
+                    for handler in handlers:
+                        asyncio.create_task(handler(message))
+        else:
+            # Direct message
+            handlers = self.subscribers.get(message.receiver, [])
+            for handler in handlers:
+                asyncio.create_task(handler(message))
+
+
+class CollaborativeAgent:
+    def __init__(
+        self,
+        agent_id: str,
+        capabilities: List[str],
+        message_bus: MessageBus,
+        llm_client
+    ):
+        self.agent_id = agent_id
+        self.capabilities = capabilities
+        self.bus = message_bus
+        self.llm = llm_client
+        self.pending_requests: Dict[str, asyncio.Future] = {}
+
+        # Subscribe to messages
+        self.bus.subscribe(agent_id, self.handle_message)
+
+    async def handle_message(self, message: AgentMessage) -> None:
+        """Handle incoming messages."""
+        if message.message_type == "request":
+            await self._handle_request(message)
+        elif message.message_type == "response":
+            await self._handle_response(message)
+        elif message.message_type == "capability_query":
+            await self._handle_capability_query(message)
+
+    async def request_collaboration(
+        self,
+        capability_needed: str,
+        task_description: str,
+        context: Dict[str, Any]
+    ) -> Any:
+        """Request help from agents with specific capabilities."""
+        correlation_id = f"{self.agent_id}-{asyncio.get_event_loop().time()}"
+
+        # Create future for response
+        future = asyncio.Future()
+        self.pending_requests[correlation_id] = future
+
+        # Broadcast capability query
+        await self.bus.publish(AgentMessage(
+            sender=self.agent_id,
+            receiver="*",
+            message_type="capability_query",
+            payload={
+                "capability": capability_needed,
+                "task": task_description,
+                "context": context
+            },
+            correlation_id=correlation_id
+        ))
+
+        # Wait for response with timeout
+        try:
+            result = await asyncio.wait_for(future, timeout=5.0)
+            return result
+        except asyncio.TimeoutError:
+            del self.pending_requests[correlation_id]
+            return None
+
+    async def _handle_capability_query(self, message: AgentMessage) -> None:
+        """Respond to capability queries if we can help."""
+        needed_capability = message.payload["capability"]
+
+        if needed_capability in self.capabilities:
+            # We can help - send acceptance
+            await self.bus.publish(AgentMessage(
+                sender=self.agent_id,
+                receiver=message.sender,
+                message_type="capability_response",
+                payload={
+                    "can_help": True,
+                    "confidence": self._calculate_confidence(message.payload)
+                },
+                correlation_id=message.correlation_id
+            ))
+
+            # Actually process the request
+            result = await self._process_collaborative_task(message.payload)
+
+            await self.bus.publish(AgentMessage(
+                sender=self.agent_id,
+                receiver=message.sender,
+                message_type="response",
+                payload={"result": result},
+                correlation_id=message.correlation_id
+            ))
+
+    async def _handle_response(self, message: AgentMessage) -> None:
+        """Handle response to our collaboration request."""
+        future = self.pending_requests.get(message.correlation_id)
+        if future and not future.done():
+            future.set_result(message.payload.get("result"))
+            del self.pending_requests[message.correlation_id]
+
+    def _calculate_confidence(self, payload: Dict) -> float:
+        """Calculate confidence in handling this task."""
+        # Implementation specific
+        return 0.8
+
+    async def _process_collaborative_task(self, payload: Dict) -> Any:
+        """Process a collaborative task request."""
+        # Implementation specific
+        pass
+```
+
+### Pattern 3: Hierarchical Supervisor
+
+```
+                    ┌─────────────────┐
+                    │   Supervisor    │
+                    │     Agent       │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+        ┌──────────┐   ┌──────────┐   ┌──────────┐
+        │  Team    │   │  Team    │   │  Team    │
+        │ Lead A   │   │ Lead B   │   │ Lead C   │
+        └────┬─────┘   └────┬─────┘   └────┬─────┘
+             │              │              │
+        ┌────┴────┐    ┌────┴────┐    ┌────┴────┐
+        ▼    ▼    ▼    ▼    ▼    ▼    ▼    ▼    ▼
+       [Workers]      [Workers]      [Workers]
+```
+
+**Use when**: Complex organizations with approval workflows
+
+```python
+from abc import ABC, abstractmethod
+from enum import Enum
+from typing import List, Optional
+
+class ApprovalStatus(Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    ESCALATED = "escalated"
+
+@dataclass
+class Task:
+    id: str
+    description: str
+    requester: str
+    assigned_to: Optional[str] = None
+    status: str = "pending"
+    result: Optional[Any] = None
+    approval_required: bool = False
+    approval_status: ApprovalStatus = ApprovalStatus.PENDING
+
+class HierarchicalAgent(ABC):
+    def __init__(
+        self,
+        agent_id: str,
+        level: int,
+        supervisor: Optional['HierarchicalAgent'] = None
+    ):
+        self.agent_id = agent_id
+        self.level = level
+        self.supervisor = supervisor
+        self.subordinates: List['HierarchicalAgent'] = []
+        self.authority_limits: Dict[str, float] = {}
+
+    def add_subordinate(self, agent: 'HierarchicalAgent') -> None:
+        self.subordinates.append(agent)
+        agent.supervisor = self
+
+    async def process_task(self, task: Task) -> Task:
+        """Process task, potentially delegating or escalating."""
+        # Check if we can handle directly
+        if self._can_handle(task):
+            return await self._execute_task(task)
+
+        # Try to delegate to subordinates
+        for subordinate in self.subordinates:
+            if subordinate._can_handle(task):
+                task.assigned_to = subordinate.agent_id
+                result = await subordinate.process_task(task)
+
+                # Check if approval needed
+                if result.approval_required:
+                    result = await self._review_for_approval(result)
+
+                return result
+
+        # Escalate to supervisor
+        if self.supervisor:
+            return await self._escalate(task)
+
+        # No one can handle
+        task.status = "failed"
+        task.result = "Unable to process request"
+        return task
+
+    def _can_handle(self, task: Task) -> bool:
+        """Check if this agent can handle the task."""
+        # Check authority limits
+        if 'amount' in task.description:
+            amount = self._extract_amount(task.description)
+            if amount > self.authority_limits.get('max_amount', float('inf')):
+                return False
+        return True
+
+    async def _escalate(self, task: Task) -> Task:
+        """Escalate task to supervisor."""
+        task.approval_status = ApprovalStatus.ESCALATED
+        return await self.supervisor.process_task(task)
+
+    async def _review_for_approval(self, task: Task) -> Task:
+        """Review subordinate's work for approval."""
+        # LLM-based review
+        review_prompt = f"""
+        Review this task completed by {task.assigned_to}:
+        Task: {task.description}
+        Result: {task.result}
+
+        Should this be approved? Consider:
+        - Accuracy of response
+        - Policy compliance
+        - Customer satisfaction
+
+        Respond with: APPROVED, REJECTED, or ESCALATE
+        """
+        decision = await self.llm.complete(review_prompt)
+
+        if "APPROVED" in decision:
+            task.approval_status = ApprovalStatus.APPROVED
+        elif "REJECTED" in decision:
+            task.approval_status = ApprovalStatus.REJECTED
+            task.result = await self._revise_response(task)
+        else:
+            task.approval_status = ApprovalStatus.ESCALATED
+            if self.supervisor:
+                return await self._escalate(task)
+
+        return task
+
+    @abstractmethod
+    async def _execute_task(self, task: Task) -> Task:
+        """Execute the task. Implemented by specific agent types."""
+        pass
+```
+
+## State Management
+
+### Shared Context Store
+
+```python
+from typing import Dict, Any, Optional
+import asyncio
+from datetime import datetime, timedelta
+
+class SharedContextStore:
+    """Centralized context store for multi-agent coordination."""
+
+    def __init__(self, redis_client=None):
+        self.redis = redis_client
+        self.local_cache: Dict[str, Any] = {}
+        self.locks: Dict[str, asyncio.Lock] = {}
+
+    async def get(
+        self,
+        session_id: str,
+        key: str,
+        default: Any = None
+    ) -> Any:
+        """Get value from shared context."""
+        full_key = f"{session_id}:{key}"
+
+        # Try local cache first
+        if full_key in self.local_cache:
+            return self.local_cache[full_key]
+
+        # Try Redis
+        if self.redis:
+            value = await self.redis.get(full_key)
+            if value:
+                self.local_cache[full_key] = value
+                return value
+
+        return default
+
+    async def set(
+        self,
+        session_id: str,
+        key: str,
+        value: Any,
+        ttl: Optional[int] = 3600
+    ) -> None:
+        """Set value in shared context."""
+        full_key = f"{session_id}:{key}"
+
+        # Update local cache
+        self.local_cache[full_key] = value
+
+        # Update Redis
+        if self.redis:
+            await self.redis.set(full_key, value, ex=ttl)
+
+    async def update_atomic(
+        self,
+        session_id: str,
+        key: str,
+        update_fn: callable
+    ) -> Any:
+        """Atomically update a value."""
+        full_key = f"{session_id}:{key}"
+
+        # Get or create lock
+        if full_key not in self.locks:
+            self.locks[full_key] = asyncio.Lock()
+
+        async with self.locks[full_key]:
+            current = await self.get(session_id, key)
+            new_value = update_fn(current)
+            await self.set(session_id, key, new_value)
+            return new_value
+
+    async def get_conversation_history(
+        self,
+        session_id: str,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Get conversation history for context."""
+        return await self.get(session_id, "history", [])[-limit:]
+
+    async def add_to_history(
+        self,
+        session_id: str,
+        message: Dict[str, Any]
+    ) -> None:
+        """Add message to conversation history."""
+        await self.update_atomic(
+            session_id,
+            "history",
+            lambda h: (h or []) + [message]
+        )
+
+    async def get_agent_state(
+        self,
+        session_id: str,
+        agent_id: str
+    ) -> Dict[str, Any]:
+        """Get state for specific agent."""
+        return await self.get(session_id, f"agent:{agent_id}", {})
+
+    async def set_agent_state(
+        self,
+        session_id: str,
+        agent_id: str,
+        state: Dict[str, Any]
+    ) -> None:
+        """Set state for specific agent."""
+        await self.set(session_id, f"agent:{agent_id}", state)
+```
+
+### Conversation Memory
+
+```python
+from dataclasses import dataclass
+from typing import List, Dict, Any
+import numpy as np
+
+@dataclass
+class MemoryItem:
+    content: str
+    timestamp: float
+    agent_id: str
+    importance: float
+    embedding: Optional[np.ndarray] = None
+
+class ConversationMemory:
+    """Long-term memory for multi-agent conversations."""
+
+    def __init__(
+        self,
+        embedding_client,
+        max_short_term: int = 20,
+        max_long_term: int = 1000
+    ):
+        self.embedding_client = embedding_client
+        self.short_term: List[MemoryItem] = []
+        self.long_term: List[MemoryItem] = []
+        self.max_short_term = max_short_term
+        self.max_long_term = max_long_term
+
+    async def add(
+        self,
+        content: str,
+        agent_id: str,
+        importance: float = 0.5
+    ) -> None:
+        """Add item to memory."""
+        embedding = await self.embedding_client.embed(content)
+
+        item = MemoryItem(
+            content=content,
+            timestamp=asyncio.get_event_loop().time(),
+            agent_id=agent_id,
+            importance=importance,
+            embedding=embedding
+        )
+
+        self.short_term.append(item)
+
+        # Consolidate if short-term is full
+        if len(self.short_term) > self.max_short_term:
+            await self._consolidate()
+
+    async def recall(
+        self,
+        query: str,
+        k: int = 5,
+        agent_filter: Optional[str] = None
+    ) -> List[MemoryItem]:
+        """Recall relevant memories."""
+        query_embedding = await self.embedding_client.embed(query)
+
+        # Search both short and long term
+        all_memories = self.short_term + self.long_term
+
+        if agent_filter:
+            all_memories = [m for m in all_memories if m.agent_id == agent_filter]
+
+        # Calculate relevance scores
+        scored = []
+        for memory in all_memories:
+            similarity = self._cosine_similarity(query_embedding, memory.embedding)
+            recency = self._recency_score(memory.timestamp)
+            score = 0.7 * similarity + 0.2 * memory.importance + 0.1 * recency
+            scored.append((score, memory))
+
+        # Return top k
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [m for _, m in scored[:k]]
+
+    async def _consolidate(self) -> None:
+        """Move important short-term memories to long-term."""
+        # Sort by importance
+        self.short_term.sort(key=lambda x: x.importance, reverse=True)
+
+        # Keep most important in long-term
+        to_keep = self.short_term[:self.max_short_term // 2]
+        self.long_term.extend(to_keep)
+
+        # Trim long-term if needed
+        if len(self.long_term) > self.max_long_term:
+            self.long_term.sort(key=lambda x: x.importance, reverse=True)
+            self.long_term = self.long_term[:self.max_long_term]
+
+        # Reset short-term
+        self.short_term = self.short_term[self.max_short_term // 2:]
+
+    def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+    def _recency_score(self, timestamp: float) -> float:
+        age = asyncio.get_event_loop().time() - timestamp
+        return np.exp(-age / 3600)  # Decay over hours
+
+    def get_summary_for_agent(self, agent_id: str) -> str:
+        """Generate memory summary for specific agent."""
+        agent_memories = [m for m in (self.short_term + self.long_term)
+                        if m.agent_id == agent_id]
+        agent_memories.sort(key=lambda x: x.timestamp, reverse=True)
+
+        summary_items = [m.content for m in agent_memories[:10]]
+        return "\n".join(summary_items)
+```
+
+## Coordination Patterns
+
+### Turn-Taking Protocol
+
+```python
+class TurnManager:
+    """Manage speaking turns in multi-agent conversations."""
+
+    def __init__(self):
+        self.current_speaker: Optional[str] = None
+        self.speaker_queue: asyncio.Queue = asyncio.Queue()
+        self.interruption_threshold: float = 0.8
+
+    async def request_turn(
+        self,
+        agent_id: str,
+        urgency: float = 0.5
+    ) -> bool:
+        """Request turn to speak."""
+        if self.current_speaker is None:
+            self.current_speaker = agent_id
+            return True
+
+        if urgency > self.interruption_threshold:
+            # High urgency - interrupt
+            await self._handle_interruption(agent_id)
+            return True
+
+        # Queue the request
+        await self.speaker_queue.put((urgency, agent_id))
+        return False
+
+    async def release_turn(self, agent_id: str) -> Optional[str]:
+        """Release turn and get next speaker."""
+        if self.current_speaker != agent_id:
+            return self.current_speaker
+
+        self.current_speaker = None
+
+        # Get next from queue
+        if not self.speaker_queue.empty():
+            _, next_speaker = await self.speaker_queue.get()
+            self.current_speaker = next_speaker
+            return next_speaker
+
+        return None
+
+    async def _handle_interruption(self, interrupting_agent: str) -> None:
+        """Handle turn interruption."""
+        previous_speaker = self.current_speaker
+        self.current_speaker = interrupting_agent
+
+        # Re-queue the interrupted speaker
+        if previous_speaker:
+            await self.speaker_queue.put((0.5, previous_speaker))
+```
+
+### Consensus Protocol
+
+```python
+class ConsensusManager:
+    """Manage consensus decisions among agents."""
+
+    def __init__(self, agents: List[str], quorum: float = 0.5):
+        self.agents = agents
+        self.quorum = quorum
+        self.votes: Dict[str, Dict[str, Any]] = {}
+
+    async def propose(
+        self,
+        proposal_id: str,
+        proposal: Dict[str, Any],
+        timeout: float = 5.0
+    ) -> Dict[str, Any]:
+        """Propose action and gather votes."""
+        self.votes[proposal_id] = {}
+
+        # Request votes from all agents
+        vote_tasks = [
+            self._request_vote(agent, proposal_id, proposal)
+            for agent in self.agents
+        ]
+
+        # Wait for votes with timeout
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*vote_tasks, return_exceptions=True),
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            pass
+
+        # Calculate result
+        return self._calculate_consensus(proposal_id)
+
+    async def _request_vote(
+        self,
+        agent_id: str,
+        proposal_id: str,
+        proposal: Dict[str, Any]
+    ) -> None:
+        """Request vote from specific agent."""
+        # Implementation depends on agent communication method
+        pass
+
+    def register_vote(
+        self,
+        proposal_id: str,
+        agent_id: str,
+        vote: bool,
+        confidence: float
+    ) -> None:
+        """Register an agent's vote."""
+        if proposal_id in self.votes:
+            self.votes[proposal_id][agent_id] = {
+                'vote': vote,
+                'confidence': confidence
+            }
+
+    def _calculate_consensus(self, proposal_id: str) -> Dict[str, Any]:
+        """Calculate consensus from votes."""
+        votes = self.votes.get(proposal_id, {})
+
+        if not votes:
+            return {'approved': False, 'reason': 'no_votes'}
+
+        total_agents = len(self.agents)
+        voting_agents = len(votes)
+        approval_votes = sum(1 for v in votes.values() if v['vote'])
+        avg_confidence = sum(v['confidence'] for v in votes.values()) / voting_agents
+
+        approved = (
+            voting_agents / total_agents >= self.quorum and
+            approval_votes / voting_agents > 0.5
+        )
+
+        return {
+            'approved': approved,
+            'approval_rate': approval_votes / voting_agents if voting_agents > 0 else 0,
+            'participation_rate': voting_agents / total_agents,
+            'avg_confidence': avg_confidence,
+            'votes': votes
+        }
+```
+
+## Error Handling in Multi-Agent Systems
+
+### Agent Failure Recovery
+
+```python
+class AgentSupervisor:
+    """Supervise agents and handle failures."""
+
+    def __init__(self):
+        self.agents: Dict[str, 'Agent'] = {}
+        self.health_status: Dict[str, str] = {}
+        self.failure_counts: Dict[str, int] = {}
+        self.max_failures = 3
+
+    async def monitor_health(self) -> None:
+        """Continuously monitor agent health."""
+        while True:
+            for agent_id, agent in self.agents.items():
+                try:
+                    is_healthy = await asyncio.wait_for(
+                        agent.health_check(),
+                        timeout=2.0
+                    )
+                    if is_healthy:
+                        self.health_status[agent_id] = "healthy"
+                        self.failure_counts[agent_id] = 0
+                    else:
+                        await self._handle_unhealthy(agent_id)
+                except asyncio.TimeoutError:
+                    await self._handle_timeout(agent_id)
+                except Exception as e:
+                    await self._handle_error(agent_id, e)
+
+            await asyncio.sleep(5)
+
+    async def _handle_unhealthy(self, agent_id: str) -> None:
+        """Handle unhealthy agent."""
+        self.health_status[agent_id] = "unhealthy"
+        self.failure_counts[agent_id] = self.failure_counts.get(agent_id, 0) + 1
+
+        if self.failure_counts[agent_id] >= self.max_failures:
+            await self._restart_agent(agent_id)
+
+    async def _restart_agent(self, agent_id: str) -> None:
+        """Restart a failed agent."""
+        old_agent = self.agents.get(agent_id)
+
+        # Save state
+        state = await old_agent.get_state() if old_agent else {}
+
+        # Create new instance
+        new_agent = await self._create_agent(agent_id, state)
+        self.agents[agent_id] = new_agent
+        self.failure_counts[agent_id] = 0
+        self.health_status[agent_id] = "restarting"
+
+    async def execute_with_fallback(
+        self,
+        primary_agent: str,
+        fallback_agents: List[str],
+        task: Any
+    ) -> Any:
+        """Execute task with fallback agents."""
+        # Try primary
+        try:
+            if self.health_status.get(primary_agent) == "healthy":
+                return await self.agents[primary_agent].execute(task)
+        except Exception:
+            pass
+
+        # Try fallbacks
+        for fallback_id in fallback_agents:
+            try:
+                if self.health_status.get(fallback_id) == "healthy":
+                    return await self.agents[fallback_id].execute(task)
+            except Exception:
+                continue
+
+        raise RuntimeError("All agents failed")
+```
+
+## Best Practices
+
+### Design Guidelines
+
+1. **Clear agent boundaries**
+   - Single responsibility per agent
+   - Well-defined interfaces
+   - Explicit handoff protocols
+
+2. **Graceful degradation**
+   - Fallback agents for critical functions
+   - Timeout handling
+   - Partial response capability
+
+3. **Observability**
+   - Log all inter-agent communication
+   - Track latency per agent
+   - Monitor context size
+
+4. **Testing**
+   - Unit test individual agents
+   - Integration test handoffs
+   - Load test full system
+
+### Common Pitfalls
+
+| Pitfall | Consequence | Prevention |
+|---------|-------------|------------|
+| Unclear ownership | Dropped requests | Explicit routing |
+| Context bloat | Slow responses | Context pruning |
+| Circular handoffs | Infinite loops | Handoff limits |
+| No fallbacks | System failure | Redundant agents |
+
+## Related Topics
+
+- **[Design Patterns](/topics/agent-architecture/design-patterns)** - Foundational agent patterns
+- **[State Machines](/topics/agent-architecture/state-machines)** - State management approaches
+- **[Orchestration](/topics/agent-architecture/orchestration)** - Pipeline coordination
+- **[Error Handling](/topics/agent-architecture/error-handling)** - Robust error recovery

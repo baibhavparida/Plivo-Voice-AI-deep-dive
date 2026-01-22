@@ -1,0 +1,1245 @@
+---
+title: "Dynamic Response Generation for Voice AI"
+description: "Guide to LLM-based dynamic response generation for voice AI, covering generation strategies, output constraints for voice, length optimization, and fallback mechanisms."
+category: "foundations"
+tags:
+  - dynamic-generation
+  - LLM
+  - NLG
+  - voice-ai
+  - response-generation
+relatedTopics:
+  - response-templates
+  - persona-consistency
+  - ssml
+lastUpdated: "2026-01-21"
+difficulty: advanced
+---
+
+# Dynamic Response Generation for Voice AI
+
+Dynamic response generation uses Large Language Models (LLMs) to create contextually appropriate, natural-sounding responses. Unlike templates, dynamic generation can handle open-ended queries, adapt to conversational nuance, and produce varied responses that feel less robotic.
+
+## LLM-Based Generation
+
+LLM integration requires careful prompt engineering and output management for voice-specific requirements.
+
+### Basic LLM Integration
+
+```python
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
+import json
+
+@dataclass
+class GenerationConfig:
+    max_tokens: int = 150
+    temperature: float = 0.7
+    top_p: float = 0.9
+    presence_penalty: float = 0.1
+    frequency_penalty: float = 0.1
+    stop_sequences: List[str] = None
+
+class LLMProvider(ABC):
+    """Abstract base class for LLM providers"""
+
+    @abstractmethod
+    def generate(
+        self,
+        prompt: str,
+        config: GenerationConfig
+    ) -> str:
+        pass
+
+    @abstractmethod
+    def generate_with_messages(
+        self,
+        messages: List[Dict],
+        config: GenerationConfig
+    ) -> str:
+        pass
+
+class OpenAIProvider(LLMProvider):
+    """OpenAI API provider"""
+
+    def __init__(self, api_key: str, model: str = "gpt-4"):
+        import openai
+        self.client = openai.OpenAI(api_key=api_key)
+        self.model = model
+
+    def generate(self, prompt: str, config: GenerationConfig) -> str:
+        response = self.client.completions.create(
+            model=self.model,
+            prompt=prompt,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            top_p=config.top_p,
+            presence_penalty=config.presence_penalty,
+            frequency_penalty=config.frequency_penalty,
+            stop=config.stop_sequences
+        )
+        return response.choices[0].text.strip()
+
+    def generate_with_messages(
+        self,
+        messages: List[Dict],
+        config: GenerationConfig
+    ) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            top_p=config.top_p,
+            presence_penalty=config.presence_penalty,
+            frequency_penalty=config.frequency_penalty,
+            stop=config.stop_sequences
+        )
+        return response.choices[0].message.content.strip()
+
+class VoiceResponseGenerator:
+    """Generate voice-optimized responses using LLM"""
+
+    def __init__(self, provider: LLMProvider):
+        self.provider = provider
+        self.default_config = GenerationConfig(
+            max_tokens=150,  # Keep responses concise for voice
+            temperature=0.7,
+            stop_sequences=["\n\n", "User:", "Customer:"]
+        )
+
+    def generate(
+        self,
+        user_input: str,
+        context: Dict[str, Any],
+        system_prompt: str = None,
+        config: GenerationConfig = None
+    ) -> str:
+        """Generate a voice-appropriate response"""
+
+        config = config or self.default_config
+
+        # Build system prompt
+        if not system_prompt:
+            system_prompt = self._build_system_prompt(context)
+
+        # Build messages
+        messages = self._build_messages(system_prompt, user_input, context)
+
+        # Generate response
+        response = self.provider.generate_with_messages(messages, config)
+
+        # Post-process for voice
+        response = self._post_process(response)
+
+        return response
+
+    def _build_system_prompt(self, context: Dict[str, Any]) -> str:
+        """Build voice-specific system prompt"""
+
+        persona = context.get('persona', 'a helpful voice assistant')
+        domain = context.get('domain', 'general customer service')
+
+        return f"""You are {persona} for {domain}.
+
+IMPORTANT VOICE GUIDELINES:
+- Keep responses concise (2-3 sentences maximum)
+- Use natural, conversational language
+- Avoid complex sentences with multiple clauses
+- Don't use bullet points, numbered lists, or formatting
+- Spell out numbers and abbreviations
+- Don't include URLs or email addresses unless specifically asked
+- Use contractions naturally (I'm, you're, we'll)
+- Avoid filler phrases like "I understand" unless genuinely empathetic
+
+RESPONSE FORMAT:
+- Respond as if speaking directly to the person
+- One thought per sentence
+- End with a clear next step or question when appropriate
+"""
+
+    def _build_messages(
+        self,
+        system_prompt: str,
+        user_input: str,
+        context: Dict[str, Any]
+    ) -> List[Dict]:
+        """Build message history for LLM"""
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Add conversation history
+        history = context.get('conversation_history', [])
+        for turn in history[-5:]:  # Last 5 turns
+            messages.append({"role": "user", "content": turn['user']})
+            messages.append({"role": "assistant", "content": turn['assistant']})
+
+        # Add current context
+        if context.get('slot_values'):
+            context_summary = self._format_context(context['slot_values'])
+            messages.append({
+                "role": "system",
+                "content": f"Current information: {context_summary}"
+            })
+
+        # Add current user input
+        messages.append({"role": "user", "content": user_input})
+
+        return messages
+
+    def _format_context(self, slot_values: Dict) -> str:
+        """Format slot values as natural context"""
+        parts = []
+        for slot, value in slot_values.items():
+            if value:
+                readable_slot = slot.replace('_', ' ')
+                parts.append(f"{readable_slot}: {value}")
+        return "; ".join(parts)
+
+    def _post_process(self, response: str) -> str:
+        """Post-process response for voice output"""
+
+        # Remove markdown formatting
+        response = re.sub(r'\*\*(.+?)\*\*', r'\1', response)  # Bold
+        response = re.sub(r'\*(.+?)\*', r'\1', response)      # Italic
+        response = re.sub(r'`(.+?)`', r'\1', response)        # Code
+
+        # Remove bullet points and numbers
+        response = re.sub(r'^[\s]*[-*•]\s*', '', response, flags=re.MULTILINE)
+        response = re.sub(r'^[\s]*\d+\.\s*', '', response, flags=re.MULTILINE)
+
+        # Expand common abbreviations
+        abbreviations = {
+            'e.g.': 'for example',
+            'i.e.': 'that is',
+            'etc.': 'and so on',
+            'vs.': 'versus',
+            'approx.': 'approximately',
+        }
+        for abbrev, expansion in abbreviations.items():
+            response = response.replace(abbrev, expansion)
+
+        # Clean up whitespace
+        response = ' '.join(response.split())
+
+        return response
+```
+
+### Streaming Generation
+
+For real-time voice, streaming generation reduces time-to-first-audio:
+
+```python
+from typing import Generator, Callable
+import asyncio
+
+class StreamingVoiceGenerator:
+    """Stream LLM responses for low-latency voice synthesis"""
+
+    def __init__(self, provider: LLMProvider):
+        self.provider = provider
+
+    async def generate_stream(
+        self,
+        messages: List[Dict],
+        config: GenerationConfig,
+        on_sentence: Callable[[str], None]
+    ) -> str:
+        """Generate response in streaming mode, calling on_sentence for each complete sentence"""
+
+        full_response = ""
+        buffer = ""
+        sentence_endings = '.!?'
+
+        async for chunk in self._stream_from_provider(messages, config):
+            buffer += chunk
+            full_response += chunk
+
+            # Check for complete sentences
+            while any(end in buffer for end in sentence_endings):
+                # Find first sentence ending
+                min_pos = len(buffer)
+                for ending in sentence_endings:
+                    pos = buffer.find(ending)
+                    if pos != -1 and pos < min_pos:
+                        min_pos = pos
+
+                if min_pos < len(buffer):
+                    sentence = buffer[:min_pos + 1].strip()
+                    buffer = buffer[min_pos + 1:].strip()
+
+                    if sentence:
+                        # Clean for voice and send
+                        cleaned = self._clean_for_voice(sentence)
+                        on_sentence(cleaned)
+                else:
+                    break
+
+        # Handle remaining buffer
+        if buffer.strip():
+            on_sentence(self._clean_for_voice(buffer.strip()))
+
+        return full_response
+
+    async def _stream_from_provider(
+        self,
+        messages: List[Dict],
+        config: GenerationConfig
+    ) -> Generator[str, None, None]:
+        """Stream tokens from LLM provider"""
+        # Implementation depends on provider
+        # This is a placeholder for async streaming
+        pass
+
+    def _clean_for_voice(self, text: str) -> str:
+        """Clean text segment for immediate TTS"""
+        # Quick cleanup for streaming
+        text = text.strip()
+        text = re.sub(r'\s+', ' ', text)
+        return text
+
+class SentenceBufferedGenerator:
+    """Buffer and process sentences for TTS"""
+
+    def __init__(self):
+        self.sentences = []
+        self.current_buffer = ""
+
+    def add_chunk(self, chunk: str) -> List[str]:
+        """Add chunk and return any complete sentences"""
+        self.current_buffer += chunk
+
+        complete_sentences = []
+        sentence_pattern = r'[^.!?]*[.!?]+'
+
+        while True:
+            match = re.match(sentence_pattern, self.current_buffer)
+            if match:
+                sentence = match.group().strip()
+                self.current_buffer = self.current_buffer[match.end():].strip()
+
+                if len(sentence) > 5:  # Ignore very short fragments
+                    complete_sentences.append(sentence)
+                    self.sentences.append(sentence)
+            else:
+                break
+
+        return complete_sentences
+
+    def get_remaining(self) -> Optional[str]:
+        """Get any remaining content in buffer"""
+        if self.current_buffer.strip():
+            remaining = self.current_buffer.strip()
+            self.current_buffer = ""
+            return remaining
+        return None
+```
+
+## Constraining Outputs for Voice
+
+Voice AI requires specific output constraints that differ from text-based LLM applications.
+
+### Output Constraints Framework
+
+```python
+from dataclasses import dataclass
+from typing import List, Optional, Callable
+import re
+
+@dataclass
+class VoiceOutputConstraints:
+    max_words: int = 50
+    max_sentences: int = 3
+    max_characters: int = 300
+    forbidden_patterns: List[str] = None
+    required_elements: List[str] = None
+    readability_level: str = "conversational"  # conversational, formal, simple
+
+class OutputConstraintEnforcer:
+    """Enforce voice-specific output constraints"""
+
+    def __init__(self, constraints: VoiceOutputConstraints):
+        self.constraints = constraints
+
+        # Patterns that are problematic for voice
+        self.default_forbidden = [
+            r'http[s]?://\S+',           # URLs
+            r'\S+@\S+\.\S+',             # Emails
+            r'\[.+?\]\(.+?\)',           # Markdown links
+            r'```[\s\S]*?```',           # Code blocks
+            r'^\s*[-*]\s',               # Bullet points
+            r'^\s*\d+\.\s',              # Numbered lists
+            r'\|.*\|.*\|',               # Tables
+        ]
+
+    def enforce(self, text: str) -> str:
+        """Apply all constraints to text"""
+
+        # Remove forbidden patterns
+        text = self._remove_forbidden(text)
+
+        # Enforce length limits
+        text = self._enforce_length(text)
+
+        # Ensure readability
+        text = self._ensure_readability(text)
+
+        # Validate required elements
+        if not self._validate_required(text):
+            text = self._add_required_elements(text)
+
+        return text
+
+    def _remove_forbidden(self, text: str) -> str:
+        """Remove forbidden patterns"""
+        patterns = self.constraints.forbidden_patterns or []
+        patterns.extend(self.default_forbidden)
+
+        for pattern in patterns:
+            text = re.sub(pattern, '', text, flags=re.MULTILINE)
+
+        return text.strip()
+
+    def _enforce_length(self, text: str) -> str:
+        """Enforce length constraints"""
+
+        # Word limit
+        words = text.split()
+        if len(words) > self.constraints.max_words:
+            # Try to cut at sentence boundary
+            sentences = self._split_sentences(text)
+            truncated = ""
+            word_count = 0
+
+            for sentence in sentences:
+                sentence_words = len(sentence.split())
+                if word_count + sentence_words <= self.constraints.max_words:
+                    truncated += sentence + " "
+                    word_count += sentence_words
+                else:
+                    break
+
+            text = truncated.strip()
+            if not text:
+                # If first sentence is too long, truncate it
+                text = ' '.join(words[:self.constraints.max_words])
+                # Add ending punctuation
+                if not text.endswith(('.', '!', '?')):
+                    text += '.'
+
+        # Sentence limit
+        sentences = self._split_sentences(text)
+        if len(sentences) > self.constraints.max_sentences:
+            text = ' '.join(sentences[:self.constraints.max_sentences])
+
+        # Character limit
+        if len(text) > self.constraints.max_characters:
+            # Try to cut at word boundary
+            text = text[:self.constraints.max_characters]
+            last_space = text.rfind(' ')
+            if last_space > 0:
+                text = text[:last_space]
+            if not text.endswith(('.', '!', '?')):
+                text += '.'
+
+        return text
+
+    def _split_sentences(self, text: str) -> List[str]:
+        """Split text into sentences"""
+        # Simple sentence splitting
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        return [s.strip() for s in sentences if s.strip()]
+
+    def _ensure_readability(self, text: str) -> str:
+        """Ensure text meets readability requirements"""
+
+        if self.constraints.readability_level == "simple":
+            # Simplify complex constructions
+            text = self._simplify_text(text)
+        elif self.constraints.readability_level == "conversational":
+            # Add natural speech patterns
+            text = self._make_conversational(text)
+
+        return text
+
+    def _simplify_text(self, text: str) -> str:
+        """Simplify text for easier comprehension"""
+        # Replace complex words with simpler alternatives
+        simplifications = {
+            'utilize': 'use',
+            'approximately': 'about',
+            'subsequently': 'then',
+            'facilitate': 'help',
+            'endeavor': 'try',
+            'sufficient': 'enough',
+            'commence': 'start',
+            'terminate': 'end',
+            'regarding': 'about',
+            'nevertheless': 'however',
+        }
+
+        for complex_word, simple_word in simplifications.items():
+            text = re.sub(rf'\b{complex_word}\b', simple_word, text, flags=re.IGNORECASE)
+
+        return text
+
+    def _make_conversational(self, text: str) -> str:
+        """Add conversational elements"""
+        # Use contractions
+        contractions = {
+            'I am': "I'm",
+            'you are': "you're",
+            'we are': "we're",
+            'they are': "they're",
+            'it is': "it's",
+            'that is': "that's",
+            'do not': "don't",
+            'does not': "doesn't",
+            'will not': "won't",
+            'cannot': "can't",
+            'would not': "wouldn't",
+            'should not': "shouldn't",
+            'have not': "haven't",
+            'has not': "hasn't",
+            'I will': "I'll",
+            'you will': "you'll",
+            'we will': "we'll",
+        }
+
+        for formal, contraction in contractions.items():
+            text = re.sub(rf'\b{formal}\b', contraction, text, flags=re.IGNORECASE)
+
+        return text
+
+    def _validate_required(self, text: str) -> bool:
+        """Validate required elements are present"""
+        if not self.constraints.required_elements:
+            return True
+
+        for element in self.constraints.required_elements:
+            if element.lower() not in text.lower():
+                return False
+
+        return True
+
+    def _add_required_elements(self, text: str) -> str:
+        """Add missing required elements"""
+        # Implementation depends on specific requirements
+        return text
+```
+
+### Prompt-Based Constraints
+
+```python
+class ConstrainedPromptBuilder:
+    """Build prompts with built-in output constraints"""
+
+    def __init__(self):
+        self.constraint_instructions = {
+            "length": "Keep your response under {max_words} words and {max_sentences} sentences.",
+            "format": "Do not use bullet points, numbered lists, or any formatting. Write in natural prose.",
+            "voice": "Write as if speaking out loud. Use contractions and conversational language.",
+            "numbers": "Spell out all numbers. Say 'twenty-three' not '23'.",
+            "no_urls": "Never include URLs, email addresses, or phone numbers in your response.",
+            "action": "End with a clear question or next step for the user.",
+            "empathy": "If the user expresses frustration, acknowledge their feelings briefly before addressing their request.",
+        }
+
+    def build_constrained_prompt(
+        self,
+        base_prompt: str,
+        constraints: VoiceOutputConstraints,
+        additional_constraints: List[str] = None
+    ) -> str:
+        """Build prompt with constraint instructions"""
+
+        constraint_text = "\n\nOUTPUT CONSTRAINTS:\n"
+
+        # Length constraints
+        constraint_text += self.constraint_instructions["length"].format(
+            max_words=constraints.max_words,
+            max_sentences=constraints.max_sentences
+        ) + "\n"
+
+        # Format constraints
+        constraint_text += self.constraint_instructions["format"] + "\n"
+        constraint_text += self.constraint_instructions["voice"] + "\n"
+        constraint_text += self.constraint_instructions["numbers"] + "\n"
+        constraint_text += self.constraint_instructions["no_urls"] + "\n"
+
+        # Additional constraints
+        if additional_constraints:
+            for constraint in additional_constraints:
+                if constraint in self.constraint_instructions:
+                    constraint_text += self.constraint_instructions[constraint] + "\n"
+
+        return base_prompt + constraint_text
+
+    def build_few_shot_examples(self, domain: str) -> str:
+        """Build few-shot examples for voice output"""
+
+        examples = {
+            "customer_service": """
+EXAMPLE EXCHANGES:
+
+User: What's your return policy?
+Good Response: You can return items within 30 days for a full refund. Would you like me to start a return for you?
+Bad Response: Our return policy, as outlined in section 4.2 of our terms of service (https://example.com/terms), allows for returns within 30 calendar days of purchase. Items must be:
+- Unused
+- In original packaging
+- With receipt
+Please contact returns@example.com for more information.
+
+User: I'm so frustrated, I've been on hold for an hour!
+Good Response: I'm really sorry about that long wait. That's frustrating. Let me help you right now. What do you need assistance with?
+Bad Response: I understand. Our hold times vary. How may I assist you today?
+""",
+            "booking": """
+EXAMPLE EXCHANGES:
+
+User: I need to book a flight
+Good Response: I'd be happy to help you book a flight. Where would you like to go?
+Bad Response: Thank you for your interest in booking a flight with us today. To proceed with your reservation, I will need to collect several pieces of information including your departure city, destination, travel dates, and passenger details.
+
+User: Chicago to New York, leaving tomorrow
+Good Response: Got it, Chicago to New York tomorrow. Do you have a preferred departure time, like morning or afternoon?
+Bad Response: I have noted your request for a flight from Chicago (ORD/MDW) to New York (JFK/LGA/EWR) with a departure date of [TOMORROW_DATE]. Please specify your preferred departure time and airport preferences.
+"""
+        }
+
+        return examples.get(domain, "")
+```
+
+## Length Optimization
+
+Voice responses require careful length optimization to balance completeness with listener attention and TTS performance.
+
+### Dynamic Length Adjustment
+
+```python
+class ResponseLengthOptimizer:
+    """Optimize response length for voice context"""
+
+    def __init__(self):
+        # Average speaking rate (words per minute)
+        self.speaking_rate = 150
+
+        # Length guidelines by response type
+        self.length_guidelines = {
+            "greeting": {"words": 15, "seconds": 6},
+            "confirmation": {"words": 25, "seconds": 10},
+            "explanation": {"words": 50, "seconds": 20},
+            "error": {"words": 20, "seconds": 8},
+            "question": {"words": 15, "seconds": 6},
+            "farewell": {"words": 12, "seconds": 5},
+        }
+
+    def optimize(
+        self,
+        response: str,
+        response_type: str,
+        context: Dict[str, Any]
+    ) -> str:
+        """Optimize response length for context"""
+
+        guidelines = self.length_guidelines.get(response_type, {"words": 40})
+        target_words = guidelines["words"]
+
+        # Adjust based on context
+        target_words = self._adjust_for_context(target_words, context)
+
+        # Apply optimization
+        current_words = len(response.split())
+
+        if current_words > target_words * 1.5:
+            response = self._shorten(response, target_words)
+        elif current_words < target_words * 0.5 and response_type == "explanation":
+            response = self._expand(response, target_words, context)
+
+        return response
+
+    def _adjust_for_context(
+        self,
+        base_words: int,
+        context: Dict[str, Any]
+    ) -> int:
+        """Adjust target length based on context"""
+
+        adjusted = base_words
+
+        # Reduce for repeated errors (user may be frustrated)
+        if context.get("error_count", 0) > 1:
+            adjusted = int(adjusted * 0.7)
+
+        # Increase for first-time users
+        if context.get("is_first_time_user"):
+            adjusted = int(adjusted * 1.3)
+
+        # Reduce during peak hours
+        if context.get("is_peak_hours"):
+            adjusted = int(adjusted * 0.8)
+
+        # Consider user preference
+        user_pref = context.get("user_verbosity_preference")
+        if user_pref == "brief":
+            adjusted = int(adjusted * 0.6)
+        elif user_pref == "detailed":
+            adjusted = int(adjusted * 1.5)
+
+        return adjusted
+
+    def _shorten(self, response: str, target_words: int) -> str:
+        """Shorten response to target length"""
+
+        sentences = self._split_into_sentences(response)
+
+        # Prioritize sentences
+        prioritized = self._prioritize_sentences(sentences)
+
+        # Build response within limit
+        result = []
+        word_count = 0
+
+        for sentence in prioritized:
+            sentence_words = len(sentence.split())
+            if word_count + sentence_words <= target_words:
+                result.append(sentence)
+                word_count += sentence_words
+            else:
+                break
+
+        if not result:
+            # At minimum, include first sentence truncated
+            words = sentences[0].split()[:target_words]
+            return ' '.join(words) + '.'
+
+        return ' '.join(result)
+
+    def _prioritize_sentences(self, sentences: List[str]) -> List[str]:
+        """Prioritize sentences by importance"""
+
+        # Score each sentence
+        scored = []
+        for i, sentence in enumerate(sentences):
+            score = 0
+
+            # First and last sentences are often important
+            if i == 0:
+                score += 3
+            if i == len(sentences) - 1:
+                score += 2
+
+            # Questions are important
+            if '?' in sentence:
+                score += 2
+
+            # Contains key action words
+            action_words = ['can', 'will', 'would', 'please', 'help']
+            if any(word in sentence.lower() for word in action_words):
+                score += 1
+
+            scored.append((sentence, score))
+
+        # Sort by score (descending) but maintain relative order for ties
+        scored.sort(key=lambda x: -x[1])
+
+        return [s[0] for s in scored]
+
+    def _expand(
+        self,
+        response: str,
+        target_words: int,
+        context: Dict[str, Any]
+    ) -> str:
+        """Expand response if too brief"""
+
+        # Add helpful context based on the situation
+        additions = []
+
+        if context.get("next_step"):
+            additions.append(f"Next, {context['next_step']}.")
+
+        if context.get("helpful_tip"):
+            additions.append(context["helpful_tip"])
+
+        if additions:
+            response = response + " " + " ".join(additions)
+
+        return response
+
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """Split text into sentences"""
+        return re.split(r'(?<=[.!?])\s+', text)
+
+    def estimate_duration(self, text: str) -> float:
+        """Estimate speech duration in seconds"""
+        word_count = len(text.split())
+        return (word_count / self.speaking_rate) * 60
+```
+
+### Chunking for TTS
+
+```python
+class TTSChunker:
+    """Chunk responses for optimal TTS processing"""
+
+    def __init__(
+        self,
+        max_chunk_chars: int = 200,
+        prefer_sentence_boundaries: bool = True
+    ):
+        self.max_chunk_chars = max_chunk_chars
+        self.prefer_sentence_boundaries = prefer_sentence_boundaries
+
+    def chunk(self, text: str) -> List[str]:
+        """Chunk text for TTS processing"""
+
+        if len(text) <= self.max_chunk_chars:
+            return [text]
+
+        if self.prefer_sentence_boundaries:
+            return self._chunk_by_sentences(text)
+
+        return self._chunk_by_phrases(text)
+
+    def _chunk_by_sentences(self, text: str) -> List[str]:
+        """Chunk at sentence boundaries"""
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+
+        chunks = []
+        current_chunk = ""
+
+        for sentence in sentences:
+            if len(current_chunk) + len(sentence) + 1 <= self.max_chunk_chars:
+                current_chunk += (" " if current_chunk else "") + sentence
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                if len(sentence) <= self.max_chunk_chars:
+                    current_chunk = sentence
+                else:
+                    # Sentence too long, split by phrases
+                    phrase_chunks = self._chunk_by_phrases(sentence)
+                    chunks.extend(phrase_chunks[:-1])
+                    current_chunk = phrase_chunks[-1]
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    def _chunk_by_phrases(self, text: str) -> List[str]:
+        """Chunk at phrase boundaries (commas, semicolons)"""
+        # Split at clause boundaries
+        phrases = re.split(r'(?<=[,;:])\s+', text)
+
+        chunks = []
+        current_chunk = ""
+
+        for phrase in phrases:
+            if len(current_chunk) + len(phrase) + 1 <= self.max_chunk_chars:
+                current_chunk += (" " if current_chunk else "") + phrase
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = phrase
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    def chunk_with_overlap(
+        self,
+        text: str,
+        overlap_words: int = 2
+    ) -> List[Dict]:
+        """Chunk with overlap for smoother TTS transitions"""
+        chunks = self.chunk(text)
+
+        result = []
+        for i, chunk in enumerate(chunks):
+            chunk_info = {
+                "text": chunk,
+                "index": i,
+                "is_first": i == 0,
+                "is_last": i == len(chunks) - 1,
+            }
+
+            # Add overlap hints for TTS
+            if i > 0:
+                prev_words = chunks[i-1].split()[-overlap_words:]
+                chunk_info["prev_context"] = " ".join(prev_words)
+
+            result.append(chunk_info)
+
+        return result
+```
+
+## Fallback to Templates
+
+When LLM generation fails or produces unsuitable output, fallback to templates ensures reliability.
+
+### Fallback System
+
+```python
+from enum import Enum
+from typing import Callable
+
+class FallbackReason(Enum):
+    TIMEOUT = "timeout"
+    RATE_LIMIT = "rate_limit"
+    CONTENT_FILTER = "content_filter"
+    LOW_QUALITY = "low_quality"
+    TOO_LONG = "too_long"
+    OFF_TOPIC = "off_topic"
+    UNSAFE_CONTENT = "unsafe_content"
+    API_ERROR = "api_error"
+
+class GenerationWithFallback:
+    """LLM generation with template fallback"""
+
+    def __init__(
+        self,
+        llm_generator: VoiceResponseGenerator,
+        template_registry,
+        constraint_enforcer: OutputConstraintEnforcer
+    ):
+        self.llm_generator = llm_generator
+        self.templates = template_registry
+        self.constraint_enforcer = constraint_enforcer
+
+        # Quality validators
+        self.validators = [
+            self._validate_length,
+            self._validate_content_safety,
+            self._validate_relevance,
+            self._validate_formatting,
+        ]
+
+    def generate(
+        self,
+        user_input: str,
+        intent: str,
+        context: Dict[str, Any],
+        timeout: float = 3.0
+    ) -> Dict:
+        """Generate response with fallback handling"""
+
+        try:
+            # Attempt LLM generation
+            response = self._generate_with_timeout(
+                user_input, context, timeout
+            )
+
+            # Validate response
+            validation_result = self._validate_response(
+                response, intent, context
+            )
+
+            if validation_result["valid"]:
+                # Apply constraints and return
+                constrained = self.constraint_enforcer.enforce(response)
+                return {
+                    "response": constrained,
+                    "source": "llm",
+                    "fallback_used": False
+                }
+            else:
+                # Fall back to template
+                return self._fallback_to_template(
+                    intent,
+                    context,
+                    validation_result["reason"]
+                )
+
+        except TimeoutError:
+            return self._fallback_to_template(
+                intent, context, FallbackReason.TIMEOUT
+            )
+        except RateLimitError:
+            return self._fallback_to_template(
+                intent, context, FallbackReason.RATE_LIMIT
+            )
+        except Exception as e:
+            return self._fallback_to_template(
+                intent, context, FallbackReason.API_ERROR
+            )
+
+    def _generate_with_timeout(
+        self,
+        user_input: str,
+        context: Dict,
+        timeout: float
+    ) -> str:
+        """Generate with timeout"""
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                self.llm_generator.generate,
+                user_input,
+                context
+            )
+            try:
+                return future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                raise TimeoutError("LLM generation timed out")
+
+    def _validate_response(
+        self,
+        response: str,
+        intent: str,
+        context: Dict
+    ) -> Dict:
+        """Validate LLM response quality"""
+
+        for validator in self.validators:
+            result = validator(response, intent, context)
+            if not result["valid"]:
+                return result
+
+        return {"valid": True}
+
+    def _validate_length(
+        self,
+        response: str,
+        intent: str,
+        context: Dict
+    ) -> Dict:
+        """Validate response length"""
+        word_count = len(response.split())
+
+        if word_count < 3:
+            return {"valid": False, "reason": FallbackReason.LOW_QUALITY}
+        if word_count > 100:
+            return {"valid": False, "reason": FallbackReason.TOO_LONG}
+
+        return {"valid": True}
+
+    def _validate_content_safety(
+        self,
+        response: str,
+        intent: str,
+        context: Dict
+    ) -> Dict:
+        """Check for unsafe content"""
+        # Simple content filter - in production use dedicated service
+        unsafe_patterns = [
+            r'\b(password|credit.card|ssn|social.security)\b',
+            r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+        ]
+
+        for pattern in unsafe_patterns:
+            if re.search(pattern, response, re.IGNORECASE):
+                return {"valid": False, "reason": FallbackReason.UNSAFE_CONTENT}
+
+        return {"valid": True}
+
+    def _validate_relevance(
+        self,
+        response: str,
+        intent: str,
+        context: Dict
+    ) -> Dict:
+        """Validate response is on-topic"""
+        # Simple relevance check based on intent keywords
+        intent_keywords = {
+            "book_flight": ["flight", "book", "travel", "destination"],
+            "check_status": ["status", "order", "tracking", "delivery"],
+            "cancel": ["cancel", "refund", "return"],
+        }
+
+        keywords = intent_keywords.get(intent, [])
+        if keywords:
+            response_lower = response.lower()
+            if not any(kw in response_lower for kw in keywords):
+                # Response might be off-topic
+                return {"valid": False, "reason": FallbackReason.OFF_TOPIC}
+
+        return {"valid": True}
+
+    def _validate_formatting(
+        self,
+        response: str,
+        intent: str,
+        context: Dict
+    ) -> Dict:
+        """Validate response formatting for voice"""
+        # Check for non-voice-friendly formatting
+        bad_patterns = [
+            r'^\s*[-*•]\s',          # Bullet points
+            r'^\s*\d+\.\s',          # Numbered lists
+            r'```',                   # Code blocks
+            r'\|.*\|',               # Tables
+        ]
+
+        for pattern in bad_patterns:
+            if re.search(pattern, response, re.MULTILINE):
+                return {"valid": False, "reason": FallbackReason.LOW_QUALITY}
+
+        return {"valid": True}
+
+    def _fallback_to_template(
+        self,
+        intent: str,
+        context: Dict,
+        reason: FallbackReason
+    ) -> Dict:
+        """Fall back to template-based response"""
+
+        # Get appropriate template
+        template_id = f"{intent}_default"
+        template = self.templates.get(template_id)
+
+        if not template:
+            template = self.templates.get("generic_response")
+
+        # Render template
+        response = self._render_template(template, context)
+
+        return {
+            "response": response,
+            "source": "template",
+            "fallback_used": True,
+            "fallback_reason": reason.value,
+            "template_id": template.id if template else None
+        }
+
+    def _render_template(self, template, context: Dict) -> str:
+        """Render template with context"""
+        if not template:
+            return "I'm here to help. Could you tell me what you need?"
+
+        # Use template substitution
+        from .response_templates import VoiceOptimizedSubstitution
+        substitution = VoiceOptimizedSubstitution()
+        return substitution.substitute(template.content, context)
+```
+
+### Hybrid Generation
+
+```python
+class HybridResponseGenerator:
+    """Combine templates and LLM for optimal responses"""
+
+    def __init__(
+        self,
+        llm_generator: VoiceResponseGenerator,
+        template_registry
+    ):
+        self.llm = llm_generator
+        self.templates = template_registry
+
+        # Define when to use templates vs LLM
+        self.template_preferred_intents = {
+            "greeting", "farewell", "error", "transfer",
+            "confirmation", "out_of_scope"
+        }
+
+        self.llm_preferred_intents = {
+            "faq", "explanation", "chitchat", "complex_query"
+        }
+
+    def generate(
+        self,
+        intent: str,
+        user_input: str,
+        context: Dict
+    ) -> Dict:
+        """Generate using best approach for the situation"""
+
+        # Determine generation strategy
+        strategy = self._select_strategy(intent, context)
+
+        if strategy == "template":
+            return self._generate_from_template(intent, context)
+        elif strategy == "llm":
+            return self._generate_from_llm(user_input, context)
+        else:  # hybrid
+            return self._generate_hybrid(intent, user_input, context)
+
+    def _select_strategy(self, intent: str, context: Dict) -> str:
+        """Select generation strategy"""
+
+        # Template for critical paths
+        if intent in self.template_preferred_intents:
+            return "template"
+
+        # LLM for open-ended queries
+        if intent in self.llm_preferred_intents:
+            return "llm"
+
+        # Hybrid for slot-filling with dynamic content
+        if context.get("has_slots_to_confirm"):
+            return "hybrid"
+
+        # Default to LLM for flexibility
+        return "llm"
+
+    def _generate_hybrid(
+        self,
+        intent: str,
+        user_input: str,
+        context: Dict
+    ) -> Dict:
+        """Generate hybrid response combining template structure with LLM content"""
+
+        # Get template structure
+        template = self.templates.get(f"{intent}_structure")
+
+        if template:
+            # Use template for structure, LLM for dynamic parts
+            structure = template.content
+
+            # Identify dynamic placeholders
+            placeholders = re.findall(r'\{llm:(\w+)\}', structure)
+
+            for placeholder in placeholders:
+                # Generate content for this placeholder
+                prompt = self._build_placeholder_prompt(placeholder, context)
+                content = self.llm.generate(prompt, context)
+
+                structure = structure.replace(f"{{llm:{placeholder}}}", content)
+
+            return {
+                "response": structure,
+                "source": "hybrid",
+                "template_id": template.id
+            }
+
+        # Fallback to pure LLM
+        return self._generate_from_llm(user_input, context)
+
+    def _build_placeholder_prompt(
+        self,
+        placeholder: str,
+        context: Dict
+    ) -> str:
+        """Build prompt for specific placeholder"""
+        prompts = {
+            "acknowledgment": "Generate a brief, empathetic acknowledgment of the user's situation.",
+            "explanation": "Provide a clear, concise explanation of: " + context.get("topic", ""),
+            "next_step": "Suggest the next logical step for the user.",
+            "personalization": "Add a brief personalized touch based on: " + str(context.get("user_info", {})),
+        }
+        return prompts.get(placeholder, "Generate appropriate content.")
+
+    def _generate_from_template(self, intent: str, context: Dict) -> Dict:
+        """Pure template generation"""
+        template = self.templates.get(f"{intent}_default")
+        # Render and return
+        pass
+
+    def _generate_from_llm(self, user_input: str, context: Dict) -> Dict:
+        """Pure LLM generation"""
+        response = self.llm.generate(user_input, context)
+        return {"response": response, "source": "llm"}
+```
+
+## Next Steps
+
+- **[Response Templates](/topics/foundations/language-generation/response-templates)** - Template-based responses
+- **[Persona Consistency](/topics/foundations/language-generation/persona-consistency)** - Maintain voice personality
+- **[SSML](/topics/foundations/speech-synthesis/ssml)** - Speech synthesis markup

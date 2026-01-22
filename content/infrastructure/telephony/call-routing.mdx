@@ -1,0 +1,1443 @@
+---
+title: "Call Routing for Voice AI"
+description: "Comprehensive guide to intelligent call routing including IVR handoff, intent-based routing, queue management, failover strategies, and skills-based routing for voice AI systems"
+category: "infrastructure"
+tags: ["call-routing", "ivr", "voice-ai", "queue-management", "failover", "skills-routing", "geographic-routing", "telephony"]
+relatedTopics: ["pstn-integration", "sip-protocol", "agent-architecture", "call-center"]
+---
+
+# Call Routing for Voice AI
+
+Intelligent call routing determines how incoming calls reach the appropriate voice AI agent or human operator. Effective routing minimizes wait times, matches callers with the right resources, and ensures business continuity through failover mechanisms. This guide covers routing strategies from basic IVR handoff to advanced skills-based and AI-driven routing.
+
+## Routing Architecture Overview
+
+```
++-----------------------------------------------------------------------------+
+|                      VOICE AI CALL ROUTING ARCHITECTURE                      |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Incoming Call                                                               |
+|       |                                                                      |
+|       v                                                                      |
+|  +----------+     +------------+     +-------------+     +--------------+   |
+|  |  Initial |---->|   Routing  |---->|   Route     |---->|  Destination |   |
+|  | Screening|     |   Engine   |     |  Executor   |     |    Handler   |   |
+|  +----------+     +------------+     +-------------+     +--------------+   |
+|       |                 |                   |                   |           |
+|       v                 v                   v                   v           |
+|  +----------+     +------------+     +-------------+     +--------------+   |
+|  | Caller ID|     | Rules      |     | Queue       |     | Voice AI     |   |
+|  | ANI/DNIS |     | Intent     |     | Management  |     | Agent        |   |
+|  | Context  |     | Time/Geo   |     | Failover    |     | Human Agent  |   |
+|  +----------+     | Skills     |     | Load Balance|     | Voicemail    |   |
+|                   +------------+     +-------------+     +--------------+   |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+## IVR to AI Handoff
+
+Traditional Interactive Voice Response (IVR) systems can seamlessly hand off to voice AI agents for more natural conversations.
+
+### IVR Integration Patterns
+
+```
++-----------------------------------------------------------------------------+
+|                        IVR TO VOICE AI HANDOFF                               |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Pattern 1: IVR Front-end                                                   |
+|  +-------+     +-------+     +----------+     +----------+                  |
+|  | PSTN  |---->|  IVR  |---->| AI Route |---->| Voice AI |                  |
+|  | Call  |     | Menu  |     | Decision |     |  Agent   |                  |
+|  +-------+     +-------+     +----------+     +----------+                  |
+|                    |              |                                          |
+|                    v              v                                          |
+|               +--------+    +--------+                                      |
+|               | DTMF   |    | Speech |                                      |
+|               | Input  |    | Input  |                                      |
+|               +--------+    +--------+                                      |
+|                                                                              |
+|  Pattern 2: AI-First with IVR Fallback                                      |
+|  +-------+     +----------+     +-------+                                   |
+|  | PSTN  |---->| Voice AI |---->|  IVR  | (if AI cannot handle)            |
+|  | Call  |     |  Agent   |     | Menu  |                                   |
+|  +-------+     +----------+     +-------+                                   |
+|                                                                              |
+|  Pattern 3: Hybrid (Parallel Processing)                                    |
+|  +-------+     +----------+                                                 |
+|  | PSTN  |---->| Voice AI | (handles conversation)                         |
+|  | Call  |     +----+-----+                                                 |
+|  +-------+          |                                                       |
+|                     +---->+-------+ (background IVR context)                |
+|                           |  IVR  |                                         |
+|                           +-------+                                         |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### IVR Handoff Implementation
+
+```python
+class IVRHandoffManager:
+    """Manage handoff between IVR and Voice AI"""
+
+    def __init__(self, ivr_config: dict, voice_ai_client):
+        self.ivr_config = ivr_config
+        self.voice_ai = voice_ai_client
+        self.handoff_rules = self._load_handoff_rules()
+
+    def process_ivr_selection(
+        self,
+        call_id: str,
+        dtmf_input: str,
+        ivr_context: dict
+    ) -> str:
+        """Process IVR selection and determine next action"""
+
+        # Map DTMF to intent
+        intent = self._map_dtmf_to_intent(dtmf_input)
+
+        # Check if Voice AI should handle this intent
+        if self._should_handoff_to_ai(intent, ivr_context):
+            return self._generate_ai_handoff(call_id, intent, ivr_context)
+
+        # Continue with traditional IVR
+        return self._generate_ivr_continuation(dtmf_input)
+
+    def _should_handoff_to_ai(self, intent: str, context: dict) -> bool:
+        """Determine if call should be handled by Voice AI"""
+
+        ai_capable_intents = [
+            "general_inquiry",
+            "account_status",
+            "appointment_scheduling",
+            "product_information",
+            "order_status",
+            "faq"
+        ]
+
+        # Check intent capability
+        if intent not in ai_capable_intents:
+            return False
+
+        # Check caller preference (if known)
+        if context.get("caller_prefers_human"):
+            return False
+
+        # Check AI availability
+        if not self.voice_ai.is_available():
+            return False
+
+        # Check time-based rules
+        if self._is_peak_hours() and self.ivr_config.get("ai_off_peak_only"):
+            return False
+
+        return True
+
+    def _generate_ai_handoff(
+        self,
+        call_id: str,
+        intent: str,
+        ivr_context: dict
+    ) -> str:
+        """Generate response to handoff to Voice AI"""
+
+        # Build context for Voice AI
+        ai_context = {
+            "call_id": call_id,
+            "initial_intent": intent,
+            "ivr_path": ivr_context.get("navigation_path", []),
+            "caller_info": ivr_context.get("caller_info", {}),
+            "dtmf_history": ivr_context.get("dtmf_history", [])
+        }
+
+        # Store context for Voice AI to retrieve
+        self._store_handoff_context(call_id, ai_context)
+
+        # Generate handoff response
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Say>Let me connect you with our virtual assistant who can help you with that.</Say>
+            <Pause length="1"/>
+            <Stream bidirectional="true" keepCallAlive="true">
+                wss://voice-ai.example.com/stream/{call_id}?intent={intent}
+            </Stream>
+        </Response>
+        """
+
+    def handle_ai_to_ivr_escalation(
+        self,
+        call_id: str,
+        reason: str,
+        ai_context: dict
+    ) -> str:
+        """Handle escalation from Voice AI back to IVR/human"""
+
+        escalation_map = {
+            "complex_request": self._route_to_specialist,
+            "customer_request": self._route_to_human,
+            "ai_uncertainty": self._route_to_ivr_retry,
+            "authentication_required": self._route_to_secure_ivr,
+            "transaction_limit": self._route_to_human
+        }
+
+        handler = escalation_map.get(reason, self._route_to_human)
+        return handler(call_id, ai_context)
+
+    def _route_to_human(self, call_id: str, context: dict) -> str:
+        """Route call to human agent"""
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Say>I'll connect you with a representative now. Please hold.</Say>
+            <Dial>
+                <Queue method="POST" url="/queue/status">support</Queue>
+            </Dial>
+        </Response>
+        """
+
+    def _route_to_specialist(self, call_id: str, context: dict) -> str:
+        """Route to specialized human agent"""
+        skill = context.get("required_skill", "general")
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Say>I'll connect you with a specialist who can help. One moment please.</Say>
+            <Enqueue method="POST" waitUrl="/queue/hold-music">
+                {skill}-queue
+            </Enqueue>
+        </Response>
+        """
+
+
+# Webhook for IVR menu processing
+@app.route("/ivr/menu", methods=["POST"])
+def ivr_menu():
+    """Handle IVR menu selections"""
+    data = request.form.to_dict()
+
+    call_id = data.get("CallSid") or data.get("call_uuid")
+    digits = data.get("Digits") or data.get("digits")
+
+    # Get IVR context from session
+    ivr_context = get_ivr_context(call_id)
+
+    handler = IVRHandoffManager(config, voice_ai_client)
+    response = handler.process_ivr_selection(call_id, digits, ivr_context)
+
+    return Response(response, mimetype="application/xml")
+```
+
+## Intelligent Routing Based on Intent
+
+Voice AI can analyze caller intent in real-time and route accordingly.
+
+### Intent-Based Routing Engine
+
+```python
+class IntentBasedRouter:
+    """Route calls based on detected intent from Voice AI"""
+
+    def __init__(self, routing_rules: dict):
+        self.rules = routing_rules
+        self.intent_classifier = IntentClassifier()
+        self.route_cache = {}
+
+    async def analyze_and_route(
+        self,
+        call_id: str,
+        transcript: str,
+        caller_context: dict
+    ) -> dict:
+        """Analyze intent and determine optimal route"""
+
+        # Classify intent from transcript
+        intent_result = await self.intent_classifier.classify(transcript)
+
+        # Get route decision
+        route = self._determine_route(intent_result, caller_context)
+
+        # Log routing decision
+        self._log_routing_decision(call_id, intent_result, route)
+
+        return route
+
+    def _determine_route(
+        self,
+        intent_result: dict,
+        caller_context: dict
+    ) -> dict:
+        """Determine route based on intent and context"""
+
+        primary_intent = intent_result["intent"]
+        confidence = intent_result["confidence"]
+        entities = intent_result.get("entities", {})
+
+        # Low confidence - may need clarification
+        if confidence < 0.7:
+            return {
+                "action": "clarify",
+                "prompt": self._generate_clarification_prompt(intent_result),
+                "fallback_route": self.rules.get("default")
+            }
+
+        # Check for VIP/priority routing
+        if caller_context.get("is_vip") or caller_context.get("priority") == "high":
+            return self._get_priority_route(primary_intent)
+
+        # Intent-specific routing
+        route_config = self.rules.get(primary_intent, self.rules.get("default"))
+
+        # Apply entity-based modifications
+        route = self._apply_entity_routing(route_config, entities)
+
+        return route
+
+    def _apply_entity_routing(
+        self,
+        base_route: dict,
+        entities: dict
+    ) -> dict:
+        """Modify routing based on extracted entities"""
+
+        route = base_route.copy()
+
+        # Department entity
+        if "department" in entities:
+            department = entities["department"]
+            if department in self.rules.get("departments", {}):
+                route = self.rules["departments"][department]
+
+        # Product entity
+        if "product" in entities:
+            product = entities["product"]
+            product_routes = self.rules.get("products", {})
+            if product in product_routes:
+                route["skill_tags"] = route.get("skill_tags", []) + [product]
+
+        # Urgency entity
+        if entities.get("urgency") == "high":
+            route["priority"] = "high"
+            route["queue_position"] = "front"
+
+        return route
+
+    def _generate_clarification_prompt(self, intent_result: dict) -> str:
+        """Generate prompt to clarify ambiguous intent"""
+
+        candidates = intent_result.get("candidates", [])[:3]
+
+        if len(candidates) > 1:
+            options = []
+            for i, candidate in enumerate(candidates, 1):
+                options.append(f"Press {i} for {candidate['intent_display_name']}")
+
+            return (
+                "I want to make sure I understand correctly. " +
+                " ".join(options) +
+                " Or, you can tell me more about what you need."
+            )
+
+        return "Could you tell me a bit more about what you're looking for today?"
+
+
+class IntentClassifier:
+    """Classify caller intent from transcript"""
+
+    def __init__(self):
+        self.intent_patterns = self._load_intent_patterns()
+
+    async def classify(self, transcript: str) -> dict:
+        """Classify transcript into intent"""
+
+        # Use LLM for intent classification
+        prompt = f"""Classify the following customer statement into one of these intents:
+        - billing_inquiry: Questions about bills, charges, payments
+        - technical_support: Technical issues, troubleshooting
+        - account_management: Account changes, updates, cancellations
+        - sales_inquiry: Interest in products, pricing, upgrades
+        - complaint: Expressing dissatisfaction, filing complaints
+        - general_inquiry: General questions, information requests
+
+        Customer statement: "{transcript}"
+
+        Return JSON with intent, confidence (0-1), and extracted entities."""
+
+        # Call LLM (simplified)
+        response = await self.llm.classify(prompt)
+
+        return {
+            "intent": response["intent"],
+            "confidence": response["confidence"],
+            "entities": response.get("entities", {}),
+            "candidates": response.get("alternatives", [])
+        }
+
+
+# Routing rules configuration
+routing_rules = {
+    "billing_inquiry": {
+        "destination": "voice_ai",
+        "agent_type": "billing_specialist_ai",
+        "escalation_threshold": 2,  # escalate after 2 failed attempts
+        "human_fallback": "billing_queue"
+    },
+    "technical_support": {
+        "destination": "voice_ai",
+        "agent_type": "tech_support_ai",
+        "skill_tags": ["technical"],
+        "escalation_threshold": 1,
+        "human_fallback": "tech_support_queue"
+    },
+    "complaint": {
+        "destination": "human",  # complaints go directly to humans
+        "queue": "complaints_queue",
+        "priority": "high",
+        "ai_preprocessing": True  # AI gathers info first
+    },
+    "sales_inquiry": {
+        "destination": "voice_ai",
+        "agent_type": "sales_ai",
+        "transfer_on_purchase_intent": True,
+        "human_fallback": "sales_queue"
+    },
+    "default": {
+        "destination": "voice_ai",
+        "agent_type": "general_ai",
+        "human_fallback": "general_queue"
+    },
+    "departments": {
+        "returns": {"queue": "returns_queue", "skill_tags": ["returns"]},
+        "shipping": {"queue": "shipping_queue", "skill_tags": ["logistics"]}
+    }
+}
+```
+
+## Queue Management
+
+### Intelligent Queue System
+
+```python
+class CallQueueManager:
+    """Manage call queues with intelligent prioritization"""
+
+    def __init__(self, queue_config: dict):
+        self.config = queue_config
+        self.queues = {}  # queue_name -> list of calls
+        self.agents = {}  # agent_id -> agent_state
+        self.metrics = QueueMetrics()
+
+    def enqueue_call(
+        self,
+        call_id: str,
+        queue_name: str,
+        priority: str = "normal",
+        context: dict = None
+    ) -> dict:
+        """Add call to queue"""
+
+        if queue_name not in self.queues:
+            self.queues[queue_name] = []
+
+        queue_entry = {
+            "call_id": call_id,
+            "queue_name": queue_name,
+            "priority": priority,
+            "enqueue_time": time.time(),
+            "context": context or {},
+            "estimated_wait": self._estimate_wait_time(queue_name, priority)
+        }
+
+        # Insert based on priority
+        self._insert_by_priority(queue_name, queue_entry)
+
+        # Update metrics
+        self.metrics.record_enqueue(queue_name)
+
+        return {
+            "position": self._get_position(call_id, queue_name),
+            "estimated_wait_seconds": queue_entry["estimated_wait"],
+            "queue_size": len(self.queues[queue_name])
+        }
+
+    def _insert_by_priority(self, queue_name: str, entry: dict):
+        """Insert call in queue based on priority"""
+        queue = self.queues[queue_name]
+
+        priority_order = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+        entry_priority = priority_order.get(entry["priority"], 2)
+
+        # Find insertion point
+        insert_index = len(queue)
+        for i, existing in enumerate(queue):
+            existing_priority = priority_order.get(existing["priority"], 2)
+            if entry_priority < existing_priority:
+                insert_index = i
+                break
+
+        queue.insert(insert_index, entry)
+
+    def dequeue_for_agent(
+        self,
+        agent_id: str,
+        agent_skills: list
+    ) -> dict:
+        """Get next call for an agent based on skills"""
+
+        # Find matching queues based on agent skills
+        matching_queues = self._get_matching_queues(agent_skills)
+
+        # Select call with longest wait from matching queues
+        best_call = None
+        best_queue = None
+        longest_wait = 0
+
+        for queue_name in matching_queues:
+            if not self.queues.get(queue_name):
+                continue
+
+            for call in self.queues[queue_name]:
+                wait_time = time.time() - call["enqueue_time"]
+
+                # Adjust for priority
+                priority_multiplier = {"urgent": 3, "high": 2, "normal": 1, "low": 0.5}
+                adjusted_wait = wait_time * priority_multiplier.get(call["priority"], 1)
+
+                if adjusted_wait > longest_wait:
+                    longest_wait = adjusted_wait
+                    best_call = call
+                    best_queue = queue_name
+
+        if best_call:
+            self.queues[best_queue].remove(best_call)
+            self.metrics.record_dequeue(best_queue, time.time() - best_call["enqueue_time"])
+
+            return {
+                "call_id": best_call["call_id"],
+                "queue_name": best_queue,
+                "context": best_call["context"],
+                "wait_time": time.time() - best_call["enqueue_time"]
+            }
+
+        return None
+
+    def _estimate_wait_time(self, queue_name: str, priority: str) -> int:
+        """Estimate wait time for a new call"""
+
+        # Get historical average handle time
+        avg_handle_time = self.metrics.get_avg_handle_time(queue_name)
+
+        # Get available agents
+        available_agents = self._get_available_agents_for_queue(queue_name)
+
+        if not available_agents:
+            # No agents - use worst case
+            queue_size = len(self.queues.get(queue_name, []))
+            return queue_size * avg_handle_time + avg_handle_time
+
+        # Calculate based on queue depth and agent availability
+        calls_ahead = self._count_calls_ahead(queue_name, priority)
+        estimated_seconds = (calls_ahead / len(available_agents)) * avg_handle_time
+
+        return int(estimated_seconds)
+
+    def get_queue_status(self, queue_name: str) -> dict:
+        """Get current queue status"""
+        queue = self.queues.get(queue_name, [])
+
+        return {
+            "queue_name": queue_name,
+            "size": len(queue),
+            "oldest_wait": self._get_oldest_wait(queue_name),
+            "by_priority": {
+                "urgent": len([c for c in queue if c["priority"] == "urgent"]),
+                "high": len([c for c in queue if c["priority"] == "high"]),
+                "normal": len([c for c in queue if c["priority"] == "normal"]),
+                "low": len([c for c in queue if c["priority"] == "low"])
+            },
+            "available_agents": len(self._get_available_agents_for_queue(queue_name)),
+            "estimated_wait_new_call": self._estimate_wait_time(queue_name, "normal")
+        }
+
+    def reposition_call(self, call_id: str, new_priority: str) -> bool:
+        """Change priority of call in queue"""
+        for queue_name, queue in self.queues.items():
+            for call in queue:
+                if call["call_id"] == call_id:
+                    queue.remove(call)
+                    call["priority"] = new_priority
+                    self._insert_by_priority(queue_name, call)
+                    return True
+        return False
+
+
+class QueueMetrics:
+    """Track queue metrics for estimation and reporting"""
+
+    def __init__(self):
+        self.enqueue_events = []
+        self.dequeue_events = []
+        self.handle_times = {}
+
+    def record_enqueue(self, queue_name: str):
+        self.enqueue_events.append({
+            "queue": queue_name,
+            "timestamp": time.time()
+        })
+
+    def record_dequeue(self, queue_name: str, wait_time: float):
+        self.dequeue_events.append({
+            "queue": queue_name,
+            "timestamp": time.time(),
+            "wait_time": wait_time
+        })
+
+    def get_avg_handle_time(self, queue_name: str) -> float:
+        """Get average handle time for a queue"""
+        times = self.handle_times.get(queue_name, [])
+        if not times:
+            return 300  # Default 5 minutes
+        return sum(times[-100:]) / len(times[-100:])  # Last 100 calls
+```
+
+### Queue Callbacks and Virtual Hold
+
+```python
+class VirtualHoldManager:
+    """Manage callback queues and virtual hold"""
+
+    def __init__(self, queue_manager: CallQueueManager, dialer):
+        self.queue_manager = queue_manager
+        self.dialer = dialer
+        self.callbacks = {}
+
+    def offer_callback(
+        self,
+        call_id: str,
+        queue_name: str,
+        estimated_wait: int
+    ) -> str:
+        """Generate callback offer response"""
+
+        # Only offer if wait exceeds threshold
+        if estimated_wait < 120:  # 2 minutes
+            return None
+
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Gather input="dtmf speech" timeout="5" numDigits="1" action="/queue/callback-response">
+                <Say>
+                    Your estimated wait time is {estimated_wait // 60} minutes.
+                    Press 1 or say "callback" to receive a callback when an agent is available.
+                    Press 2 or say "wait" to continue holding.
+                </Say>
+            </Gather>
+            <Redirect>/queue/wait/{queue_name}</Redirect>
+        </Response>
+        """
+
+    def schedule_callback(
+        self,
+        call_id: str,
+        phone_number: str,
+        queue_name: str,
+        context: dict
+    ) -> dict:
+        """Schedule a callback for the caller"""
+
+        callback_id = f"cb_{call_id}"
+
+        self.callbacks[callback_id] = {
+            "call_id": call_id,
+            "phone_number": phone_number,
+            "queue_name": queue_name,
+            "context": context,
+            "scheduled_at": time.time(),
+            "status": "pending",
+            "attempts": 0
+        }
+
+        # Add to callback queue (maintains position)
+        self.queue_manager.enqueue_call(
+            call_id=callback_id,
+            queue_name=f"{queue_name}_callback",
+            priority=context.get("priority", "normal"),
+            context={"callback": True, "original_context": context}
+        )
+
+        return {
+            "callback_id": callback_id,
+            "status": "scheduled",
+            "estimated_callback_time": self._estimate_callback_time(queue_name)
+        }
+
+    async def process_callback(self, callback_id: str, agent_id: str):
+        """Initiate callback when agent becomes available"""
+
+        callback = self.callbacks.get(callback_id)
+        if not callback:
+            return False
+
+        callback["status"] = "calling"
+        callback["attempts"] += 1
+
+        try:
+            # Initiate outbound call
+            result = await self.dialer.make_call(
+                to=callback["phone_number"],
+                from_=self._get_callback_caller_id(),
+                webhook_url=f"/callback/answer/{callback_id}",
+                timeout=30,
+                machine_detection=True
+            )
+
+            callback["call_sid"] = result["call_id"]
+            return True
+
+        except Exception as e:
+            callback["status"] = "failed"
+            callback["error"] = str(e)
+
+            # Retry logic
+            if callback["attempts"] < 3:
+                await self._schedule_retry(callback_id)
+
+            return False
+
+    def handle_callback_answer(self, callback_id: str, answered_by: str) -> str:
+        """Handle callback being answered"""
+
+        callback = self.callbacks.get(callback_id)
+
+        if answered_by == "human":
+            # Connect to waiting agent
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Say>Hello! This is your callback from customer service. Please hold while I connect you.</Say>
+                <Dial>
+                    <Conference beep="false" startConferenceOnEnter="true">
+                        callback-{callback_id}
+                    </Conference>
+                </Dial>
+            </Response>
+            """
+        else:
+            # Machine - leave message or retry
+            callback["status"] = "voicemail"
+            return """<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Say>Hello, this is a callback from customer service. Please call us back at your convenience.</Say>
+                <Hangup/>
+            </Response>
+            """
+```
+
+## Failover and Redundancy
+
+### Multi-Level Failover Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                      FAILOVER ARCHITECTURE                                   |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Level 1: Voice AI Failover                                                 |
+|  +----------------+     +----------------+     +----------------+           |
+|  | Primary AI     | --> | Secondary AI   | --> | Backup AI      |           |
+|  | (Region A)     |     | (Region B)     |     | (Cloud)        |           |
+|  +----------------+     +----------------+     +----------------+           |
+|         |                      |                      |                      |
+|         v                      v                      v                      |
+|  Level 2: Carrier Failover                                                  |
+|  +----------------+     +----------------+     +----------------+           |
+|  | Primary Carrier| --> | Secondary      | --> | Backup         |           |
+|  | (Plivo)        |     | (Twilio)       |     | (Direct SIP)   |           |
+|  +----------------+     +----------------+     +----------------+           |
+|         |                      |                      |                      |
+|         v                      v                      v                      |
+|  Level 3: Destination Failover                                              |
+|  +----------------+     +----------------+     +----------------+           |
+|  | Voice AI Queue | --> | Human Queue    | --> | Voicemail      |           |
+|  +----------------+     +----------------+     +----------------+           |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Failover Implementation
+
+```python
+class FailoverController:
+    """Manage call routing failover across multiple levels"""
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.health_monitor = HealthMonitor()
+        self.failover_state = {}
+
+    async def route_with_failover(
+        self,
+        call_id: str,
+        primary_route: dict
+    ) -> dict:
+        """Route call with automatic failover"""
+
+        failover_chain = self._build_failover_chain(primary_route)
+
+        for route in failover_chain:
+            if await self._is_route_healthy(route):
+                try:
+                    result = await self._execute_route(call_id, route)
+                    if result["success"]:
+                        return result
+                except Exception as e:
+                    self._record_failure(route, e)
+                    continue
+
+        # All routes failed - emergency fallback
+        return await self._emergency_fallback(call_id)
+
+    def _build_failover_chain(self, primary_route: dict) -> list:
+        """Build ordered list of failover options"""
+
+        chain = [primary_route]
+
+        # Add configured failovers
+        if "failover" in primary_route:
+            chain.extend(primary_route["failover"])
+
+        # Add system-level failovers
+        chain.extend([
+            {"type": "voice_ai", "instance": "backup"},
+            {"type": "queue", "name": "general"},
+            {"type": "voicemail"}
+        ])
+
+        return chain
+
+    async def _is_route_healthy(self, route: dict) -> bool:
+        """Check if route is currently healthy"""
+
+        route_key = self._get_route_key(route)
+
+        # Check circuit breaker
+        if self._is_circuit_open(route_key):
+            return False
+
+        # Check real-time health
+        health = await self.health_monitor.check(route)
+        return health["healthy"]
+
+    def _is_circuit_open(self, route_key: str) -> bool:
+        """Check circuit breaker status"""
+        state = self.failover_state.get(route_key, {})
+
+        if state.get("circuit_open"):
+            # Check if enough time has passed to retry
+            if time.time() - state.get("opened_at", 0) > 60:  # 1 minute timeout
+                state["circuit_open"] = False
+                state["half_open"] = True
+                return False
+            return True
+
+        return False
+
+    def _record_failure(self, route: dict, error: Exception):
+        """Record route failure for circuit breaker"""
+        route_key = self._get_route_key(route)
+
+        if route_key not in self.failover_state:
+            self.failover_state[route_key] = {"failures": 0}
+
+        state = self.failover_state[route_key]
+        state["failures"] += 1
+        state["last_failure"] = time.time()
+        state["last_error"] = str(error)
+
+        # Open circuit after 3 failures
+        if state["failures"] >= 3:
+            state["circuit_open"] = True
+            state["opened_at"] = time.time()
+
+    async def _emergency_fallback(self, call_id: str) -> dict:
+        """Emergency fallback when all routes fail"""
+
+        # Try to get voicemail
+        return {
+            "success": True,
+            "route_type": "emergency_voicemail",
+            "response": """<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Say>We're experiencing technical difficulties. Please leave a message and we'll call you back.</Say>
+                <Record maxLength="120" action="/voicemail/save" transcribe="true"/>
+            </Response>
+            """
+        }
+
+
+class HealthMonitor:
+    """Monitor health of routing destinations"""
+
+    def __init__(self):
+        self.health_cache = {}
+        self.check_interval = 30  # seconds
+
+    async def check(self, route: dict) -> dict:
+        """Check health of a route"""
+
+        route_key = f"{route['type']}:{route.get('instance', 'default')}"
+
+        # Check cache
+        cached = self.health_cache.get(route_key)
+        if cached and time.time() - cached["checked_at"] < self.check_interval:
+            return cached
+
+        # Perform health check
+        health = await self._perform_check(route)
+        health["checked_at"] = time.time()
+
+        self.health_cache[route_key] = health
+        return health
+
+    async def _perform_check(self, route: dict) -> dict:
+        """Perform actual health check"""
+
+        if route["type"] == "voice_ai":
+            return await self._check_voice_ai_health(route)
+        elif route["type"] == "queue":
+            return await self._check_queue_health(route)
+        elif route["type"] == "carrier":
+            return await self._check_carrier_health(route)
+
+        return {"healthy": True}
+
+    async def _check_voice_ai_health(self, route: dict) -> dict:
+        """Check Voice AI endpoint health"""
+        try:
+            # HTTP health check
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{route['endpoint']}/health",
+                    timeout=5
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return {
+                            "healthy": data.get("status") == "healthy",
+                            "latency_ms": data.get("latency_ms"),
+                            "active_calls": data.get("active_calls")
+                        }
+        except Exception as e:
+            return {"healthy": False, "error": str(e)}
+
+        return {"healthy": False}
+```
+
+## Geographic Routing
+
+### Location-Based Call Distribution
+
+```python
+class GeographicRouter:
+    """Route calls based on geographic location"""
+
+    def __init__(self, geo_config: dict):
+        self.config = geo_config
+        self.region_mapping = self._load_region_mapping()
+
+    def route_by_geography(
+        self,
+        caller_number: str,
+        called_number: str
+    ) -> dict:
+        """Determine route based on caller/called locations"""
+
+        # Extract geographic info from phone numbers
+        caller_region = self._get_region_from_number(caller_number)
+        called_region = self._get_region_from_number(called_number)
+
+        # Get regional routing rules
+        route = self._get_regional_route(caller_region)
+
+        # Apply regulatory compliance
+        route = self._apply_compliance_rules(route, caller_region)
+
+        return route
+
+    def _get_region_from_number(self, phone_number: str) -> dict:
+        """Extract region information from phone number"""
+        import phonenumbers
+
+        try:
+            parsed = phonenumbers.parse(phone_number)
+            country_code = phonenumbers.region_code_for_number(parsed)
+
+            # Get more specific region for larger countries
+            if country_code == "US":
+                area_code = str(parsed.national_number)[:3]
+                state = self._us_area_code_to_state(area_code)
+                timezone = self._get_timezone(state)
+            else:
+                state = None
+                timezone = self._get_country_timezone(country_code)
+
+            return {
+                "country": country_code,
+                "state": state,
+                "area_code": str(parsed.national_number)[:3],
+                "timezone": timezone
+            }
+        except Exception:
+            return {"country": "unknown", "state": None, "timezone": "UTC"}
+
+    def _get_regional_route(self, region: dict) -> dict:
+        """Get routing configuration for region"""
+
+        country = region["country"]
+        state = region.get("state")
+
+        # Check state-level routing first
+        if state and f"{country}:{state}" in self.config["regional_routes"]:
+            return self.config["regional_routes"][f"{country}:{state}"]
+
+        # Fall back to country-level
+        if country in self.config["regional_routes"]:
+            return self.config["regional_routes"][country]
+
+        # Default routing
+        return self.config["regional_routes"]["default"]
+
+    def _apply_compliance_rules(self, route: dict, region: dict) -> dict:
+        """Apply regional compliance requirements"""
+
+        country = region["country"]
+
+        # GDPR regions - may require EU-based processing
+        gdpr_countries = ["DE", "FR", "IT", "ES", "NL", "BE", "AT", "PL"]
+        if country in gdpr_countries:
+            route["data_residency"] = "EU"
+            route["force_eu_endpoint"] = True
+
+        # India - data localization requirements
+        if country == "IN":
+            route["data_residency"] = "IN"
+
+        # Australia - specific requirements
+        if country == "AU":
+            route["caller_id_required"] = True
+
+        return route
+
+
+# Geographic routing configuration
+geo_routing_config = {
+    "regional_routes": {
+        "US:CA": {
+            "primary_endpoint": "us-west-1.voice-ai.example.com",
+            "failover_endpoint": "us-central-1.voice-ai.example.com",
+            "carrier": "plivo-us-west"
+        },
+        "US:NY": {
+            "primary_endpoint": "us-east-1.voice-ai.example.com",
+            "failover_endpoint": "us-central-1.voice-ai.example.com",
+            "carrier": "plivo-us-east"
+        },
+        "GB": {
+            "primary_endpoint": "eu-west-1.voice-ai.example.com",
+            "carrier": "plivo-eu",
+            "language": "en-GB"
+        },
+        "DE": {
+            "primary_endpoint": "eu-central-1.voice-ai.example.com",
+            "carrier": "plivo-eu",
+            "language": "de-DE",
+            "data_residency": "EU"
+        },
+        "default": {
+            "primary_endpoint": "us-central-1.voice-ai.example.com",
+            "carrier": "plivo-global"
+        }
+    }
+}
+```
+
+## Time-Based Routing
+
+### Business Hours and Schedule Management
+
+```python
+class TimeBasedRouter:
+    """Route calls based on time, schedules, and business hours"""
+
+    def __init__(self, schedule_config: dict):
+        self.config = schedule_config
+        self.holidays = self._load_holidays()
+
+    def get_time_based_route(
+        self,
+        queue_name: str,
+        caller_timezone: str = None
+    ) -> dict:
+        """Determine route based on current time"""
+
+        # Get business timezone
+        business_tz = pytz.timezone(self.config["business_timezone"])
+        current_time = datetime.now(business_tz)
+
+        # Check holidays first
+        if self._is_holiday(current_time):
+            return self._get_holiday_route(queue_name)
+
+        # Check if within business hours
+        if self._is_business_hours(current_time, queue_name):
+            return self._get_business_hours_route(queue_name)
+        else:
+            return self._get_after_hours_route(queue_name, caller_timezone)
+
+    def _is_business_hours(self, current_time: datetime, queue_name: str) -> bool:
+        """Check if current time is within business hours"""
+
+        schedule = self.config["schedules"].get(queue_name, self.config["default_schedule"])
+
+        day_name = current_time.strftime("%A").lower()
+        day_schedule = schedule.get(day_name)
+
+        if not day_schedule or day_schedule == "closed":
+            return False
+
+        current_time_only = current_time.time()
+        open_time = datetime.strptime(day_schedule["open"], "%H:%M").time()
+        close_time = datetime.strptime(day_schedule["close"], "%H:%M").time()
+
+        return open_time <= current_time_only <= close_time
+
+    def _get_business_hours_route(self, queue_name: str) -> dict:
+        """Get routing for business hours"""
+        return {
+            "route_type": "normal",
+            "destination": "voice_ai",
+            "queue": queue_name,
+            "human_available": True
+        }
+
+    def _get_after_hours_route(self, queue_name: str, caller_timezone: str) -> dict:
+        """Get routing for after hours"""
+
+        after_hours_config = self.config.get("after_hours", {})
+
+        # Check for 24/7 queues
+        if queue_name in after_hours_config.get("always_open", []):
+            return {
+                "route_type": "24_7",
+                "destination": "voice_ai",
+                "queue": queue_name
+            }
+
+        # Check for global follow-the-sun routing
+        if after_hours_config.get("follow_the_sun"):
+            alternate_region = self._find_active_region()
+            if alternate_region:
+                return {
+                    "route_type": "follow_the_sun",
+                    "destination": "voice_ai",
+                    "region": alternate_region,
+                    "queue": queue_name
+                }
+
+        # Default after-hours handling
+        return {
+            "route_type": "after_hours",
+            "destination": after_hours_config.get("destination", "voicemail"),
+            "message": after_hours_config.get("message"),
+            "offer_callback": after_hours_config.get("offer_callback", True)
+        }
+
+    def _find_active_region(self) -> str:
+        """Find a region that is currently in business hours"""
+
+        regions = self.config.get("global_regions", {})
+
+        for region_name, region_config in regions.items():
+            region_tz = pytz.timezone(region_config["timezone"])
+            region_time = datetime.now(region_tz)
+
+            if self._is_business_hours(region_time, "default"):
+                return region_name
+
+        return None
+
+    def generate_after_hours_response(self, route: dict, call_context: dict) -> str:
+        """Generate response for after hours calls"""
+
+        if route["destination"] == "voicemail":
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Say>{route.get('message', 'We are currently closed.')}</Say>
+                {self._offer_callback_xml(route, call_context) if route.get('offer_callback') else ''}
+                <Say>Please leave a message after the beep.</Say>
+                <Record maxLength="120" action="/voicemail/save" transcribe="true"/>
+            </Response>
+            """
+
+        elif route["destination"] == "voice_ai":
+            # AI-only after hours
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Say>Thank you for calling. Our office is currently closed, but our virtual assistant can help you.</Say>
+                <Stream bidirectional="true">
+                    wss://voice-ai.example.com/stream/{call_context['call_id']}?mode=after_hours
+                </Stream>
+            </Response>
+            """
+
+    def _offer_callback_xml(self, route: dict, call_context: dict) -> str:
+        """Generate callback offer XML"""
+        return """
+        <Gather input="dtmf" timeout="5" numDigits="1" action="/callback/schedule">
+            <Say>Press 1 to schedule a callback during business hours.</Say>
+        </Gather>
+        """
+
+
+# Schedule configuration
+schedule_config = {
+    "business_timezone": "America/New_York",
+    "default_schedule": {
+        "monday": {"open": "09:00", "close": "18:00"},
+        "tuesday": {"open": "09:00", "close": "18:00"},
+        "wednesday": {"open": "09:00", "close": "18:00"},
+        "thursday": {"open": "09:00", "close": "18:00"},
+        "friday": {"open": "09:00", "close": "17:00"},
+        "saturday": "closed",
+        "sunday": "closed"
+    },
+    "schedules": {
+        "support": {
+            "monday": {"open": "08:00", "close": "20:00"},
+            "saturday": {"open": "10:00", "close": "16:00"}
+        },
+        "sales": {
+            "monday": {"open": "09:00", "close": "21:00"}
+        }
+    },
+    "after_hours": {
+        "destination": "voice_ai",
+        "offer_callback": True,
+        "always_open": ["emergency"],
+        "follow_the_sun": True
+    },
+    "global_regions": {
+        "us_east": {"timezone": "America/New_York"},
+        "us_west": {"timezone": "America/Los_Angeles"},
+        "emea": {"timezone": "Europe/London"},
+        "apac": {"timezone": "Asia/Singapore"}
+    }
+}
+```
+
+## Skills-Based Routing
+
+### Agent Skills Matching
+
+```python
+class SkillsBasedRouter:
+    """Route calls to agents based on skill matching"""
+
+    def __init__(self, skills_config: dict):
+        self.config = skills_config
+        self.agent_skills = {}  # agent_id -> skill set
+        self.skill_requirements = {}  # queue -> required skills
+
+    def register_agent_skills(self, agent_id: str, skills: list):
+        """Register skills for an agent"""
+        self.agent_skills[agent_id] = set(skills)
+
+    def route_to_skilled_agent(
+        self,
+        call_id: str,
+        required_skills: list,
+        preferred_skills: list = None,
+        caller_context: dict = None
+    ) -> dict:
+        """Find best agent based on skill requirements"""
+
+        # Get available agents
+        available_agents = self._get_available_agents()
+
+        if not available_agents:
+            return {"success": False, "reason": "no_agents_available"}
+
+        # Score agents based on skill match
+        scored_agents = []
+        for agent_id in available_agents:
+            agent_skills = self.agent_skills.get(agent_id, set())
+
+            score = self._calculate_skill_score(
+                agent_skills,
+                required_skills,
+                preferred_skills or []
+            )
+
+            # Apply additional scoring factors
+            score = self._apply_scoring_modifiers(
+                agent_id, score, caller_context
+            )
+
+            if score > 0:  # Must have at least some match
+                scored_agents.append((agent_id, score))
+
+        if not scored_agents:
+            return {"success": False, "reason": "no_skilled_agents"}
+
+        # Sort by score (highest first)
+        scored_agents.sort(key=lambda x: x[1], reverse=True)
+
+        # Return best match
+        best_agent = scored_agents[0][0]
+        return {
+            "success": True,
+            "agent_id": best_agent,
+            "skill_score": scored_agents[0][1],
+            "alternatives": [a[0] for a in scored_agents[1:4]]  # Top 3 alternatives
+        }
+
+    def _calculate_skill_score(
+        self,
+        agent_skills: set,
+        required: list,
+        preferred: list
+    ) -> float:
+        """Calculate skill match score"""
+
+        required_set = set(required)
+        preferred_set = set(preferred)
+
+        # Required skills must all be present
+        if not required_set.issubset(agent_skills):
+            return 0
+
+        score = 100  # Base score for meeting requirements
+
+        # Bonus for preferred skills
+        preferred_matches = agent_skills.intersection(preferred_set)
+        score += len(preferred_matches) * 10
+
+        # Penalty for too many extra skills (specialist vs generalist)
+        if self.config.get("prefer_specialists"):
+            extra_skills = len(agent_skills - required_set - preferred_set)
+            score -= extra_skills * 2
+
+        return score
+
+    def _apply_scoring_modifiers(
+        self,
+        agent_id: str,
+        base_score: float,
+        caller_context: dict
+    ) -> float:
+        """Apply additional scoring based on context"""
+
+        score = base_score
+
+        if not caller_context:
+            return score
+
+        # Previous interaction bonus
+        if caller_context.get("previous_agent") == agent_id:
+            score += self.config.get("previous_agent_bonus", 20)
+
+        # Language match bonus
+        caller_language = caller_context.get("language")
+        agent_languages = self._get_agent_languages(agent_id)
+        if caller_language in agent_languages:
+            score += self.config.get("language_bonus", 15)
+
+        # Performance-based scoring
+        agent_metrics = self._get_agent_metrics(agent_id)
+        if agent_metrics:
+            # CSAT bonus
+            if agent_metrics.get("csat", 0) > 4.5:
+                score += 10
+            # Resolution rate bonus
+            if agent_metrics.get("fcr_rate", 0) > 0.8:
+                score += 10
+
+        return score
+
+    def infer_required_skills(
+        self,
+        intent: str,
+        entities: dict,
+        caller_context: dict
+    ) -> tuple:
+        """Infer required and preferred skills from call context"""
+
+        required_skills = []
+        preferred_skills = []
+
+        # Intent-based skills
+        intent_skills = self.config["intent_skill_mapping"].get(intent, {})
+        required_skills.extend(intent_skills.get("required", []))
+        preferred_skills.extend(intent_skills.get("preferred", []))
+
+        # Entity-based skills
+        if "product" in entities:
+            product = entities["product"]
+            if product in self.config["product_skills"]:
+                required_skills.append(self.config["product_skills"][product])
+
+        if "language" in entities:
+            required_skills.append(f"language:{entities['language']}")
+
+        # Customer tier skills
+        if caller_context.get("tier") == "enterprise":
+            required_skills.append("enterprise_support")
+        elif caller_context.get("tier") == "premium":
+            preferred_skills.append("premium_support")
+
+        return list(set(required_skills)), list(set(preferred_skills))
+
+
+# Skills routing configuration
+skills_config = {
+    "prefer_specialists": True,
+    "previous_agent_bonus": 20,
+    "language_bonus": 15,
+    "intent_skill_mapping": {
+        "billing_inquiry": {
+            "required": ["billing"],
+            "preferred": ["accounting", "payment_systems"]
+        },
+        "technical_support": {
+            "required": ["technical"],
+            "preferred": ["troubleshooting", "product_expert"]
+        },
+        "sales_inquiry": {
+            "required": ["sales"],
+            "preferred": ["negotiation", "product_demo"]
+        },
+        "complaint": {
+            "required": ["customer_service", "conflict_resolution"],
+            "preferred": ["senior_support"]
+        }
+    },
+    "product_skills": {
+        "software_a": "software_a_expert",
+        "hardware_x": "hardware_specialist",
+        "service_premium": "premium_services"
+    }
+}
+```
+
+## Summary
+
+Call routing for voice AI requires sophisticated decision-making across multiple dimensions:
+
+1. **IVR Handoff**: Seamless transition from traditional IVR to intelligent voice AI
+2. **Intent-Based Routing**: Real-time analysis to match callers with appropriate resources
+3. **Queue Management**: Priority handling, callbacks, and virtual hold
+4. **Failover**: Multi-level redundancy for high availability
+5. **Geographic Routing**: Compliance and latency optimization by region
+6. **Time-Based Routing**: Business hours, follow-the-sun, and after-hours handling
+7. **Skills-Based Routing**: Match caller needs with agent capabilities
+
+Effective routing combines these strategies with real-time monitoring and continuous optimization to deliver excellent customer experiences while maximizing operational efficiency.

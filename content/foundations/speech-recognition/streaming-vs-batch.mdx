@@ -1,0 +1,549 @@
+---
+title: "Streaming vs Batch Speech Recognition"
+description: "Understanding real-time streaming architectures for voice AI, including chunked inference, endpointing detection, CTC, RNN-T decoding, and two-pass streaming systems."
+category: "foundations"
+tags:
+  - streaming
+  - real-time
+  - CTC
+  - RNN-T
+  - endpointing
+  - voice-ai
+  - latency
+relatedTopics:
+  - overview
+  - acoustic-modeling
+  - optimization
+  - provider-comparison
+lastUpdated: "2026-01-21"
+---
+
+# Streaming vs Batch Speech Recognition
+
+Real-time voice AI applications require streaming ASR that delivers transcriptions with minimal latency. This guide covers the architectural differences between streaming and batch processing, and the decoding strategies that enable low-latency recognition.
+
+## Streaming vs Batch: Core Differences
+
+| Characteristic | Streaming | Batch |
+|---------------|-----------|-------|
+| **Latency** | 100-500ms | Seconds to minutes |
+| **Input** | Continuous audio chunks | Complete audio file |
+| **Use Case** | Voice assistants, live captioning | Transcription, archival |
+| **Accuracy** | Slightly lower (limited context) | Highest (full context) |
+| **Architecture** | Causal/unidirectional | Bidirectional |
+| **Processing** | Incremental | Complete |
+
+### When to Use Streaming
+
+- Voice AI agents and assistants
+- Live captioning and subtitles
+- Real-time translation
+- Interactive voice response (IVR)
+- Any application requiring immediate feedback
+
+### When to Use Batch
+
+- Podcast and video transcription
+- Meeting recordings
+- Call center analytics (post-call)
+- Legal and medical documentation
+- Archival processing
+
+## Chunked Inference and Incremental Transcription
+
+Streaming ASR processes audio in chunks, emitting partial results incrementally.
+
+### Chunk Processing Flow
+
+```
++-----------------------------------------------------------------------------+
+|                        CHUNKED STREAMING INFERENCE                           |
+|                                                                              |
+|   Audio Stream:  [====][====][====][====][====][====]...                    |
+|                   100ms 100ms 100ms 100ms 100ms 100ms                       |
+|                                                                              |
+|   Processing:                                                                |
+|   t=100ms:  "Hello"           (partial)                                     |
+|   t=200ms:  "Hello how"       (partial - updated)                           |
+|   t=300ms:  "Hello how are"   (partial)                                     |
+|   t=400ms:  "Hello, how are"  (partial - punctuation added)                 |
+|   t=500ms:  "Hello, how are you" (final - endpoint detected)                |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Chunk Size Trade-offs
+
+| Chunk Size | Latency | Accuracy | Notes |
+|------------|---------|----------|-------|
+| 20-40ms | Lowest | Lower | Very noisy, unstable partials |
+| 80-100ms | Low | Good | Common for voice agents |
+| 160-200ms | Moderate | Better | Good balance |
+| 500ms+ | Higher | Best | Approaching batch quality |
+
+### NVIDIA's Cache-Aware Streaming
+
+Modern systems reuse encoder context from previous chunks for efficiency:
+
+- Supports configurable chunk sizes: 80ms, 160ms, 560ms, 1120ms
+- Smaller chunks = lower latency, slightly lower accuracy
+- Cache maintains context without reprocessing entire history
+
+### Latency Calculation
+
+```
+Effective_Latency = Chunk_Size + Processing_Time + Network_Latency
+```
+
+For 100ms chunks with 50ms processing: approximately 150ms latency per partial.
+
+## Endpointing Detection
+
+Endpointing (or endpoint detection) determines when a speaker has finished their utterance - critical for knowing when to pass transcription to downstream processing.
+
+### Endpointing Approaches
+
+#### 1. Silence-based Endpointing
+
+Detect N consecutive frames below energy threshold.
+
+```python
+def silence_endpoint(audio_frames, threshold_db=-40, min_silence_ms=700):
+    silence_duration = 0
+    for frame in audio_frames:
+        if get_energy_db(frame) < threshold_db:
+            silence_duration += frame_duration_ms
+            if silence_duration >= min_silence_ms:
+                return True
+        else:
+            silence_duration = 0
+    return False
+```
+
+**Pros:** Simple, fast
+**Cons:** Unreliable in noisy environments, does not handle natural pauses
+
+#### 2. Voice Activity Detection (VAD)
+
+Neural network classifies frames as speech/non-speech.
+
+Popular models:
+- **Silero VAD** - Lightweight, accurate, open-source
+- **WebRTC VAD** - Built into browsers, very fast
+- **pyannote VAD** - High accuracy, more compute
+
+```python
+# Silero VAD example
+vad_model = silero_vad.load_model()
+speech_timestamps = vad_model(audio_chunk)
+if not speech_timestamps:
+    # Endpoint detected
+    finalize_transcription()
+```
+
+**Pros:** More robust to noise
+**Cons:** Still does not understand sentence completion
+
+#### 3. Semantic Endpointing
+
+Analyze linguistic patterns to detect natural turn endings.
+
+Considers:
+- Punctuation probability from ASR
+- Sentence completeness (syntactic parsing)
+- Question/statement classification
+- Prosodic features (falling intonation)
+
+```json
+{
+  "endpointing": {
+    "type": "semantic",
+    "silence_threshold_ms": 800,
+    "max_utterance_ms": 30000,
+    "interim_results": true,
+    "punctuation_endpointing": true
+  }
+}
+```
+
+**Pros:** Can endpoint before long silence, more natural
+**Cons:** More complex, higher compute
+
+#### 4. Utterance-end Models
+
+Trained specifically to predict turn completion:
+
+- Analyze voice patterns beyond simple volume
+- Detect natural pauses even in noisy environments
+- Consider linguistic and prosodic features jointly
+
+### Endpointing Configuration for Voice Agents
+
+{/* <Callout type="info">
+For voice agents, semantic endpointing with a 700-1000ms silence fallback provides the best balance of responsiveness and accuracy. Too short risks cutting users off; too long feels unresponsive.
+</Callout> */}
+
+| Application | Recommended Silence Threshold | Notes |
+|-------------|------------------------------|-------|
+| Command/Control | 500-700ms | Users speak in short phrases |
+| Conversational | 700-1000ms | Natural pauses in speech |
+| Dictation | 1200-1500ms | Longer thinking pauses |
+| Accessibility | 2000ms+ | Accommodate speech difficulties |
+
+## Decoding Strategies
+
+### Connectionist Temporal Classification (CTC)
+
+CTC enables training on unsegmented sequences by marginalizing over all possible alignments.
+
+#### Key Concepts
+
+- **Blank token (epsilon):** Represents "no output" for a frame
+- **Collapsing function:** Removes repeated characters and blanks
+- **Forward-Backward algorithm:** Efficiently computes alignment probabilities
+
+#### CTC Collapsing Example
+
+```
+Raw output:  H_H_E_LLLL_O___ (where _ is blank)
+After collapse: HELLO
+```
+
+#### CTC Loss Function
+
+```
+L_CTC = -ln P(Y|X) = -ln Sum over all pi in B^(-1)(Y) of P(pi|X)
+```
+
+Where B^(-1)(Y) is the set of all paths that collapse to target Y.
+
+#### CTC Decoding Methods
+
+| Method | Speed | Quality | Use Case |
+|--------|-------|---------|----------|
+| Greedy | Fastest | Lower | Real-time streaming |
+| Beam Search | Fast | Good | Default for most apps |
+| Prefix Beam Search | Moderate | Better | When LM integration needed |
+
+**Greedy Decoding:**
+```python
+def ctc_greedy_decode(logits):
+    # Take argmax at each timestep
+    tokens = logits.argmax(dim=-1)
+    # Collapse repeated tokens and blanks
+    return collapse(tokens)
+```
+
+**Beam Search:**
+```python
+def ctc_beam_search(logits, beam_width=10):
+    hypotheses = [("", 0.0)]  # (prefix, score)
+    for t in range(len(logits)):
+        new_hypotheses = expand_hypotheses(hypotheses, logits[t])
+        hypotheses = prune_to_top_k(new_hypotheses, beam_width)
+    return hypotheses[0]
+```
+
+#### CTC Limitations for Streaming
+
+- Conditional independence assumption (outputs independent given input)
+- No explicit label-to-label dependency modeling
+- May produce "peaky" outputs, challenging for stable partials
+
+### Attention-Based Encoder-Decoder (AED)
+
+AED models generate output autoregressively, attending to encoded representations.
+
+```
+P(y_t | y_{<t}, X) = Decoder(y_{<t}, Context_t)
+Context_t = Attention(h_t, Encoder(X))
+```
+
+**Advantages:**
+- No monotonic alignment assumption
+- Captures reordering (useful for translation)
+- Strong accuracy on complete utterances
+
+**Disadvantages for Streaming:**
+- Requires full input for attention computation
+- Cannot process incrementally without modification
+- Prone to deletion/insertion errors with partial context
+
+### RNN Transducer (RNN-T)
+
+RNN-T combines the streaming capability of CTC with the label conditioning of AED - the dominant architecture for on-device and streaming ASR.
+
+#### Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                         RNN-T ARCHITECTURE                                   |
+|                                                                              |
+|   Audio Input                      Previous Labels                           |
+|       |                                 |                                    |
+|       v                                 v                                    |
+|  +----------+                    +--------------+                            |
+|  | Encoder  |                    |  Prediction  |                            |
+|  | Network  |                    |   Network    |                            |
+|  +----+-----+                    +------+-------+                            |
+|       |                                 |                                    |
+|       |         +----------+            |                                    |
+|       +-------->|  Joint   |<-----------+                                    |
+|                 | Network  |                                                 |
+|                 +----+-----+                                                 |
+|                      |                                                       |
+|                      v                                                       |
+|               P(y | t, u)                                                    |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+**Components:**
+- **Encoder Network:** Processes audio frames (often Conformer)
+- **Prediction Network:** Language model over previous labels (often LSTM)
+- **Joint Network:** Combines encoder and prediction outputs
+
+#### How RNN-T Works
+
+At each (time, label) position, RNN-T can emit:
+- **Blank:** Move to next time step without emitting
+- **Label:** Emit a token and advance in label sequence
+
+This allows streaming: as audio arrives, tokens can be emitted immediately when confident.
+
+#### RNN-T vs CTC
+
+| Aspect | CTC | RNN-T |
+|--------|-----|-------|
+| Label dependency | None | Yes (prediction network) |
+| Streaming support | Good | Excellent |
+| Accuracy | Good | Better |
+| Compute cost | Lower | Higher |
+| Training complexity | Simpler | More complex |
+
+#### RNN-T in Production
+
+- **Google:** On-device ASR for Android, Pixel
+- **Apple:** Siri voice recognition
+- **Amazon:** Alexa voice assistant
+- **NVIDIA:** NeMo streaming models
+
+### Beam Search in Streaming
+
+Beam search maintains the top-k (beam width) hypotheses during decoding:
+
+```python
+def streaming_beam_search(encoder_outputs, beam_width=5):
+    hypotheses = [([], 0.0)]  # (sequence, score)
+
+    for t, encoder_output in enumerate(encoder_outputs):
+        all_candidates = []
+        for seq, score in hypotheses:
+            probs = joint_network(encoder_output, prediction_network(seq))
+            for token, prob in enumerate(probs):
+                if token == BLANK:
+                    # Stay at same position
+                    candidate = (seq, score + log(prob))
+                else:
+                    # Emit token
+                    candidate = (seq + [token], score + log(prob))
+                all_candidates.append(candidate)
+
+        # Keep top-k by score
+        hypotheses = sorted(all_candidates, key=lambda x: x[1], reverse=True)[:beam_width]
+
+        # Emit stable prefix
+        emit_stable_prefix(hypotheses)
+
+    return hypotheses[0][0]
+```
+
+**Beam Width Trade-offs:**
+
+| Beam Width | Speed | Quality | Use Case |
+|------------|-------|---------|----------|
+| 1 (Greedy) | Fastest | Lower | Ultra-low latency |
+| 4-5 | Fast | Good | Real-time streaming |
+| 10 | Moderate | Better | Balanced streaming |
+| 50-100 | Slow | Best | Batch processing |
+
+## Two-Pass Streaming Architecture
+
+Modern systems often employ two-pass decoding for streaming with high accuracy.
+
+```
++-----------------------------------------------------------------------------+
+|                      TWO-PASS STREAMING ASR                                  |
+|                                                                              |
+|   Audio Input                                                                |
+|       |                                                                      |
+|       v                                                                      |
+|  +----------------------+                                                    |
+|  |   First Pass         |  -> Streaming partial hypotheses                   |
+|  |   (Causal CTC/RNN-T) |    Low latency, acceptable accuracy                |
+|  +----------+-----------+                                                    |
+|             |                                                                |
+|             v                                                                |
+|  +----------------------+                                                    |
+|  |   Second Pass        |  -> Rescored final transcript                      |
+|  |   (Full Attention)   |    Higher accuracy, runs after endpoint            |
+|  +----------+-----------+                                                    |
+|             |                                                                |
+|             v                                                                |
+|   Final Transcript                                                           |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### First Pass (Streaming)
+
+- Uses causal (unidirectional) model
+- Emits partial hypotheses immediately
+- Optimized for latency over accuracy
+- Typically CTC or RNN-T based
+
+### Second Pass (Rescoring)
+
+- Runs after endpoint detection
+- Uses bidirectional attention over full utterance
+- Rescores first-pass hypotheses
+- May use stronger language model
+
+### Benefits
+
+- Immediate feedback via streaming partials
+- High-quality finals after short delay
+- Best of both worlds for voice agents
+- Second pass typically adds only 50-100ms
+
+## Voice Agent Architectures
+
+### Turn-Based (Cascading) Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                    TURN-BASED VOICE AGENT                                    |
+|                                                                              |
+|   User speaks -> [Record until silence] -> STT -> LLM -> TTS -> Play audio  |
+|                                                                              |
+|   Characteristics:                                                           |
+|   - Simple implementation                                                    |
+|   - Higher latency (sequential)                                              |
+|   - Clear turn boundaries                                                    |
+|   - No interruption handling                                                 |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Streaming Pipeline Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                    STREAMING VOICE AGENT                                     |
+|                                                                              |
+|   User speaks -> [Streaming STT] -> [Streaming LLM] -> [Streaming TTS]      |
+|        ^              |                  |                  |               |
+|        +---- Barge-in detection <-- Response starts while user may speak    |
+|                                                                              |
+|   Characteristics:                                                           |
+|   - Lower perceived latency                                                  |
+|   - Complex state management                                                 |
+|   - Supports interruptions                                                   |
+|   - Requires careful synchronization                                         |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Speech-to-Speech (S2S) Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                    SPEECH-TO-SPEECH MODEL                                    |
+|                                                                              |
+|   User Audio -> [Single S2S Model] -> Agent Audio                           |
+|                                                                              |
+|   Examples: GPT-4o Realtime, Moshi                                          |
+|                                                                              |
+|   Characteristics:                                                           |
+|   - Lowest theoretical latency (~160ms)                                      |
+|   - Emerging technology                                                      |
+|   - Less controllable intermediate states                                    |
+|   - May hallucinate or lose coherence                                        |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+## Implementation Challenges
+
+### Transcript Instability
+
+**Problem:** Streaming transcripts change as more context arrives.
+
+**Example:**
+```
+t=100ms: "I want to"
+t=200ms: "I want two"      <- changed!
+t=300ms: "I want to order" <- changed back!
+t=400ms: "I want to order pizza"
+```
+
+**Solutions:**
+- Use "final" vs "interim" result flags
+- Delay LLM dispatch until stability threshold
+- AssemblyAI offers immutable transcripts
+- Implement confidence-based stability detection
+
+### Barge-In Handling
+
+**Problem:** User interrupts while agent is speaking.
+
+```python
+def handle_barge_in(user_audio_detected):
+    if agent_is_speaking and user_audio_detected:
+        stop_tts_playback()
+        cancel_pending_llm_response()
+        reset_stt_context()
+        process_new_user_input()
+```
+
+### Echo Cancellation
+
+**Problem:** Agent's audio captured by user's microphone.
+
+**Solutions:**
+- Acoustic Echo Cancellation (AEC)
+- Reference signal subtraction
+- WebRTC's built-in AEC
+- Mute mic during playback (simpler, worse UX)
+
+## Best Practices
+
+### For Voice Agents
+
+1. Use streaming-first STT providers (Deepgram, AssemblyAI)
+2. Implement semantic endpointing
+3. Handle transcript instability gracefully
+4. Support barge-in for natural conversation
+5. Target sub-500ms STT latency
+
+### For Live Captioning
+
+1. Prioritize stability over speed
+2. Use word-level confidence filtering
+3. Implement smart capitalization
+4. Consider speaker diarization
+5. Buffer for sentence-level output
+
+### For Real-time Translation
+
+1. Use sentence-level segmentation
+2. Handle incomplete sentences gracefully
+3. Consider specialized S2T translation models
+4. Implement language detection
+5. Buffer for coherent translation units
+
+## Further Reading
+
+- **[Overview](/topics/foundations/speech-recognition/overview)** - STT fundamentals
+- **[Provider Comparison](/topics/foundations/speech-recognition/provider-comparison)** - Vendor streaming capabilities
+- **[Optimization](/topics/foundations/speech-recognition/optimization)** - Latency tuning techniques

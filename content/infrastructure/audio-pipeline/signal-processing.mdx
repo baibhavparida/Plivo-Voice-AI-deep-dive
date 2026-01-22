@@ -1,0 +1,386 @@
+---
+title: "Audio Signal Processing Fundamentals"
+description: "Core concepts of audio signal processing for voice AI including sampling, spectral analysis, and preprocessing techniques"
+category: "infrastructure"
+tags: ["audio-processing", "signal-processing", "sampling", "spectral-analysis", "dsp", "preprocessing"]
+relatedTopics: ["vad", "noise-cancellation", "echo-cancellation", "stt-fundamentals"]
+---
+
+# Audio Signal Processing Fundamentals
+
+Audio quality is the single most determinative factor in speech recognition performance. Understanding signal processing fundamentals is essential for building robust voice AI systems that handle real-world audio conditions.
+
+## Why Audio Quality Matters
+
+### Impact on Speech-to-Text Accuracy
+
+The relationship between audio quality and Word Error Rate (WER) is well-documented:
+
+| Audio Condition | Typical WER | WER Increase |
+|-----------------|-------------|--------------|
+| Clean studio audio | 2-5% | Baseline |
+| Moderate background noise | 8-15% | +6-10% |
+| High background noise | 20-40% | +15-35% |
+| Severe degradation | 40-60%+ | +35-55%+ |
+
+Models trained exclusively on clean audio can experience WER increases of 15-30% when encountering background noise, accents, or domain-specific terminology.
+
+**Model Comparison in Noisy Conditions:**
+
+| Model | Clean WER | Noisy WER | Degradation |
+|-------|-----------|-----------|-------------|
+| Wav2Vec2 | 37.04% | 54.69% | +47.6% |
+| Whisper (large) | 2-5% | 8-15% | +3-10% |
+| Granite-Speech | Baseline | +3.5% | +3.5% |
+| NVIDIA Canary | 1.6% | 3.1% | +94% (still low) |
+
+### Impact on User Experience
+
+Voice AI agents must achieve sub-second response times to feel natural:
+
+| Latency Threshold | User Perception |
+|-------------------|-----------------|
+| < 300ms | Natural, human-like |
+| 300-500ms | Acceptable |
+| 500-800ms | Noticeable delay |
+| 800-1000ms | Stilted, frustrating |
+| > 1000ms | Unacceptable (40% higher hang-up rates) |
+
+## Types of Audio Degradation
+
+Audio degradation falls into several categories, each requiring different mitigation strategies:
+
+| Degradation Type | Characteristics | Primary Causes |
+|------------------|-----------------|----------------|
+| Additive noise | External sounds mixed with speech | Environment, electronics |
+| Multiplicative distortion | Signal modification | Clipping, nonlinear amplification |
+| Convolutional distortion | Time-domain smearing | Reverberation, channel effects |
+| Missing data | Gaps in signal | Packet loss, codec failures |
+| Spectral distortion | Frequency content alteration | Codecs, filtering, bandwidth limits |
+
+## Sample Rate Fundamentals
+
+### Standard Sample Rates
+
+| Rate | Application | Notes |
+|------|-------------|-------|
+| 8 kHz | Telephony | Narrowband, legacy |
+| 16 kHz | Speech recognition | Standard for most ASR |
+| 22.05 kHz | Some TTS | Half CD rate |
+| 44.1 kHz | CD audio | Consumer standard |
+| 48 kHz | Professional audio | Broadcast standard |
+
+### Why 16 kHz for Speech Recognition
+
+The human voice's critical frequencies lie between 300 Hz and 3400 Hz. Per Nyquist-Shannon theorem, 16 kHz sampling (capturing up to 8 kHz) is more than sufficient for speech.
+
+**Benefits of 16 kHz:**
+- Captures all speech information
+- Lower computational requirements
+- Smaller file sizes
+- Faster transmission
+
+**Common Mismatch Issues:**
+- Microphones typically capture at 48 kHz
+- WebRTC expects 16 kHz
+- Mismatched rates cause "chipmunk" voices and recognition errors
+
+**Best Practice:** Ensure consistent sample rates across the entire pipeline. Use high-quality resampling algorithms (libsamplerate, polyphase filters) when conversion is needed.
+
+## Spectral Analysis
+
+### Short-Time Fourier Transform (STFT)
+
+The STFT is fundamental to most audio processing, converting time-domain signals to time-frequency representations:
+
+```
+X(n, k) = sum over m of x(n*H + m) * w(m) * e^(-j*2*pi*k*m/N)
+```
+
+Where:
+- `n` = frame index
+- `k` = frequency bin index
+- `H` = hop size
+- `w(m)` = window function
+- `N` = FFT size
+
+### Window Functions
+
+| Window | Main Lobe | Side Lobes | Use Case |
+|--------|-----------|------------|----------|
+| Rectangular | Narrowest | Highest | Maximum frequency resolution |
+| Hamming | Medium | Low | General purpose |
+| Hann | Medium | Very Low | Smooth transitions |
+| Blackman | Wide | Very Low | Spectral leakage sensitive |
+
+### Mel-Frequency Cepstral Coefficients (MFCCs)
+
+MFCCs are the standard features for speech processing, capturing vocal tract characteristics:
+
+**MFCC Extraction Pipeline:**
+
+```
+Pre-emphasis -> Framing + Windowing -> FFT -> Mel Filter Bank -> Log -> DCT -> MFCCs (12-13)
+```
+
+**Mathematical Steps:**
+
+1. **Pre-emphasis:** `y(n) = x(n) - alpha * x(n-1)`, where alpha ~ 0.97
+
+2. **Mel Filter Bank:**
+```
+mel(f) = 2595 * log10(1 + f/700)
+```
+
+3. **MFCC Computation:**
+```
+c(m) = sum over k of log(S(k)) * cos(pi*m*(k+0.5)/M)
+```
+
+Where S(k) is the mel filter output and M is the number of filters.
+
+**Delta and Delta-Delta Features** capture dynamics:
+
+```
+delta_c(n) = (sum of d*(c(n+d) - c(n-d))) / (2*sum of d^2)
+```
+
+## Background Noise Classification
+
+### Stationary Noise
+
+Stationary noise maintains consistent spectral characteristics over time:
+
+**Examples:**
+- HVAC systems (air conditioning, heating)
+- Computer fans
+- Electrical hum (50/60 Hz and harmonics)
+- White/pink noise from electronics
+
+**Characteristics:**
+- Relatively constant power spectral density
+- Predictable frequency content
+- Can be estimated during speech pauses
+- Well-suited for traditional DSP approaches
+
+### Non-Stationary Noise
+
+Non-stationary noise varies unpredictably in both time and frequency domains:
+
+**Examples:**
+- Keyboard typing (common in remote work)
+- Nearby conversations (cocktail party effect)
+- Door slams, coughs, sneezes
+- Traffic sounds (horns, engine acceleration)
+- Dogs barking, children playing
+
+**Classification by Difficulty:**
+
+| Category | Examples | Suppression Difficulty |
+|----------|----------|----------------------|
+| Easy | Constant fan noise, HVAC | Low - traditional DSP effective |
+| Moderate | Keyboard clicks, office ambience | Medium - neural approaches recommended |
+| Hard | Overlapping speech, crying babies | High - requires voice isolation |
+| Very Hard | Crowds, train stations, cafes | Very High - specialized models needed |
+
+## Reverberation
+
+Reverberation occurs when sound reflects off surfaces before reaching the microphone, causing temporal smearing.
+
+### RT60: The Key Metric
+
+RT60 measures the time required for sound energy to decay by 60 dB after the source stops:
+
+| Environment | RT60 Range | Speech Impact |
+|-------------|------------|---------------|
+| Recording studio | 0.1-0.3s | Optimal |
+| Small office | 0.2-0.5s | Good |
+| Conference room | 0.4-0.8s | Acceptable |
+| Classroom | 0.6-1.0s | May impair intelligibility |
+| Large hall | 1.0-2.0s | Significant degradation |
+| Church/Cathedral | 2.0-7.0s | Severe degradation |
+
+**Recommended RT60 for Speech:**
+- Home offices: 0.2-0.4 seconds
+- Classrooms: < 0.6 seconds
+- Speech-focused spaces: 0.4-0.7 seconds
+
+### Impact on Voice AI
+
+Reverberation affects voice AI systems by:
+1. **Temporal smearing:** Phoneme boundaries become unclear
+2. **Spectral coloration:** Room modes alter frequency response
+3. **Reduced intelligibility:** Overlapping reflections mask speech
+4. **Increased WER:** Direct correlation with reverberation level
+
+### Critical Distance
+
+The critical distance is where direct sound energy equals reverberant energy:
+
+```
+Critical Distance = 0.057 * sqrt(V / RT60)
+```
+
+Where V = room volume in cubic meters. Beyond this distance, reverberation dominates.
+
+## Clipping and Distortion
+
+### Audio Clipping
+
+Clipping occurs when signal amplitude exceeds the dynamic range:
+
+**Causes:**
+- Microphone preamp overload
+- Missing/incorrect Automatic Gain Control (AGC)
+- A/D converter saturation
+- Digital overflow in processing
+
+**Impact:**
+- Introduces odd harmonics (nonlinear distortion)
+- Can occur with as little as 0.01% of samples
+- Severely degrades speech quality
+- Affects speaker recognition systems
+
+**Detection Methods:**
+1. Histogram analysis: Clusters at min/max values
+2. Waveform analysis: Flat tops on peaks
+3. Statistical methods: ClipDaT algorithm
+
+### Other Distortion Types
+
+| Distortion Type | Cause | Characteristics |
+|-----------------|-------|-----------------|
+| Intermodulation | Nonlinear mixing | Sum/difference frequencies |
+| Harmonic | Nonlinear amplification | Integer multiples of fundamental |
+| Quantization | Bit depth limitation | Granular noise floor |
+| Aliasing | Inadequate anti-aliasing | Folded high frequencies |
+
+## Audio Preprocessing Pipeline
+
+### Recommended Order of Operations
+
+```
+1. Sample rate conversion (if needed)
+2. High-pass filter (remove rumble)
+3. AEC (remove echo - needs reference)
+4. Noise suppression (remove noise)
+5. Dereverberation (optional)
+6. Noise gate (optional)
+7. AGC (normalize levels)
+```
+
+### Automatic Gain Control (AGC)
+
+AGC maintains consistent output levels despite varying input amplitudes:
+
+| Parameter | Description | Typical Value |
+|-----------|-------------|---------------|
+| Target level | Desired output RMS/peak | -18 to -12 dBFS |
+| Attack time | Speed of gain reduction | 1-10 ms |
+| Release time | Speed of gain increase | 100-500 ms |
+| Max gain | Maximum amplification | +20 to +30 dB |
+| Min gain | Minimum gain (limiting) | -20 to 0 dB |
+
+**Timing Considerations:**
+
+- **Attack Time:** Must be fast to prevent clipping (1-10 ms)
+- **Release Time:** Should be slower to avoid "pumping" artifacts (100-500 ms)
+
+### High-Pass Filtering
+
+| Application | Cutoff | Notes |
+|-------------|--------|-------|
+| General speech | 80-100 Hz | Safe for most voices |
+| Male voice | 80 Hz | Preserves bass fundamentals |
+| Female voice | 100-120 Hz | Fundamentals are higher |
+| High noise | 160 Hz | Aggressive, some quality loss |
+
+**Benefits:**
+1. Removes rumble: HVAC, traffic, handling noise
+2. Reduces plosives: P and B sounds
+3. Prevents AGC pumping: Low frequencies don't affect gain
+4. Improves headroom: More dynamic range for speech
+
+### Normalization
+
+**Types:**
+
+| Type | Method | Use Case |
+|------|--------|----------|
+| Peak | Scale so peak reaches target | Simple, fast |
+| RMS | Scale based on average power | Better perceived loudness |
+| LUFS | Perceptual loudness model | Broadcast standard |
+
+**Target Levels:**
+
+| Standard | Target | Application |
+|----------|--------|-------------|
+| EBU R128 | -23 LUFS | European broadcast |
+| ATSC A/85 | -24 LKFS | US broadcast |
+| Streaming | -14 to -16 LUFS | Spotify, YouTube |
+| Speech | -18 to -16 dBFS RMS | General recommendation |
+
+## Real-Time Processing Requirements
+
+### Latency Budget
+
+Total budget for natural conversation: < 300-500 ms
+
+| Component | Typical Latency | Budget |
+|-----------|-----------------|--------|
+| Microphone input | 5-10 ms | - |
+| Audio preprocessing | 10-40 ms | 40 ms |
+| STT | 100-300 ms | 300 ms |
+| LLM inference | 200-400 ms | 400 ms |
+| TTS | 100-200 ms | 150 ms |
+| Audio output | 5-10 ms | - |
+
+For sub-300ms total latency, preprocessing may need to be eliminated entirely, streaming directly to noise-robust models.
+
+### Processing Constraints
+
+**Frame Size Trade-offs:**
+- Typical: 10-40 ms
+- Larger frames = more latency, better frequency resolution
+- Common: 20ms frames with 10ms hop
+
+**Algorithm Latency:**
+
+| Algorithm | Latency |
+|-----------|---------|
+| HPF | < 1 ms (IIR filters) |
+| AGC | 1-10 ms (attack time) |
+| Noise gate | 1-5 ms (attack + lookahead) |
+| Noise suppression | 10-40 ms |
+| AEC | 10-50 ms |
+
+## The Noise Reduction Paradox
+
+A critical consideration is that aggressive noise reduction can sometimes harm STT accuracy rather than improve it. Modern end-to-end speech recognition systems are trained on diverse audio conditions and rely on acoustic details that preprocessing may strip away.
+
+**When preprocessing hurts:**
+1. The noise reduction algorithm introduces artifacts
+2. The algorithm removes acoustic features the model uses for phonetic distinction
+3. The ASR model was already trained on noisy data (multi-condition training)
+
+**Recommendation:** For real-time voice agents with tight latency budgets (~300ms), consider streaming directly to noise-robust models rather than preprocessing. Multi-condition training can cut WER by up to 7.5% compared to clean-trained models.
+
+## Codec Artifacts
+
+### Common Codec Artifacts
+
+| Artifact | Description | Affected Codecs |
+|----------|-------------|-----------------|
+| Pre-echo | Energy before transients | Transform codecs (AAC, Opus) |
+| Bandwidth limitation | Missing high frequencies | G.711, G.729 |
+| Musical noise | Tonal artifacts | Low-bitrate codecs |
+| Pumping/breathing | Level modulation | Heavy compression |
+| Blocking | Frame boundary discontinuities | Frame-based codecs |
+
+### Impact on Voice AI
+
+- G.729 compression artifacts make synthetic voices sound more artificial
+- Narrowband codecs (8kHz) limit phonetic discrimination
+- Low-bitrate Opus can introduce pre-echo on plosives
+
+**Preferred Codec:** Opus is recommended for voice AI when bandwidth and compatibility allow, supporting adaptive bitrate and multiple bandwidths up to 48 kHz.

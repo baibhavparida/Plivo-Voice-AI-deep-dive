@@ -1,0 +1,416 @@
+---
+title: "Function Calling in Voice AI Agents"
+description: "Implementing tool use in voice agents, structured outputs, real-time function execution, and API integration patterns"
+category: "llm-integration"
+tags: ["function-calling", "tool-use", "voice-ai", "api-integration", "structured-outputs"]
+relatedTopics: ["prompt-engineering", "context-management", "model-selection"]
+---
+
+# Function Calling in Voice AI Agents
+
+Function calling enables voice agents to interact with external systems in real-time. Proper implementation is critical for production voice applications, where timing and error handling directly impact user experience.
+
+## Why Function Calling Matters for Voice
+
+Voice agents need to:
+- Look up customer information during conversations
+- Execute actions (place orders, schedule appointments)
+- Transfer calls to human agents
+- Access real-time data (inventory, availability)
+
+Unlike text chat, voice has strict timing requirements - users cannot wait while functions execute silently.
+
+## Function Definition Best Practices
+
+Well-designed functions for voice agents should be clear and constrained:
+
+```python
+functions = [
+    {
+        "name": "check_order_status",
+        "description": "Check the current status of a customer order. "
+                      "Use when customer asks about their order.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "order_id": {
+                    "type": "string",
+                    "description": "The order ID (e.g., ORD-12345)"
+                }
+            },
+            "required": ["order_id"]
+        }
+    },
+    {
+        "name": "transfer_to_human",
+        "description": "Transfer the call to a human agent. "
+                      "Use for complaints, complex issues, or when requested.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Brief reason for transfer"
+                },
+                "department": {
+                    "type": "string",
+                    "enum": ["billing", "technical", "general"],
+                    "description": "Department to transfer to"
+                }
+            },
+            "required": ["reason"]
+        }
+    },
+    {
+        "name": "schedule_appointment",
+        "description": "Schedule an appointment for the customer. "
+                      "Use when customer wants to book a time.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "Appointment date (YYYY-MM-DD)"
+                },
+                "time": {
+                    "type": "string",
+                    "description": "Appointment time (HH:MM)"
+                },
+                "service_type": {
+                    "type": "string",
+                    "enum": ["consultation", "repair", "installation"],
+                    "description": "Type of service"
+                }
+            },
+            "required": ["date", "time", "service_type"]
+        }
+    }
+]
+```
+
+## Real-Time Function Execution
+
+The key challenge in voice is maintaining conversation flow while functions execute:
+
+```python
+class VoiceFunctionExecutor:
+    """Execute functions with voice-appropriate timing."""
+
+    def __init__(self):
+        self.function_registry = {}
+        self.max_execution_time = 2000  # ms
+
+    def register(self, name: str, handler: callable, timeout: int = 1000):
+        self.function_registry[name] = {
+            "handler": handler,
+            "timeout": timeout
+        }
+
+    async def execute(self, function_call: dict) -> str:
+        """Execute function with timeout and error handling."""
+        name = function_call["name"]
+        args = json.loads(function_call["arguments"])
+
+        if name not in self.function_registry:
+            return json.dumps({"error": "Unknown function"})
+
+        func = self.function_registry[name]
+
+        try:
+            # Execute with timeout
+            result = await asyncio.wait_for(
+                func["handler"](**args),
+                timeout=func["timeout"] / 1000
+            )
+            return json.dumps(result)
+
+        except asyncio.TimeoutError:
+            return json.dumps({
+                "error": "timeout",
+                "message": "The operation is taking longer than expected"
+            })
+        except Exception as e:
+            return json.dumps({
+                "error": "execution_error",
+                "message": str(e)
+            })
+```
+
+## Handling Function Calls During Speech
+
+Users need feedback while functions execute:
+
+```python
+async def handle_function_call(call, executor, tts):
+    """Execute function while keeping user engaged."""
+
+    # Start filler while executing
+    filler_phrases = [
+        "Let me check that for you...",
+        "One moment while I look that up...",
+        "I'm pulling up that information now..."
+    ]
+
+    # Speak filler asynchronously
+    filler_task = asyncio.create_task(
+        tts.speak(random.choice(filler_phrases))
+    )
+
+    # Execute function
+    result = await executor.execute(call)
+
+    # Wait for filler to complete if still speaking
+    await filler_task
+
+    return result
+
+
+async def voice_turn_with_tools(user_input: str, llm, executor, tts):
+    """Complete voice turn that may include function calls."""
+
+    response = await llm.generate(
+        user_input,
+        tools=functions,
+        tool_choice="auto"
+    )
+
+    # Check if function call needed
+    if response.tool_calls:
+        for tool_call in response.tool_calls:
+            # Execute with user feedback
+            result = await handle_function_call(tool_call, executor, tts)
+
+            # Get final response with function result
+            final_response = await llm.generate(
+                user_input,
+                tool_results=[{
+                    "tool_call_id": tool_call.id,
+                    "result": result
+                }]
+            )
+
+            return final_response.content
+
+    return response.content
+```
+
+## Structured Outputs for Voice
+
+Voice agents often need structured data extraction:
+
+```python
+from pydantic import BaseModel
+from typing import Optional
+
+class AppointmentRequest(BaseModel):
+    """Structured appointment extraction."""
+    date: str
+    time: str
+    service_type: str
+    customer_notes: Optional[str] = None
+
+class OrderQuery(BaseModel):
+    """Structured order query extraction."""
+    order_id: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    query_type: str  # "status", "cancel", "modify"
+
+# Using with OpenAI
+response = await client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": "Extract appointment details from user speech."},
+        {"role": "user", "content": user_transcript}
+    ],
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "appointment_request",
+            "schema": AppointmentRequest.model_json_schema()
+        }
+    }
+)
+
+appointment = AppointmentRequest.model_validate_json(
+    response.choices[0].message.content
+)
+```
+
+## Parallel vs Sequential Function Calls
+
+Choose the right pattern based on dependencies:
+
+```python
+async def handle_multiple_functions(tool_calls: list, executor):
+    """Handle multiple function calls efficiently."""
+
+    # Check for dependencies
+    independent_calls = []
+    dependent_calls = []
+
+    for call in tool_calls:
+        if has_dependencies(call, tool_calls):
+            dependent_calls.append(call)
+        else:
+            independent_calls.append(call)
+
+    results = {}
+
+    # Execute independent calls in parallel
+    if independent_calls:
+        parallel_results = await asyncio.gather(*[
+            executor.execute(call) for call in independent_calls
+        ])
+        for call, result in zip(independent_calls, parallel_results):
+            results[call.id] = result
+
+    # Execute dependent calls sequentially
+    for call in dependent_calls:
+        result = await executor.execute(call)
+        results[call.id] = result
+
+    return results
+```
+
+## Error Handling Patterns
+
+Voice requires graceful error recovery:
+
+```python
+class VoiceFunctionErrorHandler:
+    """Handle function errors gracefully for voice."""
+
+    ERROR_RESPONSES = {
+        "timeout": "I'm sorry, that's taking longer than expected. "
+                  "Let me try a different approach.",
+        "not_found": "I couldn't find that information. "
+                    "Could you double-check the details?",
+        "permission": "I don't have access to that right now. "
+                     "Let me connect you with someone who can help.",
+        "general": "I ran into a small issue. Let me try that again."
+    }
+
+    async def handle_error(
+        self,
+        error_type: str,
+        function_name: str,
+        context: dict
+    ) -> str:
+        """Return appropriate voice response for error."""
+
+        # Log for debugging
+        logger.error(f"Function error: {function_name}", extra={
+            "error_type": error_type,
+            "context": context
+        })
+
+        # Get user-friendly response
+        response = self.ERROR_RESPONSES.get(
+            error_type,
+            self.ERROR_RESPONSES["general"]
+        )
+
+        # Track for retry logic
+        context["retry_count"] = context.get("retry_count", 0) + 1
+
+        if context["retry_count"] >= 2:
+            response += " I can transfer you to a specialist if you'd prefer."
+
+        return response
+```
+
+## Common Function Patterns
+
+### Data Lookup
+
+```python
+{
+    "name": "get_customer_info",
+    "description": "Retrieve customer account information",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "identifier": {
+                "type": "string",
+                "description": "Customer ID, email, or phone number"
+            },
+            "identifier_type": {
+                "type": "string",
+                "enum": ["customer_id", "email", "phone"]
+            }
+        },
+        "required": ["identifier", "identifier_type"]
+    }
+}
+```
+
+### Action Execution
+
+```python
+{
+    "name": "cancel_order",
+    "description": "Cancel a customer order. Requires confirmation.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "order_id": {"type": "string"},
+            "reason": {
+                "type": "string",
+                "enum": ["changed_mind", "found_cheaper", "shipping_delay", "other"]
+            },
+            "confirmed": {
+                "type": "boolean",
+                "description": "Customer has confirmed cancellation"
+            }
+        },
+        "required": ["order_id", "confirmed"]
+    }
+}
+```
+
+### Call Control
+
+```python
+{
+    "name": "transfer_call",
+    "description": "Transfer call to another department or agent",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "destination": {
+                "type": "string",
+                "enum": ["sales", "support", "billing", "supervisor"]
+            },
+            "context_summary": {
+                "type": "string",
+                "description": "Brief summary for receiving agent"
+            },
+            "priority": {
+                "type": "string",
+                "enum": ["normal", "high", "urgent"]
+            }
+        },
+        "required": ["destination"]
+    }
+}
+```
+
+## Timing Considerations
+
+| Function Type | Target Latency | User Feedback |
+|---------------|----------------|---------------|
+| Quick lookup | &lt;500ms | None needed |
+| Database query | 500-1500ms | "Let me check..." |
+| External API | 1-3s | "One moment..." |
+| Complex operation | >3s | Progress updates |
+
+## Best Practices Summary
+
+1. **Keep functions focused** - One action per function
+2. **Use enums** - Constrain parameters where possible
+3. **Provide clear descriptions** - Help the model choose correctly
+4. **Set timeouts** - Voice can't wait forever
+5. **Use filler speech** - Keep users engaged during execution
+6. **Handle errors gracefully** - Always have a fallback response
+7. **Confirm before destructive actions** - Cancel, delete, transfer

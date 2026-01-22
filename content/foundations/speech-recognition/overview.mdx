@@ -1,0 +1,179 @@
+---
+title: "Speech-to-Text Overview"
+description: "Comprehensive introduction to Speech-to-Text (STT) and Automatic Speech Recognition (ASR) for voice AI applications, covering fundamentals, pipeline architecture, and quality considerations."
+category: "foundations"
+tags:
+  - speech-to-text
+  - ASR
+  - voice-ai
+  - transcription
+  - audio-processing
+relatedTopics:
+  - acoustic-modeling
+  - language-models
+  - streaming-vs-batch
+  - provider-comparison
+  - optimization
+lastUpdated: "2026-01-21"
+---
+
+# Speech-to-Text Overview
+
+Speech-to-Text (STT) serves as the critical "ears" of any voice AI system, converting spoken language into machine-readable text that downstream components can process. This foundational technology determines the quality ceiling for the entire voice AI pipeline.
+
+## Technical Definition and Taxonomy
+
+**Speech-to-Text (STT)**, also known as **Automatic Speech Recognition (ASR)**, is the computational process of converting spoken language audio signals into machine-readable text. While the terms STT and ASR are often used interchangeably, subtle distinctions exist in practice:
+
+| Term | Primary Context | Scope |
+|------|----------------|-------|
+| **ASR (Automatic Speech Recognition)** | Academic/Research | Broader term encompassing the entire field of speech recognition research |
+| **STT (Speech-to-Text)** | Industry/Application | Focused on the practical conversion of speech audio to text output |
+| **Voice Recognition** | Consumer | Often conflated with speaker identification; less technically precise |
+
+### Mathematical Foundation
+
+Given an acoustic signal **X** = `{x_1, x_2, ..., x_T}` of T frames, ASR aims to find the most likely word sequence **W*** = `{w_1, w_2, ..., w_N}` such that:
+
+```
+W* = argmax P(W|X) = argmax P(X|W) * P(W)
+         W                W
+```
+
+Where:
+- **P(X|W)** is the acoustic model probability (how likely the audio given the words)
+- **P(W)** is the language model probability (how likely the word sequence)
+
+This formulation, derived from Bayes' theorem, underpins traditional ASR systems. Modern end-to-end systems learn this mapping directly without explicit decomposition.
+
+## Role in the Voice AI Pipeline
+
+In voice AI agent architectures, STT serves as the critical "ears" component in a three-stage pipeline:
+
+```
+                        VOICE AI AGENT PIPELINE
++-----------------------------------------------------------------------------+
+|                                                                              |
+|   +----------+      +----------+      +----------+      +----------+        |
+|   |  Audio   |------|   STT    |------|   LLM    |------|   TTS    |        |
+|   |  Input   |      |  "Ears"  |      | "Brain"  |      | "Voice"  |        |
+|   +----------+      +----------+      +----------+      +----------+        |
+|        |                 |                 |                 |              |
+|        |           100-500ms         350-1000ms+        75-200ms            |
+|        |            latency            latency           latency            |
+|        |                 |                 |                 |              |
+|   User speaks     Transcribe to      Process &         Generate            |
+|   into mic        text               generate          spoken              |
+|                                      response          response            |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Latency Budget Distribution
+
+For a sub-800ms response target (essential for natural conversation):
+
+| Component | Target Latency | Notes |
+|-----------|---------------|-------|
+| STT | 100-300ms | Streaming mode required |
+| LLM Processing | 200-400ms | Optimized inference |
+| TTS | 75-150ms | Time-to-first-audio |
+| Network/Orchestration | 50-100ms | Connection overhead |
+
+{/* <Callout type="info">
+The sub-800ms target is based on research showing that response latency above this threshold breaks the natural flow of human conversation.
+</Callout> */}
+
+## Why STT Quality Determines Agent Quality
+
+STT quality is the foundational constraint on voice agent performance for several critical reasons:
+
+### 1. Error Propagation
+
+Transcription errors compound through the pipeline. A misrecognized word creates incorrect context for the LLM, leading to irrelevant responses that the user must then correct, creating frustrating interaction loops.
+
+### 2. Latency Cascading
+
+STT sits at the beginning of the processing chain. Any delay here pushes back all downstream components. For conversational AI, response latency above 800ms breaks the natural flow of conversation.
+
+### 3. Domain Specificity
+
+Voice agents often operate in specialized domains (medical, legal, technical) where vocabulary accuracy is critical. A generic STT model failing on domain terminology renders the entire agent unreliable.
+
+### 4. Context Window Efficiency
+
+LLM context windows are expensive. Garbled transcriptions waste tokens on error correction rather than task completion.
+
+{/* <Callout type="warning">
+Research indicates that every 1% increase in Word Error Rate (WER) correlates with approximately 2-3% degradation in downstream task completion rates for voice-driven applications.
+</Callout> */}
+
+## Key Performance Metrics Overview
+
+Understanding STT performance requires familiarity with several critical metrics:
+
+### Word Error Rate (WER)
+
+The primary accuracy metric, measuring edit distance between hypothesis and reference:
+
+```
+WER = (S + D + I) / N x 100%
+```
+
+Where:
+- **S** = Substitutions (wrong words)
+- **D** = Deletions (missing words)
+- **I** = Insertions (extra words)
+- **N** = Total words in reference
+
+### Real-Time Factor (RTF)
+
+Measures computational speed relative to audio duration:
+
+```
+RTF = Processing_Time / Audio_Duration
+```
+
+- RTF < 1.0: Faster than real-time (required for streaming)
+- RTF = 1.0: Exactly real-time
+- RTF > 1.0: Slower than real-time (batch only)
+
+### Latency Metrics
+
+| Metric | Description | Target |
+|--------|-------------|--------|
+| Time to First Token (TTFT) | Time from audio start to first partial transcript | < 200ms |
+| Word Emission Latency | Average delay from word spoken to word transcribed | < 300ms |
+| Final Transcript Latency | Time from end of utterance to final transcript | < 500ms |
+
+## Industry Benchmarks (2024-2025)
+
+| Dataset | Description | State-of-the-Art WER |
+|---------|-------------|----------------------|
+| LibriSpeech test-clean | Read audiobooks, clean | 1.8% |
+| LibriSpeech test-other | Read audiobooks, challenging | 3.3% |
+| Common Voice | Crowdsourced, diverse | 5-8% |
+| Earnings-22 | Financial calls | 10-15% |
+| AMI-SDM | Meeting recordings | 15-25% |
+
+## Architecture Evolution Summary
+
+The field has evolved through several major paradigms:
+
+1. **Hidden Markov Models (HMMs)** - Dominated 1980s-2010s
+2. **DNN-HMM Hybrids** - Deep learning breakthrough (2012+)
+3. **RNN/LSTM Systems** - Sequential modeling improvements
+4. **Transformer-based** - Current state-of-the-art
+5. **Conformer** - Convolution-augmented transformers (best accuracy)
+
+Modern systems achieve human-parity (< 5% WER) on clean audio, though real-world conditions remain challenging.
+
+## Next Steps
+
+To dive deeper into specific aspects of speech recognition:
+
+- **[Acoustic Modeling](/topics/foundations/speech-recognition/acoustic-modeling)** - Audio signal processing and model architectures
+- **[Language Models](/topics/foundations/speech-recognition/language-models)** - N-gram and neural language models
+- **[Streaming vs Batch](/topics/foundations/speech-recognition/streaming-vs-batch)** - Real-time architectures and decoding strategies
+- **[Provider Comparison](/topics/foundations/speech-recognition/provider-comparison)** - Detailed vendor analysis
+- **[Optimization](/topics/foundations/speech-recognition/optimization)** - Performance tuning techniques

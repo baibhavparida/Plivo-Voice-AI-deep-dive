@@ -1,0 +1,395 @@
+---
+title: "Language Models in Speech Recognition"
+description: "Understanding the role of language models in ASR systems, from traditional N-gram models to neural language models and contextual biasing techniques for domain adaptation."
+category: "foundations"
+tags:
+  - language-models
+  - n-gram
+  - neural-lm
+  - contextual-biasing
+  - vocabulary-boosting
+  - domain-adaptation
+relatedTopics:
+  - overview
+  - acoustic-modeling
+  - optimization
+lastUpdated: "2026-01-21"
+---
+
+# Language Models in Speech Recognition
+
+Language models (LMs) play a crucial role in ASR by providing prior knowledge about which word sequences are likely in a given language. They help resolve acoustic ambiguities and significantly improve recognition accuracy.
+
+## The Role of Language Models
+
+In the classic ASR formulation:
+
+```
+W* = argmax P(W|X) = argmax P(X|W) * P(W)
+         W                W
+```
+
+The language model provides **P(W)** - the prior probability of a word sequence. This term helps the system prefer grammatically correct and semantically meaningful transcriptions over acoustically similar but linguistically implausible alternatives.
+
+### Why Language Models Matter
+
+Consider the acoustic similarity between:
+- "recognize speech" vs "wreck a nice beach"
+- "ice cream" vs "I scream"
+- "four candles" vs "fork handles"
+
+The acoustic model alone cannot reliably distinguish these. The language model provides the context to prefer the more likely interpretation.
+
+## N-gram Language Models
+
+N-gram models estimate word probability based on the (n-1) preceding words, making the Markov assumption that each word depends only on a fixed history.
+
+### Mathematical Formulation
+
+```
+P(w_1, w_2, ..., w_n) ~ Product of P(w_i | w_{i-n+1}, ..., w_{i-1})
+```
+
+For a trigram (3-gram) model:
+```
+P("the cat sat") ~ P("the") * P("cat"|"the") * P("sat"|"the cat")
+```
+
+### N-gram Orders
+
+| Order | Name | Context | Example |
+|-------|------|---------|---------|
+| 1 | Unigram | None | P(word) |
+| 2 | Bigram | 1 word | P(word \| previous) |
+| 3 | Trigram | 2 words | P(word \| prev2, prev1) |
+| 4 | 4-gram | 3 words | P(word \| prev3, prev2, prev1) |
+| 5 | 5-gram | 4 words | P(word \| prev4...prev1) |
+
+Typical ASR systems use 3-gram to 5-gram models.
+
+### The Sparsity Problem
+
+As n increases, the number of possible n-grams grows exponentially (V^n for vocabulary V), but training data remains fixed. Most n-grams will never be observed, leading to zero probability estimates.
+
+### Smoothing Techniques
+
+Smoothing addresses the zero-probability problem:
+
+**Kneser-Ney Smoothing:**
+The most effective smoothing technique, which considers how many different contexts a word appears in, not just raw frequency.
+
+**Witten-Bell Smoothing:**
+Estimates the probability of unseen events based on the number of distinct events seen so far.
+
+**Backoff:**
+When counts are insufficient for higher-order n-grams, "back off" to lower-order estimates:
+
+```
+P(w_n | w_{n-2}, w_{n-1}) =
+    if count(w_{n-2}, w_{n-1}, w_n) > threshold:
+        use_trigram_probability
+    else:
+        backoff_weight * P(w_n | w_{n-1})
+```
+
+### Advantages of N-gram Models
+
+- **Extremely fast inference** (hash table lookup)
+- **Low memory footprint** with compression
+- **Well-suited for WFST-based decoding**
+- **Predictable behavior** - easy to debug and analyze
+- **No GPU required** for inference
+
+### Limitations
+
+- Cannot capture long-range dependencies
+- Poor generalization to unseen word combinations
+- Size grows rapidly with vocabulary and order
+- No semantic understanding
+
+## Neural Language Models
+
+Neural LMs use neural networks to estimate word probabilities, capturing longer dependencies and semantic relationships.
+
+### RNN Language Models
+
+Recurrent networks process sequences while maintaining hidden state:
+
+```python
+class RNNLM:
+    def forward(self, word_sequence):
+        h = initial_hidden_state
+        for word in word_sequence:
+            embedding = self.embed(word)
+            h = self.rnn_cell(embedding, h)
+            prob = softmax(self.output_layer(h))
+        return prob
+```
+
+**Advantages:**
+- Theoretically unlimited context
+- Better generalization through embeddings
+- Captures semantic similarity
+
+**Limitations:**
+- Sequential processing (slow)
+- Vanishing gradients for long sequences
+- Still struggles with very long-range dependencies
+
+### Transformer Language Models
+
+Transformer-based LMs (GPT-style) use self-attention for parallel processing:
+
+```
+P(w_t | w_1, ..., w_{t-1}) = Transformer([w_1, ..., w_{t-1}])
+```
+
+**Advantages:**
+- Parallel processing during training
+- Excellent long-range dependency modeling
+- State-of-the-art perplexity scores
+
+**Limitations:**
+- High computational cost
+- Large memory footprint
+- May be overkill for ASR rescoring
+
+### The Accuracy vs Efficiency Trade-off
+
+{/* <Callout type="info">
+N-gram models provide approximately 80% of the WER reduction compared to no LM, while Transformer LMs provide only an additional 23% improvement but at significantly higher computational cost.
+</Callout> */}
+
+| LM Type | Relative WER Reduction | Inference Speed | Memory |
+|---------|----------------------|-----------------|--------|
+| No LM | Baseline | N/A | N/A |
+| 3-gram | ~70% | Microseconds | MB |
+| 5-gram | ~80% | Microseconds | 100s MB |
+| RNN-LM | ~90% | Milliseconds | GB |
+| Transformer-LM | ~95% | 10s of ms | GBs |
+
+For real-time voice applications, the additional accuracy from neural LMs often does not justify the latency cost.
+
+## LM Integration Methods
+
+### First-Pass Decoding
+
+Language model integrated directly into beam search:
+
+```
+score(hypothesis) = alpha * acoustic_score + beta * lm_score
+```
+
+Where alpha and beta are tuning weights.
+
+### N-best Rescoring
+
+1. Generate N-best list using fast LM (or no LM)
+2. Rescore each hypothesis with stronger LM
+3. Select best rescored hypothesis
+
+```python
+def rescore_nbest(nbest_list, neural_lm):
+    rescored = []
+    for hyp, acoustic_score in nbest_list:
+        lm_score = neural_lm.score(hyp)
+        combined = acoustic_score + lm_weight * lm_score
+        rescored.append((hyp, combined))
+    return max(rescored, key=lambda x: x[1])
+```
+
+### Lattice Rescoring
+
+More efficient than N-best for neural LMs:
+
+1. Generate word lattice from first pass
+2. Apply neural LM scores to lattice arcs
+3. Find best path through rescored lattice
+
+## Contextual Biasing
+
+Contextual biasing dynamically adjusts recognition toward expected vocabulary without full model retraining.
+
+### Use Cases
+
+- **Contact names:** "Call John Smith" when John Smith is in contacts
+- **Product catalogs:** Recognize specific product names in e-commerce
+- **Medical terms:** Boost drug names and medical terminology
+- **Technical jargon:** Domain-specific vocabulary in specialized applications
+
+### Biasing Techniques
+
+#### 1. Shallow Fusion
+
+Add bias LM scores during beam search:
+
+```
+score = acoustic_score + lm_score + bias_bonus(word)
+```
+
+Where `bias_bonus(word)` returns a positive value if word is in the bias list.
+
+#### 2. Deep Fusion
+
+Train model to accept bias list as additional input:
+
+```python
+class BiasedASR:
+    def forward(self, audio, bias_terms):
+        acoustic_encoding = self.encoder(audio)
+        bias_encoding = self.bias_encoder(bias_terms)
+        combined = self.fusion(acoustic_encoding, bias_encoding)
+        return self.decoder(combined)
+```
+
+#### 3. Class-based Boosting
+
+Increase probability of specific word classes:
+
+```json
+{
+  "boost_classes": {
+    "CONTACT_NAME": 2.0,
+    "PRODUCT_NAME": 1.5,
+    "LOCATION": 1.2
+  }
+}
+```
+
+#### 4. WFST Composition
+
+Compile bias terms into the decoding graph:
+
+1. Create bias WFST from term list
+2. Compose with main decoding WFST
+3. Decode with combined graph
+
+This approach is highly efficient for large bias lists.
+
+### Provider Bias APIs
+
+Most STT providers support runtime vocabulary boosting:
+
+**Deepgram:**
+```json
+{
+  "keywords": [
+    "Anthropic:2.0",
+    "Claude:2.0",
+    "transformer:1.5"
+  ]
+}
+```
+
+**Google Cloud:**
+```json
+{
+  "speechContexts": [{
+    "phrases": ["Anthropic", "Claude", "transformer"],
+    "boost": 20
+  }]
+}
+```
+
+**AssemblyAI:**
+```json
+{
+  "word_boost": ["Anthropic", "Claude", "transformer"],
+  "boost_param": "high"
+}
+```
+
+### Bias Tuning Guidelines
+
+| Boost Level | Use Case | Risk |
+|-------------|----------|------|
+| Low (1.2-1.5) | Common terms that might be misrecognized | Minimal over-triggering |
+| Medium (1.5-2.0) | Domain-specific vocabulary | Moderate false positives |
+| High (2.0-3.0) | Rare terms critical to application | May over-trigger on similar sounds |
+
+{/* <Callout type="warning">
+Over-boosting can cause false recognitions. Test thoroughly with audio that does NOT contain the boosted terms to ensure they are not hallucinated.
+</Callout> */}
+
+## Custom Language Models
+
+For persistent domain adaptation beyond runtime biasing.
+
+### Training a Domain LM
+
+1. **Compile domain corpus**
+   - Transcripts from your domain
+   - Documentation, manuals, scripts
+   - Expected user queries
+
+2. **Train n-gram LM on domain text**
+   ```bash
+   # Using KenLM
+   lmplz -o 4 < domain_corpus.txt > domain.arpa
+   build_binary domain.arpa domain.bin
+   ```
+
+3. **Interpolate with base LM**
+   ```
+   P(w) = lambda * P_domain(w) + (1-lambda) * P_base(w)
+   ```
+   Typical lambda: 0.3-0.7 depending on domain specificity
+
+4. **Deploy alongside acoustic model**
+
+### Data Requirements
+
+| Adaptation Level | Data Required | Improvement |
+|-----------------|---------------|-------------|
+| Vocabulary boosting | 0 hours audio | 10-30% on target terms |
+| Custom LM | 10-100 hours text | 20-40% on domain |
+| Full fine-tuning | 50-500 hours audio | 40-60% on domain |
+
+## Perplexity: Evaluating Language Models
+
+Perplexity measures how well a language model predicts a test set:
+
+```
+PP(W) = P(w_1, w_2, ..., w_N)^(-1/N)
+```
+
+Lower perplexity = better prediction = better LM.
+
+| Model Type | Typical Perplexity (Penn Treebank) |
+|------------|-----------------------------------|
+| Unigram | ~960 |
+| Trigram (KN smoothing) | ~140 |
+| LSTM-LM | ~80 |
+| Transformer-LM | ~20-30 |
+| GPT-3 scale | ~10-15 |
+
+However, perplexity improvements do not always translate linearly to WER improvements.
+
+## Best Practices
+
+### For Real-time Voice Agents
+
+1. **Use efficient N-gram LM** for first-pass decoding
+2. **Apply contextual biasing** for expected vocabulary
+3. **Skip neural LM rescoring** unless accuracy is critical and latency permits
+4. **Cache bias lists** - compile once, reuse across requests
+
+### For Batch Transcription
+
+1. **Use neural LM rescoring** for best accuracy
+2. **Generate N-best or lattice** from first pass
+3. **Apply domain-specific LM** if available
+4. **Consider ensemble approaches** for critical applications
+
+### For Specialized Domains
+
+1. **Start with vocabulary boosting** - no training required
+2. **Evaluate domain LM** if boosting insufficient
+3. **Consider full fine-tuning** only for extreme domain mismatch
+4. **Continuously collect** domain-specific data for improvement
+
+## Further Reading
+
+- **[Acoustic Modeling](/topics/foundations/speech-recognition/acoustic-modeling)** - Audio signal processing
+- **[Streaming vs Batch](/topics/foundations/speech-recognition/streaming-vs-batch)** - Real-time decoding
+- **[Optimization](/topics/foundations/speech-recognition/optimization)** - Performance tuning

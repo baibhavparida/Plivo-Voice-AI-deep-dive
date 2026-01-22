@@ -1,0 +1,1160 @@
+---
+title: "PSTN Integration for Voice AI"
+description: "Complete guide to PSTN fundamentals, phone number provisioning, inbound/outbound calling, DTMF handling, voicemail detection, and carrier integration for voice AI systems"
+category: "infrastructure"
+tags: ["pstn", "telephony", "voice-ai", "phone-numbers", "dtmf", "voicemail", "carriers", "inbound", "outbound"]
+relatedTopics: ["sip-protocol", "call-routing", "webrtc", "ivr"]
+---
+
+# PSTN Integration for Voice AI
+
+The Public Switched Telephone Network (PSTN) remains the universal communication infrastructure connecting billions of phone users worldwide. For voice AI systems to reach customers on their phones, understanding PSTN integration is essential. This guide covers the technical foundations, provisioning workflows, and implementation patterns for connecting voice AI agents to traditional telephony.
+
+## PSTN Fundamentals
+
+### Network Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                          PSTN NETWORK ARCHITECTURE                           |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Voice AI System        Carrier/Provider           PSTN Infrastructure      |
+|  +--------------+      +----------------+         +-------------------+     |
+|  |              |      |                |         |                   |     |
+|  | Voice Agent  | SIP  |  SIP Trunk /   |  SS7   |  Local Exchange   |     |
+|  | Application  |----->|  Gateway       |------->|  (Central Office) |     |
+|  |              |      |                |         |                   |     |
+|  +--------------+      +----------------+         +---------+---------+     |
+|                                                             |               |
+|                                                             | Copper/Fiber  |
+|                                                             v               |
+|                                                   +-------------------+     |
+|                                                   |   Customer        |     |
+|                                                   |   Premises        |     |
+|                                                   |   (Phone)         |     |
+|                                                   +-------------------+     |
+|                                                                              |
+|  Key Components:                                                             |
+|  - Central Office (CO): Local exchange connecting subscribers               |
+|  - Tandem/Transit: Long-distance routing                                    |
+|  - SS7: Signaling System 7 for call control                                 |
+|  - E.164: International numbering plan                                      |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### E.164 Phone Number Format
+
+```
++-----------------------------------------------------------------------------+
+|                        E.164 NUMBER FORMAT                                   |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Format: +[Country Code][Area/City Code][Subscriber Number]                 |
+|                                                                              |
+|  Example: +1 415 555 1234                                                   |
+|           |  |   |   |                                                      |
+|           |  |   |   +-- Subscriber Number (4-7 digits)                     |
+|           |  |   +------ Exchange Code (3 digits in NANP)                   |
+|           |  +---------- Area Code (3 digits in NANP)                       |
+|           +------------- Country Code (1-3 digits)                          |
+|                                                                              |
+|  Country Codes:                                                              |
+|  +1   - USA, Canada (NANP)                                                  |
+|  +44  - United Kingdom                                                      |
+|  +49  - Germany                                                             |
+|  +91  - India                                                               |
+|  +86  - China                                                               |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### PSTN Call Types
+
+| Call Type | Description | Voice AI Use Case |
+|-----------|-------------|-------------------|
+| Local | Within same area code | Customer support |
+| Long Distance | Different area codes, same country | Sales outreach |
+| International | Different countries | Global support |
+| Toll-Free | Callee pays (800, 888, etc.) | Customer service lines |
+| Premium | Caller pays extra (900) | Information services |
+| Mobile | To/from cellular networks | Customer engagement |
+
+## Phone Number Provisioning
+
+### Number Types for Voice AI
+
+| Number Type | Characteristics | Best For |
+|-------------|-----------------|----------|
+| Local Numbers | Geographic identity, local presence | Regional customer support |
+| Toll-Free | Free for callers, builds trust | Enterprise customer service |
+| Mobile | SMS capable, personal feel | Notifications, 2FA |
+| Short Codes | 5-6 digits, high throughput | Mass notifications |
+| Virtual | No physical location | Multi-region routing |
+
+### Provisioning via CPaaS Providers
+
+```python
+class PhoneNumberManager:
+    """Manage phone number provisioning for voice AI"""
+
+    def __init__(self, provider_config: dict):
+        self.provider = provider_config["provider"]
+        self.client = self._init_client(provider_config)
+
+    def _init_client(self, config):
+        """Initialize CPaaS client"""
+        if config["provider"] == "plivo":
+            import plivo
+            return plivo.RestClient(
+                auth_id=config["auth_id"],
+                auth_token=config["auth_token"]
+            )
+        elif config["provider"] == "twilio":
+            from twilio.rest import Client
+            return Client(
+                config["account_sid"],
+                config["auth_token"]
+            )
+
+    def search_available_numbers(
+        self,
+        country_code: str,
+        number_type: str = "local",
+        area_code: str = None,
+        contains: str = None,
+        quantity: int = 10
+    ) -> list:
+        """Search for available phone numbers"""
+
+        if self.provider == "plivo":
+            params = {
+                "country_iso": country_code,
+                "type": number_type,
+                "limit": quantity
+            }
+            if area_code:
+                params["pattern"] = area_code
+            if contains:
+                params["pattern"] = contains
+
+            response = self.client.numbers.search(**params)
+            return [
+                {
+                    "number": num.number,
+                    "region": num.region,
+                    "monthly_cost": num.monthly_rental_rate,
+                    "capabilities": {
+                        "voice": num.voice_enabled,
+                        "sms": num.sms_enabled
+                    }
+                }
+                for num in response
+            ]
+
+        elif self.provider == "twilio":
+            available = self.client.available_phone_numbers(country_code)
+
+            if number_type == "local":
+                numbers = available.local.list(
+                    area_code=area_code,
+                    contains=contains,
+                    limit=quantity
+                )
+            elif number_type == "toll_free":
+                numbers = available.toll_free.list(
+                    contains=contains,
+                    limit=quantity
+                )
+
+            return [
+                {
+                    "number": num.phone_number,
+                    "region": num.region,
+                    "capabilities": num.capabilities
+                }
+                for num in numbers
+            ]
+
+    def provision_number(
+        self,
+        phone_number: str,
+        voice_url: str,
+        voice_method: str = "POST",
+        fallback_url: str = None
+    ) -> dict:
+        """Provision a phone number and configure webhook"""
+
+        if self.provider == "plivo":
+            # Buy the number
+            response = self.client.numbers.buy(
+                numbers=[phone_number]
+            )
+
+            # Configure the application
+            self.client.numbers.update(
+                phone_number,
+                app_id=self._get_or_create_app(voice_url)
+            )
+
+            return {
+                "number": phone_number,
+                "status": "active",
+                "webhook_url": voice_url
+            }
+
+        elif self.provider == "twilio":
+            number = self.client.incoming_phone_numbers.create(
+                phone_number=phone_number,
+                voice_url=voice_url,
+                voice_method=voice_method,
+                voice_fallback_url=fallback_url
+            )
+
+            return {
+                "number": number.phone_number,
+                "sid": number.sid,
+                "status": number.status,
+                "webhook_url": voice_url
+            }
+
+    def configure_voice_webhook(
+        self,
+        phone_number: str,
+        webhook_config: dict
+    ):
+        """Configure voice webhooks for a number"""
+        config = {
+            "voice_url": webhook_config.get("voice_url"),
+            "voice_method": webhook_config.get("method", "POST"),
+            "voice_fallback_url": webhook_config.get("fallback_url"),
+            "status_callback": webhook_config.get("status_callback")
+        }
+
+        if self.provider == "plivo":
+            app = self.client.applications.create(
+                answer_url=config["voice_url"],
+                answer_method=config["voice_method"],
+                fallback_answer_url=config["voice_fallback_url"],
+                hangup_url=config["status_callback"]
+            )
+            self.client.numbers.update(phone_number, app_id=app.app_id)
+
+        elif self.provider == "twilio":
+            self.client.incoming_phone_numbers.list(
+                phone_number=phone_number
+            )[0].update(**config)
+
+    def release_number(self, phone_number: str) -> bool:
+        """Release a provisioned phone number"""
+        try:
+            if self.provider == "plivo":
+                self.client.numbers.delete(phone_number)
+            elif self.provider == "twilio":
+                number = self.client.incoming_phone_numbers.list(
+                    phone_number=phone_number
+                )[0]
+                number.delete()
+            return True
+        except Exception as e:
+            print(f"Failed to release number: {e}")
+            return False
+```
+
+### Number Verification and Compliance
+
+```python
+class NumberComplianceManager:
+    """Handle regulatory compliance for phone numbers"""
+
+    def __init__(self, provider_client):
+        self.client = provider_client
+
+    def check_requirements(self, country_code: str, number_type: str) -> dict:
+        """Check regulatory requirements for a country"""
+        requirements = {
+            "US": {
+                "local": {"address_required": False, "identity_required": False},
+                "toll_free": {"address_required": False, "identity_required": False}
+            },
+            "UK": {
+                "local": {"address_required": True, "identity_required": False},
+                "mobile": {"address_required": True, "identity_required": True}
+            },
+            "DE": {
+                "local": {"address_required": True, "identity_required": True},
+                "toll_free": {"address_required": True, "identity_required": True}
+            },
+            "IN": {
+                "local": {"address_required": True, "identity_required": True},
+                "toll_free": {"address_required": True, "identity_required": True}
+            }
+        }
+
+        return requirements.get(country_code, {}).get(number_type, {
+            "address_required": True,
+            "identity_required": True
+        })
+
+    def submit_regulatory_bundle(
+        self,
+        country_code: str,
+        business_info: dict,
+        documents: list
+    ) -> str:
+        """Submit regulatory documents for number compliance"""
+
+        bundle = {
+            "country_code": country_code,
+            "business_name": business_info["name"],
+            "business_type": business_info["type"],  # corporation, llc, etc.
+            "address": business_info["address"],
+            "documents": [
+                {
+                    "type": doc["type"],  # business_license, proof_of_address
+                    "file_url": doc["url"]
+                }
+                for doc in documents
+            ]
+        }
+
+        # Submit to provider for verification
+        # Returns bundle ID for tracking
+        return self._submit_bundle(bundle)
+
+    def verify_caller_id(self, phone_number: str, verification_code: str) -> bool:
+        """Verify a phone number for outbound caller ID"""
+        # Most providers require verification before using a number as caller ID
+        return self._verify_number(phone_number, verification_code)
+```
+
+## Inbound and Outbound Calling
+
+### Inbound Call Handling
+
+```
++-----------------------------------------------------------------------------+
+|                       INBOUND CALL FLOW                                      |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Caller         Carrier        Voice AI Server        AI Components         |
+|    |               |                  |                     |               |
+|    | Dials number  |                  |                     |               |
+|    |-------------->|                  |                     |               |
+|    |               | SIP INVITE       |                     |               |
+|    |               |----------------->|                     |               |
+|    |               |                  | Webhook POST        |               |
+|    |               |                  | (call metadata)     |               |
+|    |               |                  |-------------------->|               |
+|    |               |                  |                     |               |
+|    |               |                  | Return instructions |               |
+|    |               |                  |<--------------------|               |
+|    |               | 200 OK (SDP)     |                     |               |
+|    |               |<-----------------|                     |               |
+|    |  Ring         |                  |                     |               |
+|    |<--------------|                  |                     |               |
+|    |               |                  |                     |               |
+|    | Answer        |                  |                     |               |
+|    |-------------->|                  |                     |               |
+|    |               | ACK              |                     |               |
+|    |               |----------------->|                     |               |
+|    |               |                  |                     |               |
+|    |<============= RTP Media ========>|<===================>|               |
+|    |               |                  |                     |               |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+```python
+from flask import Flask, request, Response
+import json
+
+app = Flask(__name__)
+
+class InboundCallHandler:
+    """Handle inbound PSTN calls to voice AI"""
+
+    def __init__(self, voice_agent_factory):
+        self.voice_agent_factory = voice_agent_factory
+        self.active_calls = {}
+
+    def handle_incoming_call(self, call_data: dict) -> str:
+        """Process incoming call webhook and return instructions"""
+
+        call_sid = call_data.get("CallSid") or call_data.get("call_uuid")
+        from_number = call_data.get("From") or call_data.get("from")
+        to_number = call_data.get("To") or call_data.get("to")
+
+        # Look up customer context
+        customer = self.lookup_customer(from_number)
+
+        # Create voice agent instance
+        agent = self.voice_agent_factory.create(
+            customer_context=customer,
+            call_id=call_sid
+        )
+
+        self.active_calls[call_sid] = {
+            "agent": agent,
+            "from": from_number,
+            "to": to_number,
+            "started_at": time.time()
+        }
+
+        # Return telephony markup to answer and stream
+        return self.generate_answer_response(call_sid)
+
+    def generate_answer_response(self, call_sid: str) -> str:
+        """Generate XML/JSON response to answer call"""
+
+        # Plivo XML example
+        plivo_response = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Stream bidirectional="true" keepCallAlive="true">
+                wss://voice-ai.example.com/stream/{call_sid}
+            </Stream>
+        </Response>
+        """
+
+        # Twilio TwiML example
+        twilio_response = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Connect>
+                <Stream url="wss://voice-ai.example.com/stream/{call_sid}" />
+            </Connect>
+        </Response>
+        """
+
+        return plivo_response  # or twilio_response based on provider
+
+    def lookup_customer(self, phone_number: str) -> dict:
+        """Look up customer context from CRM"""
+        # Integration with CRM/database
+        return {
+            "phone": phone_number,
+            "name": "Customer",
+            "account_id": None,
+            "history": []
+        }
+
+
+@app.route("/voice/inbound", methods=["POST"])
+def inbound_call():
+    """Webhook endpoint for inbound calls"""
+    handler = InboundCallHandler(voice_agent_factory)
+
+    call_data = request.form.to_dict() or request.json
+    response_xml = handler.handle_incoming_call(call_data)
+
+    return Response(response_xml, mimetype="application/xml")
+
+
+@app.route("/voice/status", methods=["POST"])
+def call_status():
+    """Webhook for call status updates"""
+    status_data = request.form.to_dict() or request.json
+
+    call_sid = status_data.get("CallSid") or status_data.get("call_uuid")
+    status = status_data.get("CallStatus") or status_data.get("call_status")
+
+    if status in ["completed", "failed", "busy", "no-answer"]:
+        # Clean up call resources
+        cleanup_call(call_sid)
+
+    return "", 200
+```
+
+### Outbound Call Initiation
+
+```python
+class OutboundCallManager:
+    """Manage outbound calls from voice AI"""
+
+    def __init__(self, provider_config: dict):
+        self.provider = provider_config["provider"]
+        self.client = self._init_client(provider_config)
+        self.caller_id = provider_config["default_caller_id"]
+
+    async def initiate_call(
+        self,
+        to_number: str,
+        voice_agent_config: dict,
+        caller_id: str = None,
+        timeout: int = 30,
+        machine_detection: bool = True
+    ) -> dict:
+        """Initiate an outbound call"""
+
+        call_params = {
+            "to": to_number,
+            "from_": caller_id or self.caller_id,
+            "timeout": timeout,
+            "machine_detection": machine_detection
+        }
+
+        if self.provider == "plivo":
+            response = self.client.calls.create(
+                from_=call_params["from_"],
+                to_=call_params["to"],
+                answer_url=f"{self.webhook_base}/voice/outbound/answer",
+                answer_method="POST",
+                hangup_url=f"{self.webhook_base}/voice/status",
+                machine_detection="true" if machine_detection else "false",
+                machine_detection_time=5000,
+                machine_detection_url=f"{self.webhook_base}/voice/machine-detection"
+            )
+
+            return {
+                "call_id": response.request_uuid,
+                "status": "initiated",
+                "to": to_number,
+                "from": call_params["from_"]
+            }
+
+        elif self.provider == "twilio":
+            call = self.client.calls.create(
+                to=call_params["to"],
+                from_=call_params["from_"],
+                url=f"{self.webhook_base}/voice/outbound/answer",
+                status_callback=f"{self.webhook_base}/voice/status",
+                timeout=timeout,
+                machine_detection="Enable" if machine_detection else "Disable",
+                async_amd=True,
+                async_amd_status_callback=f"{self.webhook_base}/voice/machine-detection"
+            )
+
+            return {
+                "call_id": call.sid,
+                "status": call.status,
+                "to": to_number,
+                "from": call_params["from_"]
+            }
+
+    async def bulk_dial(
+        self,
+        recipients: list,
+        campaign_config: dict,
+        concurrency: int = 10
+    ) -> list:
+        """Initiate multiple outbound calls with rate limiting"""
+
+        semaphore = asyncio.Semaphore(concurrency)
+        results = []
+
+        async def dial_with_limit(recipient):
+            async with semaphore:
+                try:
+                    result = await self.initiate_call(
+                        to_number=recipient["phone"],
+                        voice_agent_config=campaign_config["agent_config"],
+                        caller_id=campaign_config.get("caller_id")
+                    )
+                    return {"recipient": recipient, "result": result, "success": True}
+                except Exception as e:
+                    return {"recipient": recipient, "error": str(e), "success": False}
+
+        tasks = [dial_with_limit(r) for r in recipients]
+        results = await asyncio.gather(*tasks)
+
+        return results
+
+    def cancel_call(self, call_id: str) -> bool:
+        """Cancel an in-progress call"""
+        try:
+            if self.provider == "plivo":
+                self.client.calls.hangup(call_id)
+            elif self.provider == "twilio":
+                self.client.calls(call_id).update(status="completed")
+            return True
+        except Exception as e:
+            print(f"Failed to cancel call: {e}")
+            return False
+```
+
+## Call Routing and Forwarding
+
+### Intelligent Call Routing
+
+```python
+class CallRouter:
+    """Route calls based on various criteria"""
+
+    def __init__(self, routing_config: dict):
+        self.config = routing_config
+        self.routes = self._load_routes()
+
+    def route_call(self, call_context: dict) -> dict:
+        """Determine call routing based on context"""
+
+        # Time-based routing
+        if self._is_outside_hours():
+            return self.routes["after_hours"]
+
+        # Geographic routing
+        caller_region = self._get_region(call_context["from"])
+        if caller_region in self.routes["regional"]:
+            return self.routes["regional"][caller_region]
+
+        # Customer tier routing
+        customer = self._lookup_customer(call_context["from"])
+        if customer and customer.get("tier") == "premium":
+            return self.routes["premium"]
+
+        # Default routing
+        return self.routes["default"]
+
+    def generate_routing_response(self, route: dict, call_context: dict) -> str:
+        """Generate telephony markup for routing"""
+
+        if route["type"] == "voice_agent":
+            # Route to voice AI
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Stream bidirectional="true">
+                    wss://voice-ai.example.com/stream/{call_context['call_id']}
+                </Stream>
+            </Response>
+            """
+
+        elif route["type"] == "forward":
+            # Forward to another number
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Dial callerId="{call_context['to']}">
+                    <Number>{route['destination']}</Number>
+                </Dial>
+            </Response>
+            """
+
+        elif route["type"] == "queue":
+            # Place in call queue
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Enqueue waitUrl="/voice/hold-music">
+                    {route['queue_name']}
+                </Enqueue>
+            </Response>
+            """
+
+        elif route["type"] == "voicemail":
+            # Send to voicemail
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Say>Please leave a message after the beep.</Say>
+                <Record
+                    maxLength="120"
+                    action="/voice/voicemail-complete"
+                    transcribe="true"
+                    transcribeCallback="/voice/transcription"
+                />
+            </Response>
+            """
+
+    def _is_outside_hours(self) -> bool:
+        """Check if current time is outside business hours"""
+        now = datetime.now(self.config["timezone"])
+        business_hours = self.config["business_hours"]
+
+        day = now.strftime("%A").lower()
+        if day not in business_hours:
+            return True
+
+        hours = business_hours[day]
+        current_time = now.time()
+
+        return not (hours["start"] <= current_time <= hours["end"])
+```
+
+## DTMF Handling
+
+DTMF (Dual-Tone Multi-Frequency) tones enable phone keypad input during calls.
+
+### DTMF Frequencies
+
+| Key | Low Freq | High Freq |
+|-----|----------|-----------|
+| 1 | 697 Hz | 1209 Hz |
+| 2 | 697 Hz | 1336 Hz |
+| 3 | 697 Hz | 1477 Hz |
+| 4 | 770 Hz | 1209 Hz |
+| 5 | 770 Hz | 1336 Hz |
+| 6 | 770 Hz | 1477 Hz |
+| 7 | 852 Hz | 1209 Hz |
+| 8 | 852 Hz | 1336 Hz |
+| 9 | 852 Hz | 1477 Hz |
+| * | 941 Hz | 1209 Hz |
+| 0 | 941 Hz | 1336 Hz |
+| # | 941 Hz | 1477 Hz |
+
+### DTMF Detection and Processing
+
+```python
+class DTMFHandler:
+    """Handle DTMF input during voice AI calls"""
+
+    def __init__(self, voice_agent):
+        self.voice_agent = voice_agent
+        self.dtmf_buffer = ""
+        self.last_dtmf_time = 0
+        self.inter_digit_timeout = 3.0  # seconds
+
+    def process_dtmf(self, digit: str, call_id: str):
+        """Process received DTMF digit"""
+        current_time = time.time()
+
+        # Check for timeout - reset buffer if too long since last digit
+        if current_time - self.last_dtmf_time > self.inter_digit_timeout:
+            self.dtmf_buffer = ""
+
+        self.dtmf_buffer += digit
+        self.last_dtmf_time = current_time
+
+        # Check for complete input patterns
+        action = self._check_patterns(self.dtmf_buffer)
+        if action:
+            self._execute_action(action, call_id)
+            self.dtmf_buffer = ""
+
+    def _check_patterns(self, buffer: str) -> dict:
+        """Check buffer against known DTMF patterns"""
+        patterns = {
+            "0": {"action": "transfer_agent", "description": "Transfer to human"},
+            "1": {"action": "repeat", "description": "Repeat last message"},
+            "*": {"action": "main_menu", "description": "Return to main menu"},
+            "#": {"action": "confirm", "description": "Confirm selection"},
+            "9": {"action": "end_call", "description": "End call"}
+        }
+
+        # Check single digit commands
+        if buffer in patterns:
+            return patterns[buffer]
+
+        # Check for numeric input (e.g., account number)
+        if buffer.endswith("#") and len(buffer) > 1:
+            return {
+                "action": "numeric_input",
+                "value": buffer[:-1],
+                "description": "Numeric input received"
+            }
+
+        return None
+
+    def _execute_action(self, action: dict, call_id: str):
+        """Execute action based on DTMF input"""
+        if action["action"] == "transfer_agent":
+            self.voice_agent.transfer_to_human(call_id)
+        elif action["action"] == "repeat":
+            self.voice_agent.repeat_last_message(call_id)
+        elif action["action"] == "main_menu":
+            self.voice_agent.go_to_main_menu(call_id)
+        elif action["action"] == "numeric_input":
+            self.voice_agent.handle_numeric_input(call_id, action["value"])
+        elif action["action"] == "end_call":
+            self.voice_agent.end_call(call_id)
+
+    def generate_dtmf_prompt(self, options: list) -> str:
+        """Generate voice prompt for DTMF menu"""
+        prompt_parts = []
+
+        for option in options:
+            prompt_parts.append(f"Press {option['digit']} for {option['description']}")
+
+        return ". ".join(prompt_parts)
+
+
+# Webhook handler for DTMF events
+@app.route("/voice/dtmf", methods=["POST"])
+def handle_dtmf():
+    """Handle DTMF webhook from provider"""
+    data = request.form.to_dict() or request.json
+
+    call_id = data.get("CallSid") or data.get("call_uuid")
+    digits = data.get("Digits") or data.get("digits")
+
+    dtmf_handler = get_dtmf_handler(call_id)
+    dtmf_handler.process_dtmf(digits, call_id)
+
+    return "", 200
+```
+
+### Gathering DTMF Input
+
+```python
+def gather_dtmf_response(
+    prompt: str,
+    num_digits: int = None,
+    finish_on_key: str = "#",
+    timeout: int = 10,
+    action_url: str = "/voice/dtmf"
+) -> str:
+    """Generate XML to gather DTMF input"""
+
+    # Plivo XML
+    plivo_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <Response>
+        <GetDigits action="{action_url}"
+                   method="POST"
+                   timeout="{timeout}"
+                   finishOnKey="{finish_on_key}"
+                   {"numDigits=\"" + str(num_digits) + "\"" if num_digits else ""}>
+            <Speak>{prompt}</Speak>
+        </GetDigits>
+        <Speak>We didn't receive any input. Goodbye.</Speak>
+        <Hangup/>
+    </Response>
+    """
+
+    # Twilio TwiML
+    twilio_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <Response>
+        <Gather input="dtmf"
+                action="{action_url}"
+                method="POST"
+                timeout="{timeout}"
+                finishOnKey="{finish_on_key}"
+                {"numDigits=\"" + str(num_digits) + "\"" if num_digits else ""}>
+            <Say>{prompt}</Say>
+        </Gather>
+        <Say>We didn't receive any input. Goodbye.</Say>
+        <Hangup/>
+    </Response>
+    """
+
+    return plivo_xml  # or twilio_xml
+```
+
+## Voicemail Detection
+
+Answering Machine Detection (AMD) helps voice AI systems identify whether a human or machine answered the call.
+
+### AMD Implementation
+
+```python
+class VoicemailDetector:
+    """Detect voicemail and answering machines"""
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.detection_strategies = {
+            "provider_amd": self._use_provider_amd,
+            "audio_analysis": self._analyze_audio,
+            "hybrid": self._hybrid_detection
+        }
+
+    def configure_amd(self, call_params: dict) -> dict:
+        """Configure AMD parameters for outbound call"""
+
+        # Provider-specific AMD configuration
+        amd_config = {
+            "plivo": {
+                "machine_detection": "true",
+                "machine_detection_time": 5000,  # ms
+                "machine_detection_url": f"{self.webhook_base}/voice/amd"
+            },
+            "twilio": {
+                "machine_detection": "DetectMessageEnd",  # or "Enable"
+                "machine_detection_timeout": 30,
+                "machine_detection_speech_threshold": 2400,
+                "machine_detection_speech_end_threshold": 1200,
+                "machine_detection_silence_timeout": 5000,
+                "async_amd": True,
+                "async_amd_status_callback": f"{self.webhook_base}/voice/amd"
+            }
+        }
+
+        return {**call_params, **amd_config[self.config["provider"]]}
+
+    def handle_amd_result(self, amd_data: dict, call_id: str) -> str:
+        """Handle AMD webhook result"""
+
+        # Normalize result across providers
+        result = self._normalize_amd_result(amd_data)
+
+        if result["is_machine"]:
+            return self._handle_machine(result, call_id)
+        else:
+            return self._handle_human(result, call_id)
+
+    def _normalize_amd_result(self, data: dict) -> dict:
+        """Normalize AMD result from different providers"""
+
+        # Plivo format
+        if "machine" in data:
+            return {
+                "is_machine": data["machine"] == "true",
+                "machine_type": data.get("machine_type"),  # greeting, beep
+                "confidence": float(data.get("confidence", 0.8))
+            }
+
+        # Twilio format
+        if "AnsweredBy" in data:
+            answered_by = data["AnsweredBy"]
+            return {
+                "is_machine": answered_by in ["machine_start", "machine_end_beep",
+                                               "machine_end_silence", "machine_end_other"],
+                "machine_type": answered_by,
+                "confidence": 0.85 if answered_by != "unknown" else 0.5
+            }
+
+        return {"is_machine": False, "confidence": 0.5}
+
+    def _handle_machine(self, result: dict, call_id: str) -> str:
+        """Handle call answered by machine"""
+
+        strategy = self.config.get("machine_strategy", "leave_message")
+
+        if strategy == "hangup":
+            # End call if machine detected
+            return """<?xml version="1.0" encoding="UTF-8"?>
+            <Response><Hangup/></Response>
+            """
+
+        elif strategy == "leave_message":
+            # Wait for beep and leave message
+            if result["machine_type"] == "beep":
+                # Beep detected, leave message now
+                return self._generate_voicemail_message(call_id)
+            else:
+                # Wait for beep
+                return """<?xml version="1.0" encoding="UTF-8"?>
+                <Response>
+                    <Pause length="5"/>
+                </Response>
+                """
+
+        elif strategy == "callback":
+            # Schedule callback for later
+            self._schedule_callback(call_id)
+            return """<?xml version="1.0" encoding="UTF-8"?>
+            <Response><Hangup/></Response>
+            """
+
+    def _handle_human(self, result: dict, call_id: str) -> str:
+        """Handle call answered by human"""
+        # Continue with normal voice AI flow
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Stream bidirectional="true">
+                wss://voice-ai.example.com/stream/{call_id}
+            </Stream>
+        </Response>
+        """
+
+    def _generate_voicemail_message(self, call_id: str) -> str:
+        """Generate voicemail message"""
+        message = self.config.get("voicemail_message",
+            "Hello, this is a call from Example Company. "
+            "Please call us back at your convenience. Thank you.")
+
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Say>{message}</Say>
+            <Hangup/>
+        </Response>
+        """
+
+
+# AMD webhook handler
+@app.route("/voice/amd", methods=["POST"])
+def handle_amd():
+    """Handle AMD result webhook"""
+    data = request.form.to_dict() or request.json
+    call_id = data.get("CallSid") or data.get("call_uuid")
+
+    detector = VoicemailDetector(config)
+    response_xml = detector.handle_amd_result(data, call_id)
+
+    return Response(response_xml, mimetype="application/xml")
+```
+
+## Carrier Integration
+
+### Multi-Carrier Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                      MULTI-CARRIER ARCHITECTURE                              |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Voice AI Platform                                                           |
+|  +-------------------------------------------------------------------+      |
+|  |                                                                   |      |
+|  |  +-------------+    +------------------+    +----------------+    |      |
+|  |  |   Carrier   |    |   Call Router    |    |   Failover     |    |      |
+|  |  |   Manager   |--->|   & Load Balancer|--->|   Controller   |    |      |
+|  |  +-------------+    +------------------+    +----------------+    |      |
+|  |        |                    |                       |             |      |
+|  +--------|--------------------|-----------------------|-------------+      |
+|           |                    |                       |                    |
+|           v                    v                       v                    |
+|  +----------------+   +----------------+   +----------------+               |
+|  |   Carrier A    |   |   Carrier B    |   |   Carrier C    |               |
+|  |   (Primary)    |   |  (Secondary)   |   |   (Backup)     |               |
+|  |    Plivo       |   |    Twilio      |   |   Bandwidth    |               |
+|  +----------------+   +----------------+   +----------------+               |
+|           |                    |                       |                    |
+|           +--------------------+-----------------------+                    |
+|                                |                                            |
+|                                v                                            |
+|                          +----------+                                       |
+|                          |   PSTN   |                                       |
+|                          +----------+                                       |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Carrier Abstraction Layer
+
+```python
+from abc import ABC, abstractmethod
+
+class CarrierInterface(ABC):
+    """Abstract interface for telephony carriers"""
+
+    @abstractmethod
+    async def make_call(self, to: str, from_: str, webhook_url: str) -> dict:
+        pass
+
+    @abstractmethod
+    async def send_dtmf(self, call_id: str, digits: str) -> bool:
+        pass
+
+    @abstractmethod
+    async def transfer_call(self, call_id: str, to: str) -> bool:
+        pass
+
+    @abstractmethod
+    async def hangup(self, call_id: str) -> bool:
+        pass
+
+    @abstractmethod
+    async def get_call_status(self, call_id: str) -> dict:
+        pass
+
+
+class PlivoCarrier(CarrierInterface):
+    """Plivo carrier implementation"""
+
+    def __init__(self, auth_id: str, auth_token: str):
+        import plivo
+        self.client = plivo.RestClient(auth_id, auth_token)
+
+    async def make_call(self, to: str, from_: str, webhook_url: str) -> dict:
+        response = self.client.calls.create(
+            from_=from_,
+            to_=to,
+            answer_url=webhook_url,
+            answer_method="POST"
+        )
+        return {"call_id": response.request_uuid, "status": "initiated"}
+
+    async def hangup(self, call_id: str) -> bool:
+        self.client.calls.hangup(call_id)
+        return True
+
+
+class TwilioCarrier(CarrierInterface):
+    """Twilio carrier implementation"""
+
+    def __init__(self, account_sid: str, auth_token: str):
+        from twilio.rest import Client
+        self.client = Client(account_sid, auth_token)
+
+    async def make_call(self, to: str, from_: str, webhook_url: str) -> dict:
+        call = self.client.calls.create(
+            to=to,
+            from_=from_,
+            url=webhook_url
+        )
+        return {"call_id": call.sid, "status": call.status}
+
+    async def hangup(self, call_id: str) -> bool:
+        self.client.calls(call_id).update(status="completed")
+        return True
+
+
+class CarrierManager:
+    """Manage multiple carriers with failover"""
+
+    def __init__(self, carrier_configs: list):
+        self.carriers = []
+        for config in carrier_configs:
+            carrier = self._create_carrier(config)
+            self.carriers.append({
+                "carrier": carrier,
+                "name": config["name"],
+                "priority": config.get("priority", 100),
+                "healthy": True,
+                "failure_count": 0
+            })
+
+        # Sort by priority
+        self.carriers.sort(key=lambda x: x["priority"])
+
+    def _create_carrier(self, config: dict) -> CarrierInterface:
+        """Factory method for carriers"""
+        if config["type"] == "plivo":
+            return PlivoCarrier(config["auth_id"], config["auth_token"])
+        elif config["type"] == "twilio":
+            return TwilioCarrier(config["account_sid"], config["auth_token"])
+        else:
+            raise ValueError(f"Unknown carrier type: {config['type']}")
+
+    async def make_call(self, to: str, from_: str, webhook_url: str) -> dict:
+        """Make call with automatic failover"""
+
+        last_error = None
+
+        for carrier_info in self.carriers:
+            if not carrier_info["healthy"]:
+                continue
+
+            try:
+                result = await carrier_info["carrier"].make_call(to, from_, webhook_url)
+                result["carrier"] = carrier_info["name"]
+
+                # Reset failure count on success
+                carrier_info["failure_count"] = 0
+
+                return result
+
+            except Exception as e:
+                last_error = e
+                carrier_info["failure_count"] += 1
+
+                # Mark unhealthy after 3 consecutive failures
+                if carrier_info["failure_count"] >= 3:
+                    carrier_info["healthy"] = False
+                    self._schedule_health_check(carrier_info)
+
+        raise Exception(f"All carriers failed. Last error: {last_error}")
+
+    def _schedule_health_check(self, carrier_info: dict):
+        """Schedule health check for unhealthy carrier"""
+        async def check_health():
+            await asyncio.sleep(60)  # Wait 1 minute
+            try:
+                # Simple health check
+                await carrier_info["carrier"].get_account_info()
+                carrier_info["healthy"] = True
+                carrier_info["failure_count"] = 0
+            except:
+                # Schedule another check
+                self._schedule_health_check(carrier_info)
+
+        asyncio.create_task(check_health())
+```
+
+## Summary
+
+PSTN integration enables voice AI systems to reach users on any phone. Key considerations:
+
+1. **Phone Numbers**: Provision local, toll-free, or mobile numbers based on use case
+2. **Inbound Calls**: Handle webhooks, route intelligently, and stream to voice agents
+3. **Outbound Calls**: Initiate calls with AMD, handle voicemail appropriately
+4. **DTMF**: Support keypad input for menus and numeric entry
+5. **Voicemail Detection**: Detect machines and respond appropriately
+6. **Multi-Carrier**: Build resilience with carrier abstraction and failover
+
+Providers like Plivo, Twilio, and Bandwidth offer the APIs and infrastructure to connect voice AI systems to the global telephone network with high reliability and quality.

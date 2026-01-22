@@ -1,0 +1,1259 @@
+---
+title: "Response Templates for Voice AI"
+description: "Complete guide to response template systems for voice AI, covering template design, variable substitution, conditional responses, and template management strategies."
+category: "foundations"
+tags:
+  - response-templates
+  - NLG
+  - voice-ai
+  - dialogue-systems
+  - content-management
+relatedTopics:
+  - dynamic-generation
+  - persona-consistency
+  - ssml
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Response Templates for Voice AI
+
+Response templates provide consistent, predictable outputs for voice AI systems. Unlike dynamic generation, templates offer precise control over wording, timing, and pronunciation while ensuring brand consistency and regulatory compliance.
+
+## Template Systems
+
+Template systems define the structure and rules for generating voice responses from predefined patterns.
+
+### Basic Template Architecture
+
+```python
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass, field
+from enum import Enum
+import re
+
+class TemplateType(Enum):
+    SIMPLE = "simple"           # Plain text with variables
+    CONDITIONAL = "conditional"  # Contains if/else logic
+    COMPOSITE = "composite"      # Combines multiple templates
+    SSML = "ssml"               # Contains SSML markup
+
+@dataclass
+class ResponseTemplate:
+    id: str
+    name: str
+    template_type: TemplateType
+    content: str
+    variables: List[str] = field(default_factory=list)
+    conditions: Dict[str, str] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # Voice-specific attributes
+    expected_duration_ms: Optional[int] = None
+    prosody_hints: Dict[str, str] = field(default_factory=dict)
+    fallback_template_id: Optional[str] = None
+
+class TemplateRegistry:
+    """Central registry for all response templates"""
+
+    def __init__(self):
+        self.templates: Dict[str, ResponseTemplate] = {}
+        self.categories: Dict[str, List[str]] = {}
+
+    def register(self, template: ResponseTemplate, category: str = "general"):
+        """Register a template"""
+        self.templates[template.id] = template
+
+        if category not in self.categories:
+            self.categories[category] = []
+        self.categories[category].append(template.id)
+
+    def get(self, template_id: str) -> Optional[ResponseTemplate]:
+        """Get template by ID"""
+        return self.templates.get(template_id)
+
+    def get_by_category(self, category: str) -> List[ResponseTemplate]:
+        """Get all templates in a category"""
+        template_ids = self.categories.get(category, [])
+        return [self.templates[tid] for tid in template_ids if tid in self.templates]
+
+    def validate_template(self, template: ResponseTemplate) -> List[str]:
+        """Validate a template for common issues"""
+        issues = []
+
+        # Check variable syntax
+        var_pattern = r'\{(\w+)\}'
+        found_vars = re.findall(var_pattern, template.content)
+
+        for var in found_vars:
+            if var not in template.variables:
+                issues.append(f"Undeclared variable: {var}")
+
+        for var in template.variables:
+            if var not in found_vars:
+                issues.append(f"Unused declared variable: {var}")
+
+        # Check for voice-unfriendly content
+        if len(template.content) > 500:
+            issues.append("Template exceeds recommended length for voice (500 chars)")
+
+        # Check for problematic characters
+        if any(c in template.content for c in ['<', '>', '&'] if template.template_type != TemplateType.SSML):
+            issues.append("Contains special characters that may cause TTS issues")
+
+        return issues
+```
+
+### Template Definition Examples
+
+```python
+# Define common templates
+TEMPLATES = {
+    # Greetings
+    "greeting_standard": ResponseTemplate(
+        id="greeting_standard",
+        name="Standard Greeting",
+        template_type=TemplateType.SIMPLE,
+        content="Hello! Welcome to {company_name}. How can I help you today?",
+        variables=["company_name"],
+        expected_duration_ms=3500,
+        prosody_hints={"rate": "medium", "pitch": "medium-high"}
+    ),
+
+    "greeting_returning": ResponseTemplate(
+        id="greeting_returning",
+        name="Returning Customer Greeting",
+        template_type=TemplateType.CONDITIONAL,
+        content="Welcome back, {customer_name}! Great to hear from you again. {time_greeting} How can I assist you?",
+        variables=["customer_name", "time_greeting"],
+        conditions={
+            "time_greeting": "Good morning|Good afternoon|Good evening"
+        },
+        expected_duration_ms=5000
+    ),
+
+    # Confirmations
+    "booking_confirm": ResponseTemplate(
+        id="booking_confirm",
+        name="Booking Confirmation",
+        template_type=TemplateType.SSML,
+        content="""
+            <speak>
+                Perfect! I've booked your {service_type} for
+                <say-as interpret-as="date">{date}</say-as>
+                at <say-as interpret-as="time">{time}</say-as>.
+                <break time="300ms"/>
+                You'll receive a confirmation at {contact_method}.
+                Is there anything else I can help with?
+            </speak>
+        """,
+        variables=["service_type", "date", "time", "contact_method"],
+        expected_duration_ms=8000
+    ),
+
+    # Error handling
+    "error_not_understood": ResponseTemplate(
+        id="error_not_understood",
+        name="Not Understood Error",
+        template_type=TemplateType.SIMPLE,
+        content="I'm sorry, I didn't quite catch that. Could you please repeat what you said?",
+        expected_duration_ms=4000,
+        prosody_hints={"rate": "slow", "pitch": "medium"}
+    ),
+
+    "error_not_understood_second": ResponseTemplate(
+        id="error_not_understood_second",
+        name="Second Not Understood",
+        template_type=TemplateType.SIMPLE,
+        content="I'm still having trouble understanding. Let me try asking a different way. {clarifying_question}",
+        variables=["clarifying_question"],
+        expected_duration_ms=5500
+    ),
+
+    # Slot elicitation
+    "ask_destination": ResponseTemplate(
+        id="ask_destination",
+        name="Ask Destination",
+        template_type=TemplateType.SIMPLE,
+        content="Where would you like to {action_verb}?",
+        variables=["action_verb"],
+        expected_duration_ms=2000
+    ),
+
+    "ask_date": ResponseTemplate(
+        id="ask_date",
+        name="Ask Date",
+        template_type=TemplateType.SIMPLE,
+        content="What date works best for you?",
+        expected_duration_ms=1800
+    ),
+
+    # Escalation
+    "transfer_to_agent": ResponseTemplate(
+        id="transfer_to_agent",
+        name="Transfer to Agent",
+        template_type=TemplateType.SIMPLE,
+        content="I'll connect you with a team member who can help further. Please hold for just a moment.",
+        expected_duration_ms=4500,
+        prosody_hints={"rate": "medium-slow"}
+    )
+}
+
+# Register templates
+registry = TemplateRegistry()
+for template in TEMPLATES.values():
+    registry.register(template, category="standard")
+```
+
+### Template Selection Logic
+
+```python
+class TemplateSelector:
+    """Select appropriate template based on context"""
+
+    def __init__(self, registry: TemplateRegistry):
+        self.registry = registry
+
+        # Define selection rules
+        self.selection_rules = {
+            "greeting": self._select_greeting,
+            "confirmation": self._select_confirmation,
+            "error": self._select_error,
+            "slot_request": self._select_slot_request,
+        }
+
+    def select(
+        self,
+        intent: str,
+        context: Dict[str, Any]
+    ) -> Optional[ResponseTemplate]:
+        """Select template based on intent and context"""
+
+        # Check for custom selection rule
+        if intent in self.selection_rules:
+            return self.selection_rules[intent](context)
+
+        # Default: look for template matching intent
+        template_id = f"{intent}_default"
+        return self.registry.get(template_id)
+
+    def _select_greeting(self, context: Dict[str, Any]) -> ResponseTemplate:
+        """Select appropriate greeting template"""
+        is_returning = context.get("is_returning_customer", False)
+        has_name = context.get("customer_name") is not None
+
+        if is_returning and has_name:
+            return self.registry.get("greeting_returning")
+
+        return self.registry.get("greeting_standard")
+
+    def _select_confirmation(self, context: Dict[str, Any]) -> ResponseTemplate:
+        """Select confirmation template"""
+        confirmation_type = context.get("confirmation_type", "general")
+        template_id = f"confirm_{confirmation_type}"
+
+        template = self.registry.get(template_id)
+        if not template:
+            template = self.registry.get("confirm_general")
+
+        return template
+
+    def _select_error(self, context: Dict[str, Any]) -> ResponseTemplate:
+        """Select error template with escalation"""
+        error_count = context.get("consecutive_errors", 1)
+
+        if error_count >= 3:
+            return self.registry.get("error_handoff")
+        elif error_count == 2:
+            return self.registry.get("error_not_understood_second")
+
+        return self.registry.get("error_not_understood")
+
+    def _select_slot_request(self, context: Dict[str, Any]) -> ResponseTemplate:
+        """Select slot request template"""
+        slot_name = context.get("slot_name")
+        template_id = f"ask_{slot_name}"
+
+        template = self.registry.get(template_id)
+        if not template:
+            # Generic slot request
+            template = self.registry.get("ask_generic")
+
+        return template
+```
+
+## Variable Substitution
+
+Variable substitution replaces placeholders with actual values while handling edge cases specific to voice output.
+
+### Basic Substitution Engine
+
+```python
+class VariableSubstitution:
+    """Handle variable substitution in templates"""
+
+    def __init__(self):
+        self.formatters = {
+            "upper": str.upper,
+            "lower": str.lower,
+            "title": str.title,
+            "currency": self._format_currency,
+            "date": self._format_date,
+            "time": self._format_time,
+            "phone": self._format_phone,
+            "number": self._format_number,
+            "ordinal": self._format_ordinal,
+            "list": self._format_list,
+        }
+
+    def substitute(
+        self,
+        template: str,
+        variables: Dict[str, Any],
+        strict: bool = False
+    ) -> str:
+        """Substitute variables in template"""
+
+        result = template
+
+        # Pattern: {variable_name} or {variable_name:formatter}
+        pattern = r'\{(\w+)(?::(\w+))?\}'
+
+        def replace_match(match):
+            var_name = match.group(1)
+            formatter = match.group(2)
+
+            if var_name not in variables:
+                if strict:
+                    raise ValueError(f"Missing variable: {var_name}")
+                return match.group(0)  # Keep original
+
+            value = variables[var_name]
+
+            # Apply formatter if specified
+            if formatter and formatter in self.formatters:
+                value = self.formatters[formatter](value)
+
+            return str(value)
+
+        result = re.sub(pattern, replace_match, result)
+        return result
+
+    def _format_currency(self, value: Any) -> str:
+        """Format currency for voice"""
+        if isinstance(value, (int, float)):
+            dollars = int(value)
+            cents = int((value - dollars) * 100)
+
+            if cents == 0:
+                return f"{dollars} dollars"
+            else:
+                return f"{dollars} dollars and {cents} cents"
+
+        return str(value)
+
+    def _format_date(self, value: Any) -> str:
+        """Format date for voice"""
+        from datetime import datetime, date
+
+        if isinstance(value, str):
+            # Parse ISO date
+            try:
+                value = datetime.fromisoformat(value).date()
+            except ValueError:
+                return value
+
+        if isinstance(value, (datetime, date)):
+            # Check for relative dates
+            today = date.today()
+            if isinstance(value, datetime):
+                value = value.date()
+
+            if value == today:
+                return "today"
+            elif value == today.replace(day=today.day + 1):
+                return "tomorrow"
+
+            return value.strftime("%A, %B %d")
+
+        return str(value)
+
+    def _format_time(self, value: Any) -> str:
+        """Format time for voice"""
+        from datetime import datetime, time
+
+        if isinstance(value, str):
+            # Parse time string
+            try:
+                if ':' in value:
+                    parts = value.split(':')
+                    hour = int(parts[0])
+                    minute = int(parts[1]) if len(parts) > 1 else 0
+                else:
+                    return value
+            except ValueError:
+                return value
+        elif isinstance(value, (datetime, time)):
+            hour = value.hour
+            minute = value.minute
+        else:
+            return str(value)
+
+        # Format for speech
+        period = "AM" if hour < 12 else "PM"
+        hour_12 = hour % 12
+        if hour_12 == 0:
+            hour_12 = 12
+
+        if minute == 0:
+            return f"{hour_12} {period}"
+        elif minute == 30:
+            return f"{hour_12} thirty {period}"
+        else:
+            return f"{hour_12} {minute:02d} {period}"
+
+    def _format_phone(self, value: Any) -> str:
+        """Format phone number for voice"""
+        # Remove non-digits
+        digits = re.sub(r'[^\d]', '', str(value))
+
+        if len(digits) == 10:
+            # US format: read as groups
+            return f"{digits[0:3]}, {digits[3:6]}, {digits[6:10]}"
+        elif len(digits) == 11 and digits[0] == '1':
+            return f"1, {digits[1:4]}, {digits[4:7]}, {digits[7:11]}"
+
+        # Fall back to digit-by-digit
+        return ', '.join(digits)
+
+    def _format_number(self, value: Any) -> str:
+        """Format number for voice"""
+        if isinstance(value, float):
+            if value.is_integer():
+                return str(int(value))
+            return f"{value:.2f}".rstrip('0').rstrip('.')
+
+        return str(value)
+
+    def _format_ordinal(self, value: Any) -> str:
+        """Format ordinal number for voice"""
+        n = int(value)
+        suffix = "th"
+        if n % 100 not in [11, 12, 13]:
+            if n % 10 == 1:
+                suffix = "st"
+            elif n % 10 == 2:
+                suffix = "nd"
+            elif n % 10 == 3:
+                suffix = "rd"
+        return f"{n}{suffix}"
+
+    def _format_list(self, value: Any) -> str:
+        """Format list for voice"""
+        if not isinstance(value, (list, tuple)):
+            return str(value)
+
+        if len(value) == 0:
+            return ""
+        elif len(value) == 1:
+            return str(value[0])
+        elif len(value) == 2:
+            return f"{value[0]} and {value[1]}"
+        else:
+            return ", ".join(str(v) for v in value[:-1]) + f", and {value[-1]}"
+```
+
+### Voice-Optimized Substitution
+
+```python
+class VoiceOptimizedSubstitution(VariableSubstitution):
+    """Variable substitution optimized for TTS output"""
+
+    def __init__(self):
+        super().__init__()
+
+        # Add voice-specific formatters
+        self.formatters.update({
+            "spell": self._spell_out,
+            "acronym": self._format_acronym,
+            "email": self._format_email,
+            "address": self._format_address,
+            "confirmation_code": self._format_confirmation_code,
+        })
+
+        # Abbreviation expansions
+        self.abbreviations = {
+            "st": "street",
+            "ave": "avenue",
+            "blvd": "boulevard",
+            "apt": "apartment",
+            "dr": "drive",
+            "rd": "road",
+            "fl": "floor",
+            "jr": "junior",
+            "sr": "senior",
+            "mr": "mister",
+            "mrs": "missus",
+            "ms": "mizz",
+            "dr": "doctor",
+        }
+
+    def substitute(
+        self,
+        template: str,
+        variables: Dict[str, Any],
+        strict: bool = False
+    ) -> str:
+        """Substitute with voice optimizations"""
+
+        # First do standard substitution
+        result = super().substitute(template, variables, strict)
+
+        # Apply voice optimizations
+        result = self._expand_abbreviations(result)
+        result = self._fix_pronunciation(result)
+
+        return result
+
+    def _expand_abbreviations(self, text: str) -> str:
+        """Expand abbreviations for better TTS"""
+        for abbrev, expansion in self.abbreviations.items():
+            # Match abbreviation with optional period
+            pattern = rf'\b{abbrev}\.?\b'
+            text = re.sub(pattern, expansion, text, flags=re.IGNORECASE)
+        return text
+
+    def _fix_pronunciation(self, text: str) -> str:
+        """Fix common pronunciation issues"""
+        fixes = {
+            r'(\d+)\.(\d{2})': r'\1 point \2',  # Decimal numbers
+            r'\$(\d+)': r'\1 dollars',  # Dollar amounts
+            r'#(\d+)': r'number \1',  # Hash numbers
+            r'@': ' at ',  # @ symbol
+            r'&': ' and ',  # Ampersand
+            r'%': ' percent',  # Percent
+        }
+
+        for pattern, replacement in fixes.items():
+            text = re.sub(pattern, replacement, text)
+
+        return text
+
+    def _spell_out(self, value: Any) -> str:
+        """Spell out a value letter by letter"""
+        text = str(value).upper()
+        return ' '.join(text)
+
+    def _format_acronym(self, value: Any) -> str:
+        """Format acronym with pauses between letters"""
+        text = str(value).upper()
+        # Add periods for TTS to pause
+        return '. '.join(text) + '.'
+
+    def _format_email(self, value: Any) -> str:
+        """Format email for voice"""
+        email = str(value).lower()
+
+        # Replace common email parts
+        email = email.replace('@', ' at ')
+        email = email.replace('.com', ' dot com')
+        email = email.replace('.org', ' dot org')
+        email = email.replace('.net', ' dot net')
+        email = email.replace('.', ' dot ')
+        email = email.replace('_', ' underscore ')
+        email = email.replace('-', ' dash ')
+
+        return email
+
+    def _format_address(self, value: Any) -> str:
+        """Format address for voice"""
+        address = str(value)
+
+        # Expand abbreviations
+        address = self._expand_abbreviations(address)
+
+        # Format numbers
+        address = re.sub(r'(\d+)', r'\1', address)
+
+        return address
+
+    def _format_confirmation_code(self, value: Any) -> str:
+        """Format confirmation code for voice (spell it out with NATO phonetic)"""
+        code = str(value).upper()
+
+        nato = {
+            'A': 'Alpha', 'B': 'Bravo', 'C': 'Charlie', 'D': 'Delta',
+            'E': 'Echo', 'F': 'Foxtrot', 'G': 'Golf', 'H': 'Hotel',
+            'I': 'India', 'J': 'Juliet', 'K': 'Kilo', 'L': 'Lima',
+            'M': 'Mike', 'N': 'November', 'O': 'Oscar', 'P': 'Papa',
+            'Q': 'Quebec', 'R': 'Romeo', 'S': 'Sierra', 'T': 'Tango',
+            'U': 'Uniform', 'V': 'Victor', 'W': 'Whiskey', 'X': 'X-ray',
+            'Y': 'Yankee', 'Z': 'Zulu',
+            '0': 'zero', '1': 'one', '2': 'two', '3': 'three',
+            '4': 'four', '5': 'five', '6': 'six', '7': 'seven',
+            '8': 'eight', '9': 'nine'
+        }
+
+        spelled = []
+        for char in code:
+            if char in nato:
+                spelled.append(nato[char])
+            elif char.isalnum():
+                spelled.append(char)
+
+        return ', '.join(spelled)
+```
+
+## Conditional Responses
+
+Conditional logic enables templates to adapt to context while maintaining template-based control.
+
+### Conditional Template Engine
+
+```python
+from typing import Callable
+import operator
+
+class ConditionalTemplateEngine:
+    """Engine for processing conditional templates"""
+
+    def __init__(self, substitution: VariableSubstitution):
+        self.substitution = substitution
+
+        # Condition operators
+        self.operators = {
+            'eq': operator.eq,
+            'ne': operator.ne,
+            'gt': operator.gt,
+            'lt': operator.lt,
+            'gte': operator.ge,
+            'lte': operator.le,
+            'in': lambda a, b: a in b,
+            'contains': lambda a, b: b in a,
+            'exists': lambda a, _: a is not None,
+            'empty': lambda a, _: not a,
+        }
+
+    def render(
+        self,
+        template: str,
+        variables: Dict[str, Any]
+    ) -> str:
+        """Render template with conditionals"""
+
+        # Process conditionals first
+        result = self._process_conditionals(template, variables)
+
+        # Process includes
+        result = self._process_includes(result, variables)
+
+        # Then substitute variables
+        result = self.substitution.substitute(result, variables)
+
+        # Clean up whitespace
+        result = self._clean_whitespace(result)
+
+        return result
+
+    def _process_conditionals(
+        self,
+        template: str,
+        variables: Dict[str, Any]
+    ) -> str:
+        """Process if/elif/else conditionals"""
+
+        # Pattern for conditionals: {% if condition %}...{% endif %}
+        pattern = r'\{%\s*if\s+(.+?)\s*%\}(.*?)(?:\{%\s*elif\s+(.+?)\s*%\}(.*?))*(?:\{%\s*else\s*%\}(.*?))?\{%\s*endif\s*%\}'
+
+        def evaluate_condition(condition: str, vars: Dict) -> bool:
+            """Evaluate a condition string"""
+            # Parse condition: var op value or just var (truthy check)
+            parts = condition.strip().split()
+
+            if len(parts) == 1:
+                # Truthy check
+                var_name = parts[0]
+                return bool(vars.get(var_name))
+
+            elif len(parts) >= 3:
+                var_name = parts[0]
+                op = parts[1]
+                value = ' '.join(parts[2:])
+
+                var_value = vars.get(var_name)
+
+                # Try to parse value as number
+                try:
+                    value = float(value) if '.' in value else int(value)
+                except ValueError:
+                    # Remove quotes if present
+                    value = value.strip('"\'')
+
+                if op in self.operators:
+                    return self.operators[op](var_value, value)
+
+            return False
+
+        def replace_conditional(match):
+            condition = match.group(1)
+            if_content = match.group(2)
+            else_content = match.group(5) or ""
+
+            if evaluate_condition(condition, variables):
+                return if_content
+            else:
+                return else_content
+
+        # Simple if/else handling
+        simple_pattern = r'\{%\s*if\s+(.+?)\s*%\}(.*?)\{%\s*else\s*%\}(.*?)\{%\s*endif\s*%\}'
+        result = re.sub(simple_pattern, replace_conditional, template, flags=re.DOTALL)
+
+        # Handle if without else
+        no_else_pattern = r'\{%\s*if\s+(.+?)\s*%\}(.*?)\{%\s*endif\s*%\}'
+
+        def replace_no_else(match):
+            condition = match.group(1)
+            content = match.group(2)
+            if evaluate_condition(condition, variables):
+                return content
+            return ""
+
+        result = re.sub(no_else_pattern, replace_no_else, result, flags=re.DOTALL)
+
+        return result
+
+    def _process_includes(
+        self,
+        template: str,
+        variables: Dict[str, Any]
+    ) -> str:
+        """Process template includes"""
+        # Pattern: {% include "template_id" %}
+        pattern = r'\{%\s*include\s+"([^"]+)"\s*%\}'
+
+        def replace_include(match):
+            template_id = match.group(1)
+            # In production, fetch from registry
+            included = self._get_included_template(template_id)
+            return included if included else ""
+
+        return re.sub(pattern, replace_include, template)
+
+    def _get_included_template(self, template_id: str) -> str:
+        """Get included template content"""
+        # Placeholder - in production, fetch from registry
+        return f"[Included: {template_id}]"
+
+    def _clean_whitespace(self, text: str) -> str:
+        """Clean up excess whitespace"""
+        # Collapse multiple spaces
+        text = re.sub(r' +', ' ', text)
+        # Collapse multiple newlines
+        text = re.sub(r'\n+', '\n', text)
+        # Remove leading/trailing whitespace per line
+        lines = [line.strip() for line in text.split('\n')]
+        return '\n'.join(lines).strip()
+```
+
+### Conditional Template Examples
+
+```python
+CONDITIONAL_TEMPLATES = {
+    "flight_status": """
+        {% if status eq 'on_time' %}
+        Good news! Your flight {flight_number} to {destination} is on time.
+        It's scheduled to depart at {departure_time}.
+        {% else %}
+        {% if status eq 'delayed' %}
+        I'm sorry, your flight {flight_number} has been delayed.
+        The new departure time is {new_departure_time}.
+        {% if delay_minutes gt 60 %}
+        Due to the significant delay, you may be eligible for compensation.
+        {% endif %}
+        {% else %}
+        {% if status eq 'cancelled' %}
+        I regret to inform you that flight {flight_number} has been cancelled.
+        Let me help you with rebooking options.
+        {% endif %}
+        {% endif %}
+        {% endif %}
+    """,
+
+    "order_confirmation": """
+        Your order {order_number} has been placed successfully.
+        {% if is_express_shipping %}
+        With express shipping, you can expect delivery by {express_date}.
+        {% else %}
+        Standard delivery will arrive between {standard_start_date} and {standard_end_date}.
+        {% endif %}
+        {% if has_promo_code %}
+        Your promo code {promo_code} saved you {discount_amount:currency}!
+        {% endif %}
+        {% if loyalty_points gt 0 %}
+        You've earned {loyalty_points} rewards points on this purchase.
+        {% endif %}
+    """,
+
+    "greeting_contextual": """
+        {% if time_of_day eq 'morning' %}
+        Good morning{% if customer_name %}, {customer_name}{% endif %}!
+        {% elif time_of_day eq 'afternoon' %}
+        Good afternoon{% if customer_name %}, {customer_name}{% endif %}!
+        {% else %}
+        Good evening{% if customer_name %}, {customer_name}{% endif %}!
+        {% endif %}
+        {% if is_returning_customer %}
+        Welcome back to {company_name}.
+        {% else %}
+        Welcome to {company_name}.
+        {% endif %}
+        How can I help you today?
+    """
+}
+```
+
+### Complex Conditional Logic
+
+```python
+class AdvancedConditionalEngine(ConditionalTemplateEngine):
+    """Extended engine with complex conditional support"""
+
+    def __init__(self, substitution: VariableSubstitution):
+        super().__init__(substitution)
+
+        # Add compound condition support
+        self.logical_operators = {
+            'and': lambda a, b: a and b,
+            'or': lambda a, b: a or b,
+            'not': lambda a: not a,
+        }
+
+    def _evaluate_compound_condition(
+        self,
+        condition: str,
+        variables: Dict[str, Any]
+    ) -> bool:
+        """Evaluate compound conditions with AND/OR"""
+
+        # Split by 'or' first (lower precedence)
+        or_parts = re.split(r'\s+or\s+', condition, flags=re.IGNORECASE)
+
+        for or_part in or_parts:
+            # Split by 'and' (higher precedence)
+            and_parts = re.split(r'\s+and\s+', or_part, flags=re.IGNORECASE)
+
+            all_true = True
+            for and_part in and_parts:
+                # Check for 'not'
+                negated = False
+                part = and_part.strip()
+                if part.lower().startswith('not '):
+                    negated = True
+                    part = part[4:].strip()
+
+                result = self._evaluate_simple_condition(part, variables)
+
+                if negated:
+                    result = not result
+
+                if not result:
+                    all_true = False
+                    break
+
+            if all_true:
+                return True
+
+        return False
+
+    def _evaluate_simple_condition(
+        self,
+        condition: str,
+        variables: Dict[str, Any]
+    ) -> bool:
+        """Evaluate a simple condition"""
+        parts = condition.strip().split()
+
+        if len(parts) == 1:
+            return bool(variables.get(parts[0]))
+
+        if len(parts) >= 3:
+            var_name = parts[0]
+            op = parts[1]
+            value = ' '.join(parts[2:]).strip('"\'')
+
+            var_value = variables.get(var_name)
+
+            # Type coercion
+            if isinstance(var_value, (int, float)):
+                try:
+                    value = type(var_value)(value)
+                except ValueError:
+                    pass
+
+            if op in self.operators:
+                return self.operators[op](var_value, value)
+
+        return False
+```
+
+## Template Management
+
+Effective template management ensures consistency, enables A/B testing, and supports iterative improvements.
+
+### Template Version Control
+
+```python
+from datetime import datetime
+from typing import List
+import hashlib
+
+@dataclass
+class TemplateVersion:
+    version: str
+    content: str
+    created_at: datetime
+    created_by: str
+    change_description: str
+    is_active: bool = False
+
+class VersionedTemplateManager:
+    """Manage template versions"""
+
+    def __init__(self, registry: TemplateRegistry):
+        self.registry = registry
+        self.versions: Dict[str, List[TemplateVersion]] = {}
+        self.active_versions: Dict[str, str] = {}
+
+    def create_version(
+        self,
+        template_id: str,
+        content: str,
+        created_by: str,
+        change_description: str
+    ) -> TemplateVersion:
+        """Create a new version of a template"""
+
+        # Generate version number
+        existing = self.versions.get(template_id, [])
+        version_num = len(existing) + 1
+        version_str = f"v{version_num}.0"
+
+        # Create content hash for integrity
+        content_hash = hashlib.sha256(content.encode()).hexdigest()[:12]
+
+        version = TemplateVersion(
+            version=version_str,
+            content=content,
+            created_at=datetime.now(),
+            created_by=created_by,
+            change_description=change_description,
+            is_active=False
+        )
+
+        if template_id not in self.versions:
+            self.versions[template_id] = []
+
+        self.versions[template_id].append(version)
+
+        return version
+
+    def activate_version(
+        self,
+        template_id: str,
+        version: str
+    ) -> bool:
+        """Activate a specific version"""
+
+        versions = self.versions.get(template_id, [])
+
+        for v in versions:
+            if v.version == version:
+                # Deactivate current
+                for other in versions:
+                    other.is_active = False
+
+                v.is_active = True
+                self.active_versions[template_id] = version
+
+                # Update registry
+                template = self.registry.get(template_id)
+                if template:
+                    template.content = v.content
+
+                return True
+
+        return False
+
+    def get_version_history(self, template_id: str) -> List[TemplateVersion]:
+        """Get version history for a template"""
+        return self.versions.get(template_id, [])
+
+    def rollback(self, template_id: str) -> bool:
+        """Rollback to previous version"""
+        versions = self.versions.get(template_id, [])
+
+        if len(versions) < 2:
+            return False
+
+        # Get current active index
+        current_idx = None
+        for i, v in enumerate(versions):
+            if v.is_active:
+                current_idx = i
+                break
+
+        if current_idx is None or current_idx == 0:
+            return False
+
+        # Activate previous
+        return self.activate_version(template_id, versions[current_idx - 1].version)
+```
+
+### A/B Testing Framework
+
+```python
+import random
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class ABTestConfig:
+    test_id: str
+    template_id: str
+    variant_a_content: str
+    variant_b_content: str
+    traffic_split: float  # 0.0 to 1.0, proportion going to variant B
+    is_active: bool
+    start_date: datetime
+    end_date: Optional[datetime] = None
+
+class TemplateABTestManager:
+    """Manage A/B tests for templates"""
+
+    def __init__(self, registry: TemplateRegistry):
+        self.registry = registry
+        self.tests: Dict[str, ABTestConfig] = {}
+        self.assignments: Dict[str, str] = {}  # session_id -> variant
+        self.metrics: Dict[str, Dict] = {}
+
+    def create_test(
+        self,
+        test_id: str,
+        template_id: str,
+        variant_b_content: str,
+        traffic_split: float = 0.5
+    ) -> ABTestConfig:
+        """Create a new A/B test"""
+
+        template = self.registry.get(template_id)
+        if not template:
+            raise ValueError(f"Template {template_id} not found")
+
+        config = ABTestConfig(
+            test_id=test_id,
+            template_id=template_id,
+            variant_a_content=template.content,
+            variant_b_content=variant_b_content,
+            traffic_split=traffic_split,
+            is_active=True,
+            start_date=datetime.now()
+        )
+
+        self.tests[test_id] = config
+        self.metrics[test_id] = {
+            'a': {'impressions': 0, 'success': 0},
+            'b': {'impressions': 0, 'success': 0}
+        }
+
+        return config
+
+    def get_variant(
+        self,
+        test_id: str,
+        session_id: str
+    ) -> tuple[str, str]:
+        """Get variant for a session, ensuring consistency"""
+
+        if test_id not in self.tests:
+            return None, None
+
+        config = self.tests[test_id]
+        if not config.is_active:
+            return 'a', config.variant_a_content
+
+        # Check existing assignment
+        assignment_key = f"{test_id}:{session_id}"
+        if assignment_key in self.assignments:
+            variant = self.assignments[assignment_key]
+        else:
+            # Random assignment based on traffic split
+            variant = 'b' if random.random() < config.traffic_split else 'a'
+            self.assignments[assignment_key] = variant
+
+        # Record impression
+        self.metrics[test_id][variant]['impressions'] += 1
+
+        content = config.variant_b_content if variant == 'b' else config.variant_a_content
+        return variant, content
+
+    def record_success(self, test_id: str, session_id: str):
+        """Record a success event for a session"""
+        assignment_key = f"{test_id}:{session_id}"
+        variant = self.assignments.get(assignment_key)
+
+        if variant and test_id in self.metrics:
+            self.metrics[test_id][variant]['success'] += 1
+
+    def get_test_results(self, test_id: str) -> Dict:
+        """Get current test results"""
+        if test_id not in self.metrics:
+            return None
+
+        metrics = self.metrics[test_id]
+
+        def conversion_rate(m):
+            return m['success'] / m['impressions'] if m['impressions'] > 0 else 0
+
+        rate_a = conversion_rate(metrics['a'])
+        rate_b = conversion_rate(metrics['b'])
+
+        return {
+            'test_id': test_id,
+            'variant_a': {
+                **metrics['a'],
+                'conversion_rate': rate_a
+            },
+            'variant_b': {
+                **metrics['b'],
+                'conversion_rate': rate_b
+            },
+            'relative_improvement': (rate_b - rate_a) / rate_a if rate_a > 0 else 0,
+            'sample_size': metrics['a']['impressions'] + metrics['b']['impressions']
+        }
+
+    def end_test(self, test_id: str, winner: str = None):
+        """End a test and optionally declare winner"""
+        if test_id not in self.tests:
+            return
+
+        config = self.tests[test_id]
+        config.is_active = False
+        config.end_date = datetime.now()
+
+        if winner == 'b':
+            # Update template with winning variant
+            template = self.registry.get(config.template_id)
+            if template:
+                template.content = config.variant_b_content
+```
+
+### Template Analytics
+
+```python
+class TemplateAnalytics:
+    """Track template usage and performance"""
+
+    def __init__(self):
+        self.usage: Dict[str, Dict] = {}
+        self.feedback: Dict[str, List] = {}
+        self.timing: Dict[str, List[float]] = {}
+
+    def record_usage(
+        self,
+        template_id: str,
+        session_id: str,
+        context: Dict = None
+    ):
+        """Record template usage"""
+        if template_id not in self.usage:
+            self.usage[template_id] = {
+                'total_uses': 0,
+                'unique_sessions': set(),
+                'first_used': datetime.now(),
+                'last_used': datetime.now()
+            }
+
+        self.usage[template_id]['total_uses'] += 1
+        self.usage[template_id]['unique_sessions'].add(session_id)
+        self.usage[template_id]['last_used'] = datetime.now()
+
+    def record_tts_timing(
+        self,
+        template_id: str,
+        rendered_text: str,
+        tts_duration_ms: float
+    ):
+        """Record TTS timing for a template"""
+        if template_id not in self.timing:
+            self.timing[template_id] = []
+
+        self.timing[template_id].append({
+            'text_length': len(rendered_text),
+            'duration_ms': tts_duration_ms,
+            'timestamp': datetime.now()
+        })
+
+    def record_feedback(
+        self,
+        template_id: str,
+        feedback_type: str,  # 'repeat_requested', 'understood', 'confused'
+        session_id: str
+    ):
+        """Record user feedback about a template"""
+        if template_id not in self.feedback:
+            self.feedback[template_id] = []
+
+        self.feedback[template_id].append({
+            'type': feedback_type,
+            'session_id': session_id,
+            'timestamp': datetime.now()
+        })
+
+    def get_template_stats(self, template_id: str) -> Dict:
+        """Get comprehensive stats for a template"""
+
+        usage = self.usage.get(template_id, {})
+        feedback = self.feedback.get(template_id, [])
+        timing = self.timing.get(template_id, [])
+
+        # Calculate feedback breakdown
+        feedback_breakdown = {}
+        for f in feedback:
+            feedback_breakdown[f['type']] = feedback_breakdown.get(f['type'], 0) + 1
+
+        # Calculate average TTS duration
+        avg_duration = sum(t['duration_ms'] for t in timing) / len(timing) if timing else 0
+
+        return {
+            'template_id': template_id,
+            'total_uses': usage.get('total_uses', 0),
+            'unique_sessions': len(usage.get('unique_sessions', [])),
+            'first_used': usage.get('first_used'),
+            'last_used': usage.get('last_used'),
+            'feedback_breakdown': feedback_breakdown,
+            'average_tts_duration_ms': avg_duration,
+            'repeat_rate': feedback_breakdown.get('repeat_requested', 0) /
+                          max(usage.get('total_uses', 1), 1)
+        }
+
+    def get_problematic_templates(self, repeat_threshold: float = 0.1) -> List[str]:
+        """Identify templates with high repeat/confusion rates"""
+        problematic = []
+
+        for template_id in self.usage:
+            stats = self.get_template_stats(template_id)
+            if stats['repeat_rate'] > repeat_threshold:
+                problematic.append({
+                    'template_id': template_id,
+                    'repeat_rate': stats['repeat_rate'],
+                    'total_uses': stats['total_uses']
+                })
+
+        return sorted(problematic, key=lambda x: -x['repeat_rate'])
+```
+
+## Next Steps
+
+- **[Dynamic Generation](/topics/foundations/language-generation/dynamic-generation)** - LLM-based response generation
+- **[Persona Consistency](/topics/foundations/language-generation/persona-consistency)** - Maintain voice personality
+- **[SSML](/topics/foundations/speech-synthesis/ssml)** - Speech synthesis markup

@@ -1,0 +1,410 @@
+---
+title: Neural TTS Architectures
+description: Deep dive into neural text-to-speech architectures including Tacotron 2, FastSpeech, VITS, diffusion models, and neural vocoders
+category: Foundations
+tags:
+  - tts
+  - neural-networks
+  - tacotron
+  - fastspeech
+  - vits
+  - vocoders
+  - deep-learning
+related:
+  - overview
+  - voice-cloning
+  - optimization
+lastUpdated: "2025-01-21"
+difficulty: advanced
+---
+
+## Neural TTS Revolution
+
+Neural TTS represents the fourth generation of speech synthesis technology, fundamentally transforming the field since 2016. This section provides a technical deep dive into the architectures that power modern TTS systems.
+
+## Waveform Generation: Neural Vocoders
+
+Before examining end-to-end systems, understanding neural vocoders is essential as they form the foundation of audio generation.
+
+### WaveNet (2016)
+
+WaveNet was the breakthrough model demonstrating neural waveform generation.
+
+**Architecture**:
+- Autoregressive model: `P(x_t | x_{t-1}, ..., x_1, c)`
+- Dilated causal convolutions with exponentially increasing dilation
+- Gated activation units (tanh x sigmoid)
+- Residual and skip connections
+
+**Dilated Convolutions**:
+```
+Dilation pattern: 1, 2, 4, 8, 16, ..., 512, 1, 2, 4, ...
+Receptive field grows exponentially: R = (2^L - 1) x K
+where L = number of layers, K = kernel size
+```
+
+<Callout type="warning" title="Limitation">
+Extremely slow: Sequential generation at 16kHz = 16,000 steps per second. Original WaveNet: ~1 sample per 2 minutes of audio. Optimized versions (Parallel WaveNet, nv-wavenet) achieve real-time with distillation.
+</Callout>
+
+### WaveRNN (2018)
+
+Simplified autoregressive vocoder using:
+- Single-layer GRU
+- Dual softmax for coarse and fine sample prediction
+- Sparse weight matrices for efficiency
+
+Achieves real-time synthesis on mobile CPUs.
+
+### HiFi-GAN (2020)
+
+GAN-based vocoder achieving high-fidelity, efficient synthesis.
+
+**Generator Architecture**:
+- Transposed convolutions for upsampling
+- Multi-Receptive Field Fusion (MRF) modules
+- Residual blocks with dilated convolutions
+
+**Discriminators**:
+
+1. **Multi-Period Discriminator (MPD)**: Captures periodic patterns
+   - Multiple sub-discriminators with periods [2, 3, 5, 7, 11]
+
+2. **Multi-Scale Discriminator (MSD)**: Captures long-range dependencies
+   - Operates at multiple audio resolutions
+
+**Training Objectives**:
+```
+L_total = L_adv(G, D) + lambda_fm x L_fm(G, D) + lambda_mel x L_mel(G)
+where:
+- L_adv: Adversarial loss
+- L_fm: Feature matching loss
+- L_mel: Mel spectrogram reconstruction loss
+```
+
+**Performance**:
+- 0.92M parameters (tiny version)
+- 13.44x real-time on CPU
+- 1,186x real-time on V100 GPU
+
+### Vocos (2023)
+
+Recent vocoder using:
+- Fourier-based architecture
+- Direct magnitude and phase prediction
+- Efficient ConvNeXt blocks
+
+### Comparative Vocoder Performance
+
+| Vocoder | Parameters | RTF (CPU) | RTF (GPU) | MOS |
+|---------|-----------|-----------|-----------|-----|
+| WaveNet | 4.6M | 0.001 | 0.02 | 4.52 |
+| WaveRNN | 4.4M | 0.9 | 15 | 4.41 |
+| HiFi-GAN | 13.9M | 13.4 | 1186 | 4.45 |
+| Vocos | 13.5M | 20+ | 1500+ | 4.47 |
+
+## Tacotron / Tacotron 2 (2017)
+
+Tacotron introduced end-to-end sequence-to-sequence TTS, eliminating the need for complex linguistic feature engineering.
+
+### Architecture Overview
+
+```
+Text -> Character Embedding -> Encoder -> Attention -> Decoder -> Mel Spectrogram -> Vocoder -> Audio
+```
+
+### Encoder
+
+- Input: Character embeddings (512-dimensional)
+- 3 convolutional layers (512 filters, kernel size 5)
+- Bidirectional LSTM (256 units each direction)
+- Output: Encoder hidden states
+
+### Attention Mechanism
+
+Location-sensitive attention using hybrid content-based + location-based approach:
+
+```
+energy_i,j = v^T tanh(W_s * s_{i-1} + W_h * h_j + W_f * f_{i,j} + b)
+alpha_i = softmax(energy_i)
+context_i = Sum(alpha_{i,j} * h_j)
+```
+
+<Callout type="info" title="Key Innovation">
+Location-sensitive attention prevents attention failures (skipping, repeating) that plagued earlier sequence-to-sequence models.
+</Callout>
+
+### Decoder
+
+- Autoregressive: Predicts one frame (or r frames) at a time
+- Pre-net: 2 FC layers (256 units, ReLU, dropout)
+- LSTM stack: 2 layers, 1024 units
+- Linear projection: Predicts mel spectrogram frame
+- Post-net: 5 convolutional layers, predicts residual
+
+### Training
+
+- Teacher forcing with scheduled sampling
+- L2 loss on mel spectrogram (before and after post-net)
+- Stop token prediction (binary cross-entropy)
+
+**Achievement**: MOS of 4.53 (comparable to human recordings at 4.58)
+
+## FastSpeech / FastSpeech 2 (2019/2020)
+
+### Key Innovation
+
+Non-autoregressive parallel synthesis eliminating the sequential bottleneck of Tacotron.
+
+### FastSpeech Architecture
+
+```
+Text -> Phoneme Embedding -> FFT Blocks -> Length Regulator -> FFT Blocks -> Linear -> Mel Spectrogram
+```
+
+### Feed-Forward Transformer (FFT) Block
+
+- Multi-head self-attention
+- 1D convolution layers (instead of position-wise FFN)
+- Layer normalization and residual connections
+
+### Length Regulator
+
+```python
+def length_regulate(hidden_states, durations):
+    """Expand phoneme representations according to durations"""
+    expanded = []
+    for h, d in zip(hidden_states, durations):
+        expanded.extend([h] * d)  # Repeat h for d frames
+    return torch.stack(expanded)
+```
+
+**FastSpeech Limitation**: Relies on teacher (autoregressive) model for duration extraction.
+
+### FastSpeech 2 Improvements
+
+1. **Direct duration extraction**: Uses Montreal Forced Alignment (MFA) instead of teacher model
+2. **Variance Adaptor**: Explicitly models pitch, energy, duration
+3. **Ground-truth training**: Trains on actual mel spectrograms, not teacher outputs
+
+### Variance Adaptor Architecture
+
+```
+             +-------------------+
+             | Duration          |
+Encoder  --->| Predictor         |---> Length Regulator
+Output       +-------------------+           |
+             +-------------------+           v
+         --->| Pitch Predictor   |---> Pitch Embedding ---> Decoder
+             +-------------------+                          Input
+             +-------------------+           |
+         --->| Energy Predictor  |---> Energy Embedding ---+
+             +-------------------+
+```
+
+### Performance Comparison
+
+| Aspect | FastSpeech | FastSpeech 2 |
+|--------|------------|--------------|
+| Training Speed | Baseline | 3x faster |
+| Inference | Near real-time | Near real-time |
+| Quality | Good | Surpasses FastSpeech |
+| Dependency | Teacher model | MFA alignment |
+
+## VITS (Variational Inference TTS) (2021)
+
+### Key Innovation
+
+End-to-end TTS combining VAE, normalizing flows, and GAN for direct text-to-waveform synthesis.
+
+### Architecture Components
+
+```
+                    +------------------+
+Text -------------->| Text Encoder     |------------------+
+                    | (Transformer)    |                  |
+                    +------------------+                  |
+                                                          v
+                    +------------------+         +-----------------+
+Audio ------------->| Posterior Encoder|-------->| Normalizing     |
+(training only)     | (WaveNet blocks) |         | Flow            |
+                    +------------------+         +-------+---------+
+                                                         |
+                    +------------------+                  |
+                    | Duration         |                  |
+                    | Predictor (Flow) |<-----------------+
+                    +------------------+                  |
+                                                         v
+                    +------------------+         +-----------------+
+                    | Decoder          |<--------| Latent z        |
+                    | (HiFi-GAN)       |         +-----------------+
+                    +--------+---------+
+                             |
+                             v
+                         Waveform
+```
+
+### Mathematical Formulation
+
+VITS maximizes the variational lower bound (ELBO):
+
+```
+log p(x|c) >= E_{q(z|x)}[log p(x|z)] - KL(q(z|x) || p(z|c))
+```
+
+### Key Components
+
+1. **Posterior Encoder**: q(z|x) - Encodes audio to latent space
+2. **Prior Encoder**: p(z|c) - Encodes text to prior distribution
+3. **Normalizing Flow**: Transforms simple prior to complex distribution
+4. **Stochastic Duration Predictor**: Models duration uncertainty
+5. **Decoder**: HiFi-GAN generator
+
+### Training Losses
+
+```
+L = L_recon + L_kl + L_dur + L_adv + L_fm
+```
+
+<Callout type="success" title="Advantages">
+- **End-to-end**: Direct text-to-waveform without separate vocoder
+- **High quality**: MOS comparable to ground truth
+- **Diverse outputs**: Stochastic latent variable enables natural variation
+</Callout>
+
+## VALL-E and Codec-Based Models (2023-2024)
+
+### Paradigm Shift
+
+Treat TTS as language modeling over discrete audio tokens.
+
+### VALL-E Architecture
+
+```
+Pipeline: Phonemes -> Neural Codec Language Model -> Discrete Codes -> Vocoder -> Waveform
+```
+
+### Key Innovations
+
+1. **Neural Audio Codec**: Use EnCodec or similar to discretize audio
+   - 8 codebook levels, each with 1024 tokens
+   - Represents audio as sequence of discrete tokens
+
+2. **Two-Stage Generation**:
+   - **Autoregressive (AR) model**: Generates first codebook level
+   - **Non-Autoregressive (NAR) model**: Generates remaining levels in parallel
+
+3. **In-Context Learning**: 3-second audio prompt conditions generation
+
+### VALL-E 2 Improvements (2024)
+
+1. **Repetition Aware Sampling**: Prevents infinite loops
+
+```python
+def repetition_aware_sampling(logits, history, rep_penalty=1.2):
+    for token in set(history[-k:]):
+        logits[token] /= rep_penalty
+    return sample(logits)
+```
+
+2. **Grouped Code Modeling**: Reduces sequence length by grouping codes
+
+<Callout type="success" title="Achievement">
+VALL-E 2 is the first TTS system to achieve human parity on LibriSpeech and VCTK benchmarks.
+</Callout>
+
+## Diffusion-Based Models
+
+### Grad-TTS (2021)
+
+Uses score-based diffusion for mel spectrogram generation.
+
+**Forward Process** (adding noise):
+```
+dx = -0.5 * beta(t) * x * dt + sqrt(beta(t)) * dW
+```
+
+**Reverse Process** (denoising):
+```
+dx = [-0.5 * beta(t) * x - beta(t) * grad_x log p_t(x)] * dt + sqrt(beta(t)) * dW_bar
+```
+
+**Architecture**:
+- Encoder: Predicts mean of terminal distribution
+- Decoder: U-Net style score estimator
+- Monotonic Alignment Search for duration
+
+**Advantages**:
+- Controllable quality-speed tradeoff (fewer diffusion steps = faster but lower quality)
+- No mode collapse (unlike GANs)
+
+### DiffWave
+
+Diffusion vocoder for waveform generation:
+- Non-autoregressive
+- 200 diffusion steps (T=200)
+- Residual U-Net architecture
+
+## Concatenative Synthesis (Historical Reference)
+
+For completeness, here is the unit selection algorithm that dominated pre-neural TTS:
+
+```python
+def unit_selection(target_units, database):
+    """
+    Find optimal path through unit database using Viterbi algorithm
+    """
+    # Initialize
+    costs = [[inf] * len(database[u]) for u in target_units]
+    backpointers = [[None] * len(database[u]) for u in target_units]
+
+    # First unit: only target cost
+    for j, candidate in enumerate(database[target_units[0]]):
+        costs[0][j] = target_cost(target_units[0], candidate)
+
+    # Dynamic programming
+    for i in range(1, len(target_units)):
+        for j, candidate in enumerate(database[target_units[i]]):
+            for k, prev_candidate in enumerate(database[target_units[i-1]]):
+                cost = (costs[i-1][k] +
+                       target_cost(target_units[i], candidate) +
+                       concatenation_cost(prev_candidate, candidate))
+                if cost < costs[i][j]:
+                    costs[i][j] = cost
+                    backpointers[i][j] = k
+
+    # Backtrack to find optimal path
+    return backtrack(costs, backpointers)
+```
+
+## Architecture Selection Guide
+
+| Use Case | Recommended Architecture | Rationale |
+|----------|-------------------------|-----------|
+| Real-time voice agents | FastSpeech 2 + HiFi-GAN | Low latency, parallel synthesis |
+| Highest quality | VALL-E 2 or VITS | Human parity, natural variation |
+| Custom voice cloning | VALL-E / XTTS-v2 | Zero-shot capability |
+| Resource-constrained | FastSpeech + WaveRNN | Efficient on CPU |
+| Research/experimentation | Grad-TTS | Controllable quality-speed |
+
+## Next Steps
+
+<RelatedTopics
+  topics={[
+    {
+      title: "Voice Cloning",
+      href: "/topics/foundations/speech-synthesis/voice-cloning",
+      description: "Zero-shot, few-shot, and fine-tuning approaches"
+    },
+    {
+      title: "TTS Optimization",
+      href: "/topics/foundations/speech-synthesis/optimization",
+      description: "Streaming synthesis and latency optimization"
+    },
+    {
+      title: "SSML and Prosody Control",
+      href: "/topics/foundations/speech-synthesis/ssml",
+      description: "Markup language for speech control"
+    }
+  ]}
+/>

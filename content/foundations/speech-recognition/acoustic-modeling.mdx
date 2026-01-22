@@ -1,0 +1,343 @@
+---
+title: "Acoustic Modeling for Speech Recognition"
+description: "Deep dive into audio signal processing fundamentals and the evolution of acoustic models from Hidden Markov Models to modern Transformer and Conformer architectures."
+category: "foundations"
+tags:
+  - acoustic-modeling
+  - signal-processing
+  - MFCC
+  - transformers
+  - conformer
+  - HMM
+  - deep-learning
+relatedTopics:
+  - overview
+  - language-models
+  - streaming-vs-batch
+lastUpdated: "2026-01-21"
+---
+
+# Acoustic Modeling for Speech Recognition
+
+Acoustic modeling is the core component of any ASR system that maps audio signals to linguistic units. This guide covers the signal processing fundamentals and the evolution of acoustic models from traditional HMMs to modern neural architectures.
+
+## Audio Signal Processing Fundamentals
+
+### Sampling and Digitization
+
+Speech is a continuous acoustic signal that must be digitized for computational processing.
+
+**Nyquist-Shannon Sampling Theorem:**
+To accurately represent a signal with maximum frequency f_max, the sampling rate must be at least 2 * f_max.
+
+| Application | Typical Sampling Rate | Frequency Range | Rationale |
+|-------------|----------------------|-----------------|-----------|
+| Telephony | 8 kHz | 0-4 kHz | Bandwidth-constrained channels |
+| VoIP/Standard | 16 kHz | 0-8 kHz | **Most common for ASR** |
+| Wideband | 22.05 kHz | 0-11 kHz | Music/high-fidelity applications |
+| CD Quality | 44.1 kHz | 0-22 kHz | Full audio spectrum |
+
+{/* <Callout type="info">
+Most modern ASR systems, including Whisper, resample all input to 16 kHz regardless of original sampling rate. This standardization simplifies model architecture while preserving the frequency range most relevant to speech (fundamental frequency typically 85-255 Hz, with formants extending to approximately 8 kHz).
+</Callout> */}
+
+### Pre-emphasis Filtering
+
+Before feature extraction, a pre-emphasis filter boosts high-frequency components to balance the spectrum:
+
+```
+y[n] = x[n] - alpha * x[n-1]
+```
+
+Where alpha is typically 0.95-0.97. This compensates for the natural roll-off of high frequencies in speech production.
+
+### Framing and Windowing
+
+Speech signals are quasi-stationary over short periods (20-40ms). The signal is segmented into overlapping frames:
+
+- **Frame Length:** 20-25ms (standard: 25ms = 400 samples at 16kHz)
+- **Frame Stride/Hop:** 10ms (160 samples) - creates 50% overlap
+- **Window Function:** Hamming window to reduce spectral leakage
+
+```
+Hamming Window: w[n] = 0.54 - 0.46 * cos(2*pi*n / (N-1))
+```
+
+## Mel-Frequency Cepstral Coefficients (MFCCs)
+
+MFCCs have been the dominant feature representation for ASR since their introduction by Davis and Mermelstein in the 1980s.
+
+### MFCC Extraction Pipeline
+
+```
++-----------------------------------------------------------------------------+
+|                         MFCC EXTRACTION PIPELINE                             |
+|                                                                              |
+|  Raw Audio -> Pre-emphasis -> Framing -> Windowing -> FFT -> |FFT|^2        |
+|                                                           |                 |
+|                                                           v                 |
+|                    MFCCs <- DCT <- log() <- Mel Filterbank Application      |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Step-by-Step Process
+
+1. **Apply FFT** to each windowed frame to obtain the power spectrum
+2. **Apply Mel filterbank** (typically 26-40 triangular filters)
+3. **Take logarithm** of filterbank energies (models human loudness perception)
+4. **Apply DCT** (Discrete Cosine Transform) to decorrelate coefficients
+
+### Mel Scale Conversion
+
+The Mel scale approximates human auditory perception where frequency discrimination is roughly linear below 1kHz and logarithmic above:
+
+```
+Mel(f) = 2595 * log10(1 + f/700)
+```
+
+Or equivalently:
+```
+Mel(f) = 1127 * ln(1 + f/700)
+```
+
+**Inverse:**
+```
+f = 700 * (10^(m/2595) - 1)
+```
+
+### Typical MFCC Configuration
+
+- 13 base coefficients (c_0 through c_12, or c_1 through c_13)
+- Delta coefficients (first derivatives): +13 features
+- Delta-delta coefficients (second derivatives): +13 features
+- **Total: 39-dimensional feature vector per frame**
+
+## Mel Spectrograms
+
+Modern neural ASR systems often bypass MFCCs in favor of **log-Mel spectrograms**, which preserve more information.
+
+### Whisper's Configuration
+
+| Parameter | large-v2 and earlier | large-v3 |
+|-----------|---------------------|----------|
+| Mel frequency bins | 80 | 128 |
+| Window size | 25ms | 25ms |
+| Frame stride | 10ms | 10ms |
+| Normalization | Zero mean, unit variance | Zero mean, unit variance |
+
+### Advantages over MFCCs
+
+- Retains phase and fine spectral detail lost in DCT
+- Neural networks can learn optimal feature combinations
+- Better suited for end-to-end training
+
+## Hidden Markov Models (HMMs)
+
+HMMs dominated ASR from the 1980s through the 2010s, modeling speech as a stochastic process.
+
+### Core Assumptions
+
+1. **Markov Property:** Future states depend only on current state
+2. **Output Independence:** Observations depend only on current state
+
+### Mathematical Formulation
+
+An HMM is defined by lambda = (A, B, pi) where:
+- **A** = `{a_ij}`: State transition probability matrix
+- **B** = `{b_j(o)}`: Observation probability distribution
+- **pi** = `{pi_i}`: Initial state distribution
+
+### Three Fundamental Problems
+
+| Problem | Algorithm | Purpose |
+|---------|-----------|---------|
+| Evaluation | Forward-Backward | Compute P(O\|lambda) |
+| Decoding | Viterbi | Find optimal state sequence |
+| Training | Baum-Welch (EM) | Optimize lambda given observations |
+
+### Typical HMM-ASR Structure
+
+- **3-state left-to-right HMMs** per phoneme
+- **Context-dependent triphones** (e.g., /a/ in "cat" vs "bat")
+- **Gaussian Mixture Models (GMMs)** for emission probabilities
+
+## DNN-HMM Hybrid Systems
+
+The breakthrough of deep learning in ASR came with hybrid DNN-HMM systems:
+
+```
++-----------------------------------------------------------------------------+
+|                      DNN-HMM HYBRID ARCHITECTURE                             |
+|                                                                              |
+|   Audio Features                                                             |
+|        |                                                                     |
+|        v                                                                     |
+|  +-----------+                                                               |
+|  |    DNN    |  ->  P(state|observation) - Posterior probabilities           |
+|  |  Acoustic |                                                               |
+|  |   Model   |     Converts to likelihoods via Bayes' rule:                  |
+|  +-----------+     P(obs|state) ~ P(state|obs) / P(state)                    |
+|        |                                                                     |
+|        v                                                                     |
+|  +-----------+                                                               |
+|  |    HMM    |  ->  Handles temporal alignment and sequencing                |
+|  |  Decoder  |                                                               |
+|  +-----------+                                                               |
+|        |                                                                     |
+|        v                                                                     |
+|   Word Sequence                                                              |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+DNNs replaced GMMs for computing emission probabilities, dramatically improving accuracy while maintaining HMM temporal modeling.
+
+## Recurrent Neural Networks (RNNs) and LSTMs
+
+RNNs and their variants address sequential dependencies in speech.
+
+### LSTM (Long Short-Term Memory) Cell
+
+```
+forget gate:  f_t = sigmoid(W_f * [h_{t-1}, x_t] + b_f)
+input gate:   i_t = sigmoid(W_i * [h_{t-1}, x_t] + b_i)
+cell update:  c_t_tilde = tanh(W_c * [h_{t-1}, x_t] + b_c)
+cell state:   c_t = f_t * c_{t-1} + i_t * c_t_tilde
+output gate:  o_t = sigmoid(W_o * [h_{t-1}, x_t] + b_o)
+hidden state: h_t = o_t * tanh(c_t)
+```
+
+**Bidirectional LSTMs (BiLSTMs)** process sequences in both directions, capturing both past and future context - critical for non-streaming ASR.
+
+## Transformer Architecture
+
+Transformers revolutionized ASR by enabling parallel processing and capturing long-range dependencies through self-attention.
+
+### Self-Attention Mechanism
+
+```
+Attention(Q, K, V) = softmax(QK^T / sqrt(d_k)) V
+```
+
+Where:
+- **Q** (Query), **K** (Key), **V** (Value) are linear projections of input
+- **d_k** is the key dimension (scaling factor prevents vanishing gradients)
+
+### Multi-Head Attention
+
+```
+MultiHead(Q, K, V) = Concat(head_1, ..., head_h) W^O
+where head_i = Attention(QW_i^Q, KW_i^K, VW_i^V)
+```
+
+### Positional Encoding (Sinusoidal)
+
+```
+PE(pos, 2i) = sin(pos / 10000^(2i/d_model))
+PE(pos, 2i+1) = cos(pos / 10000^(2i/d_model))
+```
+
+## Conformer Architecture
+
+The **Conformer** (Convolution-augmented Transformer) represents the current state-of-the-art, combining:
+- **Self-attention** for global context
+- **Convolutions** for local pattern detection
+
+### Conformer Block Structure
+
+```
++-----------------------------------------------------------------------------+
+|                         CONFORMER BLOCK                                      |
+|                                                                              |
+|   Input                                                                      |
+|     |                                                                        |
+|     v                                                                        |
+|  +------------------+                                                        |
+|  | Feed-Forward (1/2) |  <- Half-step feed-forward with residual            |
+|  +--------+---------+                                                        |
+|           |                                                                  |
+|           v                                                                  |
+|  +------------------+                                                        |
+|  |  Multi-Head      |  <- Relative positional self-attention                 |
+|  |  Self-Attention  |                                                        |
+|  +--------+---------+                                                        |
+|           |                                                                  |
+|           v                                                                  |
+|  +------------------+                                                        |
+|  |  Convolution     |  <- Pointwise conv + GLU + Depthwise conv + BatchNorm  |
+|  |  Module          |                                                        |
+|  +--------+---------+                                                        |
+|           |                                                                  |
+|           v                                                                  |
+|  +------------------+                                                        |
+|  | Feed-Forward (1/2) |  <- Half-step feed-forward with residual            |
+|  +--------+---------+                                                        |
+|           |                                                                  |
+|           v                                                                  |
+|  +------------------+                                                        |
+|  |   Layer Norm     |                                                        |
+|  +--------+---------+                                                        |
+|           |                                                                  |
+|           v                                                                  |
+|   Output                                                                     |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### Why Conformer Works
+
+The combination addresses complementary aspects of speech:
+
+| Component | Captures | Benefit |
+|-----------|----------|---------|
+| Self-Attention | Long-range dependencies | Understands context across entire utterance |
+| Convolution | Local patterns | Captures phonetic features efficiently |
+| Feed-Forward | Non-linear transformations | Increases model capacity |
+
+### Performance Benchmarks
+
+Large Conformer models achieve WER of 1.9%/3.9% on LibriSpeech test-clean/test-other with language model fusion.
+
+## Model Architecture Comparison
+
+| Architecture | Year | WER (LibriSpeech clean) | Streaming Support | Key Innovation |
+|--------------|------|-------------------------|-------------------|----------------|
+| GMM-HMM | 1980s-2010s | ~15% | Yes | Statistical foundation |
+| DNN-HMM | 2012+ | ~8% | Yes | Neural acoustic model |
+| BiLSTM | 2015+ | ~5% | No (bidirectional) | Sequence modeling |
+| Transformer | 2018+ | ~3% | Limited | Self-attention |
+| Conformer | 2020+ | ~2% | Yes (with modifications) | Conv + Attention |
+
+## Implementation Considerations
+
+### Choosing an Architecture
+
+**For Streaming Applications:**
+- Conformer with causal attention
+- RNN-T (covered in streaming section)
+- Avoid bidirectional models
+
+**For Batch Processing:**
+- Full Conformer with bidirectional attention
+- Whisper-style encoder-decoder
+
+**For Edge Deployment:**
+- Smaller model variants (Conformer-S)
+- Quantization and pruning essential
+- Consider Vosk or similar lightweight options
+
+### Hardware Requirements
+
+| Model Size | Parameters | VRAM Required | Typical RTF (GPU) |
+|------------|-----------|---------------|-------------------|
+| Small | 10-50M | 1-2 GB | 0.05-0.1 |
+| Medium | 100-300M | 2-4 GB | 0.1-0.2 |
+| Large | 500M-1B | 4-8 GB | 0.2-0.5 |
+| Extra Large | 1B+ | 8-16 GB | 0.5-1.0 |
+
+## Further Reading
+
+- **[Language Models](/topics/foundations/speech-recognition/language-models)** - How language models improve recognition
+- **[Streaming vs Batch](/topics/foundations/speech-recognition/streaming-vs-batch)** - Real-time decoding strategies
+- **[Optimization](/topics/foundations/speech-recognition/optimization)** - Performance tuning techniques

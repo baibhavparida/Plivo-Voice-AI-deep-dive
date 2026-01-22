@@ -1,0 +1,793 @@
+---
+title: "SIP Protocol for Voice AI"
+description: "Comprehensive guide to Session Initiation Protocol (SIP) fundamentals, trunking, endpoints, call flows, and troubleshooting for voice AI systems"
+category: "infrastructure"
+tags: ["sip", "telephony", "voice-ai", "sip-trunking", "voip", "call-flow", "pbx", "pstn"]
+relatedTopics: ["webrtc", "pstn-integration", "call-routing", "audio-streaming"]
+---
+
+# SIP Protocol for Voice AI
+
+Session Initiation Protocol (SIP) is the foundational signaling protocol that enables voice AI systems to establish, manage, and terminate real-time communication sessions over IP networks. Understanding SIP is essential for building voice agents that interact with traditional telephony infrastructure, enterprise PBX systems, and cloud communication platforms.
+
+## SIP Fundamentals
+
+SIP is a text-based application layer protocol defined in RFC 3261. It handles the signaling aspects of communication sessions while delegating media transport to protocols like RTP (Real-time Transport Protocol).
+
+### SIP Architecture Overview
+
+```
++-----------------------------------------------------------------------------+
+|                          SIP NETWORK ARCHITECTURE                            |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  +------------+     +-------------+     +-------------+     +------------+  |
+|  |   User     |     |    Proxy    |     |   Proxy     |     |   User     |  |
+|  |   Agent    |<--->|   Server    |<--->|   Server    |<--->|   Agent    |  |
+|  | (Caller)   |     | (Domain A)  |     | (Domain B)  |     | (Callee)   |  |
+|  +------------+     +------+------+     +------+------+     +------------+  |
+|        |                   |                   |                   |        |
+|        |                   v                   v                   |        |
+|        |           +-------------+     +-------------+             |        |
+|        |           |  Registrar  |     |  Location   |             |        |
+|        |           |   Server    |     |   Server    |             |        |
+|        |           +-------------+     +-------------+             |        |
+|        |                                                           |        |
+|        +----------------------- RTP Media -------------------------+        |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### SIP Components
+
+| Component | Role | Voice AI Usage |
+|-----------|------|----------------|
+| User Agent Client (UAC) | Initiates requests | Voice agent making outbound calls |
+| User Agent Server (UAS) | Responds to requests | Voice agent receiving inbound calls |
+| Proxy Server | Routes requests | SIP trunk providers, PBX systems |
+| Registrar Server | Handles registration | Endpoint authentication |
+| Location Server | Stores user locations | Call routing decisions |
+| Redirect Server | Provides alternate routes | Failover configurations |
+
+## Core SIP Methods
+
+SIP uses request-response transactions similar to HTTP. The primary methods for voice AI applications are:
+
+### INVITE - Session Initiation
+
+The INVITE method establishes a new session or modifies an existing one:
+
+```
+INVITE sip:voice-agent@ai.example.com SIP/2.0
+Via: SIP/2.0/UDP client.example.com:5060;branch=z9hG4bK776asdhds
+Max-Forwards: 70
+To: <sip:voice-agent@ai.example.com>
+From: <sip:caller@example.com>;tag=1928301774
+Call-ID: a84b4c76e66710@client.example.com
+CSeq: 314159 INVITE
+Contact: <sip:caller@192.168.1.100:5060>
+Content-Type: application/sdp
+Content-Length: 142
+
+v=0
+o=caller 2890844526 2890842807 IN IP4 192.168.1.100
+s=Voice AI Session
+c=IN IP4 192.168.1.100
+t=0 0
+m=audio 49170 RTP/AVP 0 8 101
+a=rtpmap:0 PCMU/8000
+a=rtpmap:8 PCMA/8000
+a=rtpmap:101 telephone-event/8000
+a=fmtp:101 0-16
+```
+
+### ACK - Acknowledgment
+
+Confirms receipt of a final response to INVITE:
+
+```
+ACK sip:voice-agent@ai.example.com SIP/2.0
+Via: SIP/2.0/UDP client.example.com:5060;branch=z9hG4bK776asdhds
+Max-Forwards: 70
+To: <sip:voice-agent@ai.example.com>;tag=a6c85cf
+From: <sip:caller@example.com>;tag=1928301774
+Call-ID: a84b4c76e66710@client.example.com
+CSeq: 314159 ACK
+Content-Length: 0
+```
+
+### BYE - Session Termination
+
+Terminates an established session:
+
+```
+BYE sip:caller@192.168.1.100:5060 SIP/2.0
+Via: SIP/2.0/UDP ai.example.com:5060;branch=z9hG4bK74bf9
+Max-Forwards: 70
+From: <sip:voice-agent@ai.example.com>;tag=a6c85cf
+To: <sip:caller@example.com>;tag=1928301774
+Call-ID: a84b4c76e66710@client.example.com
+CSeq: 231 BYE
+Content-Length: 0
+```
+
+### Additional SIP Methods
+
+| Method | Purpose | Voice AI Use Case |
+|--------|---------|-------------------|
+| REGISTER | Register location with registrar | Agent endpoint registration |
+| CANCEL | Cancel pending request | User hangs up before answer |
+| OPTIONS | Query capabilities | Health checks, keep-alive |
+| INFO | Mid-session signaling | DTMF relay, metadata |
+| UPDATE | Modify session (no SDP change) | Hold, resume operations |
+| REFER | Transfer call | Agent transferring to human |
+| NOTIFY | Event notification | Presence, message waiting |
+| SUBSCRIBE | Subscribe to events | Call state monitoring |
+
+## SIP Response Codes
+
+SIP responses are categorized by class, similar to HTTP:
+
+### Provisional Responses (1xx)
+
+| Code | Reason | Description |
+|------|--------|-------------|
+| 100 | Trying | Request received, processing |
+| 180 | Ringing | Callee device alerting |
+| 181 | Call Is Being Forwarded | Call being redirected |
+| 182 | Queued | Call placed in queue |
+| 183 | Session Progress | Early media available |
+
+### Success Responses (2xx)
+
+| Code | Reason | Description |
+|------|--------|-------------|
+| 200 | OK | Request successful |
+| 202 | Accepted | Request accepted for processing |
+
+### Redirection Responses (3xx)
+
+| Code | Reason | Description |
+|------|--------|-------------|
+| 300 | Multiple Choices | Multiple options available |
+| 301 | Moved Permanently | User permanently moved |
+| 302 | Moved Temporarily | User temporarily moved |
+| 305 | Use Proxy | Must use specified proxy |
+
+### Client Error Responses (4xx)
+
+| Code | Reason | Description |
+|------|--------|-------------|
+| 400 | Bad Request | Malformed request |
+| 401 | Unauthorized | Authentication required |
+| 403 | Forbidden | Request understood but refused |
+| 404 | Not Found | User/resource not found |
+| 408 | Request Timeout | No response in time |
+| 480 | Temporarily Unavailable | Callee temporarily unavailable |
+| 486 | Busy Here | Callee is busy |
+| 487 | Request Terminated | Request cancelled |
+| 488 | Not Acceptable Here | SDP negotiation failed |
+
+### Server Error Responses (5xx)
+
+| Code | Reason | Description |
+|------|--------|-------------|
+| 500 | Server Internal Error | Server error |
+| 502 | Bad Gateway | Invalid response from downstream |
+| 503 | Service Unavailable | Service temporarily unavailable |
+| 504 | Server Time-out | No response from downstream |
+
+### Global Failure Responses (6xx)
+
+| Code | Reason | Description |
+|------|--------|-------------|
+| 600 | Busy Everywhere | All endpoints busy |
+| 603 | Decline | Callee declined |
+| 604 | Does Not Exist Anywhere | User doesn't exist |
+| 606 | Not Acceptable | No acceptable response |
+
+## SIP Call Flow Diagrams
+
+### Basic Inbound Call to Voice Agent
+
+```
++----------+          +----------+          +-------------+
+|  Caller  |          |SIP Proxy |          | Voice Agent |
++----+-----+          +----+-----+          +------+------+
+     |                     |                       |
+     | INVITE              |                       |
+     |-------------------->|                       |
+     |                     | INVITE                |
+     |                     |---------------------->|
+     |                     |                       |
+     |                     |            100 Trying |
+     |                     |<----------------------|
+     |          100 Trying |                       |
+     |<--------------------|                       |
+     |                     |                       |
+     |                     |            180 Ringing|
+     |                     |<----------------------|
+     |         180 Ringing |                       |
+     |<--------------------|                       |
+     |                     |                       |
+     |                     |              200 OK   |
+     |                     |<----------------------|
+     |              200 OK |                       |
+     |<--------------------|                       |
+     |                     |                       |
+     | ACK                 |                       |
+     |-------------------->|                       |
+     |                     | ACK                   |
+     |                     |---------------------->|
+     |                     |                       |
+     |<=================== RTP Media =============>|
+     |                     |                       |
+     |                     |                  BYE  |
+     |                     |<----------------------|
+     |                 BYE |                       |
+     |<--------------------|                       |
+     |                     |                       |
+     | 200 OK              |                       |
+     |-------------------->|                       |
+     |                     | 200 OK                |
+     |                     |---------------------->|
+     |                     |                       |
+```
+
+### Outbound Call from Voice Agent
+
+```
++-------------+          +----------+          +----------+
+| Voice Agent |          |SIP Trunk |          |  Callee  |
++------+------+          +----+-----+          +----+-----+
+       |                      |                     |
+       | INVITE               |                     |
+       |--------------------->|                     |
+       |                      | INVITE              |
+       |                      |-------------------->|
+       |                      |                     |
+       |           100 Trying |                     |
+       |<---------------------|                     |
+       |                      |          100 Trying |
+       |                      |<--------------------|
+       |                      |                     |
+       |                      |         180 Ringing |
+       |                      |<--------------------|
+       |          180 Ringing |                     |
+       |<---------------------|                     |
+       |                      |                     |
+       |                      |              200 OK |
+       |                      |<--------------------|
+       |               200 OK |                     |
+       |<---------------------|                     |
+       |                      |                     |
+       | ACK                  |                     |
+       |--------------------->|                     |
+       |                      | ACK                 |
+       |                      |-------------------->|
+       |                      |                     |
+       |<==================== RTP Media ===========>|
+       |                      |                     |
+```
+
+### Call Transfer (REFER)
+
+```
++----------+          +-------------+          +----------+
+|  Caller  |          | Voice Agent |          | Transfer |
++----+-----+          +------+------+          +----+-----+
+     |                       |                      |
+     |<===== Active Call ===>|                      |
+     |                       |                      |
+     |                       | REFER                |
+     |                       | Refer-To: transfer   |
+     |<----------------------|                      |
+     |                       |                      |
+     | 202 Accepted          |                      |
+     |---------------------->|                      |
+     |                       |                      |
+     | NOTIFY (100 Trying)   |                      |
+     |---------------------->|                      |
+     |                       |                      |
+     | INVITE                |                      |
+     |--------------------------------------------->|
+     |                       |                      |
+     |                       |              200 OK  |
+     |<---------------------------------------------|
+     |                       |                      |
+     | NOTIFY (200 OK)       |                      |
+     |---------------------->|                      |
+     |                       |                      |
+     | BYE                   |                      |
+     |---------------------->|                      |
+     |                       |                      |
+     |<=============== New Call ===================>|
+     |                       |                      |
+```
+
+## SIP Trunking for Voice AI
+
+SIP trunking connects voice AI systems to the Public Switched Telephone Network (PSTN) through IP-based connections.
+
+### SIP Trunk Architecture
+
+```
++-----------------------------------------------------------------------------+
+|                        SIP TRUNKING ARCHITECTURE                             |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Voice AI Infrastructure           SIP Trunk Provider           PSTN        |
+|  +---------------------+          +------------------+     +------------+   |
+|  |                     |          |                  |     |            |   |
+|  | +---------------+   |   SIP    | +------------+   |     |  Carrier   |   |
+|  | | Voice Agent 1 |---|----------|>|  Session   |   |     |  Network   |   |
+|  | +---------------+   |   TLS    | |  Border    |   |---->|            |   |
+|  |                     |          | | Controller |   |     |            |   |
+|  | +---------------+   |   RTP    | |   (SBC)    |   |     |  +------+  |   |
+|  | | Voice Agent 2 |---|----------|>|            |---|---->|->| PSTN |  |   |
+|  | +---------------+   |  (SRTP)  | +------------+   |     |  +------+  |   |
+|  |                     |          |                  |     |            |   |
+|  | +---------------+   |          | +------------+   |     |            |   |
+|  | | Voice Agent N |---|----------|>| Media      |---|---->|            |   |
+|  | +---------------+   |          | | Gateway    |   |     |            |   |
+|  |                     |          | +------------+   |     +------------+   |
+|  +---------------------+          +------------------+                      |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### SIP Trunk Provider Comparison
+
+| Provider | Concurrent Calls | Geographic Coverage | Voice AI Features |
+|----------|------------------|--------------------|--------------------|
+| Plivo | Unlimited scaling | 190+ countries | STT/TTS integration, XML control |
+| Twilio | Unlimited scaling | 100+ countries | Programmable voice, ML features |
+| Telnyx | Unlimited scaling | 35+ countries | Low latency, mission control |
+| Vonage | Unlimited scaling | 100+ countries | Conversation API |
+| Bandwidth | Enterprise scale | US focus | Enterprise-grade |
+| SignalWire | Unlimited scaling | US/EU | FreeSWITCH native |
+
+### SIP Trunk Configuration Example
+
+```python
+# Voice AI SIP trunk configuration
+sip_trunk_config = {
+    "provider": "plivo",
+    "credentials": {
+        "auth_id": "YOUR_AUTH_ID",
+        "auth_token": "YOUR_AUTH_TOKEN"
+    },
+    "trunk_settings": {
+        "primary_endpoint": "sip.plivo.com",
+        "secondary_endpoint": "sip2.plivo.com",
+        "transport": "TLS",
+        "port": 5061,
+        "registration_required": True,
+        "registration_interval": 3600
+    },
+    "codec_preferences": [
+        "PCMU",   # G.711 mu-law
+        "PCMA",   # G.711 A-law
+        "G729",   # G.729
+        "opus"    # Opus (if supported)
+    ],
+    "capacity": {
+        "max_concurrent_calls": 100,
+        "calls_per_second": 10
+    },
+    "security": {
+        "srtp_enabled": True,
+        "tls_verify": True,
+        "ip_authentication": ["10.0.0.0/8"]
+    }
+}
+```
+
+## SIP Endpoints and Registration
+
+### Endpoint Registration Process
+
+```
++-------------+                    +-------------+
+| Voice Agent |                    |  Registrar  |
++------+------+                    +------+------+
+       |                                  |
+       | REGISTER                         |
+       | (no credentials)                 |
+       |--------------------------------->|
+       |                                  |
+       |            401 Unauthorized      |
+       |       (WWW-Authenticate header)  |
+       |<---------------------------------|
+       |                                  |
+       | REGISTER                         |
+       | (with Authorization header)      |
+       |--------------------------------->|
+       |                                  |
+       |                      200 OK      |
+       |       (Expires: 3600)            |
+       |<---------------------------------|
+       |                                  |
+       |         [Wait ~3000 seconds]     |
+       |                                  |
+       | REGISTER (refresh)               |
+       |--------------------------------->|
+       |                                  |
+```
+
+### Registration Message Example
+
+```
+REGISTER sip:voice-ai.example.com SIP/2.0
+Via: SIP/2.0/TLS 192.168.1.100:5061;branch=z9hG4bKnashds7
+Max-Forwards: 70
+To: <sip:agent-001@voice-ai.example.com>
+From: <sip:agent-001@voice-ai.example.com>;tag=456248
+Call-ID: 843817637684230@192.168.1.100
+CSeq: 1826 REGISTER
+Contact: <sip:agent-001@192.168.1.100:5061;transport=tls>
+Expires: 3600
+Authorization: Digest username="agent-001",
+    realm="voice-ai.example.com",
+    nonce="ea9c8e88df84f1cec4341ae6cbe5a359",
+    uri="sip:voice-ai.example.com",
+    response="dfe56131d1958046689cd83306477ecc"
+Content-Length: 0
+```
+
+### Multi-Endpoint Registration for High Availability
+
+```python
+class VoiceAgentRegistrar:
+    """Manages SIP registration for voice AI endpoints"""
+
+    def __init__(self, config: dict):
+        self.endpoints = []
+        self.registration_interval = config.get("registration_interval", 3600)
+        self.retry_interval = config.get("retry_interval", 60)
+
+    async def register_endpoint(self, endpoint_config: dict):
+        """Register a voice agent endpoint"""
+        registration = SIPRegistration(
+            domain=endpoint_config["domain"],
+            username=endpoint_config["username"],
+            password=endpoint_config["password"],
+            contact=endpoint_config["contact_uri"],
+            expires=self.registration_interval
+        )
+
+        try:
+            response = await registration.send()
+            if response.status_code == 200:
+                expires = response.headers.get("Expires", self.registration_interval)
+                self._schedule_refresh(registration, int(expires) - 60)
+                return True
+            elif response.status_code == 401:
+                # Retry with authentication
+                return await self._authenticate_and_register(registration, response)
+        except Exception as e:
+            self._schedule_retry(registration)
+            raise
+
+    def _schedule_refresh(self, registration, delay_seconds):
+        """Schedule registration refresh before expiry"""
+        asyncio.get_event_loop().call_later(
+            delay_seconds,
+            lambda: asyncio.create_task(self.refresh_registration(registration))
+        )
+
+    async def unregister_all(self):
+        """Unregister all endpoints (Expires: 0)"""
+        for endpoint in self.endpoints:
+            await endpoint.unregister()
+```
+
+## Common SIP Headers
+
+### Critical Headers for Voice AI
+
+| Header | Purpose | Example |
+|--------|---------|---------|
+| Call-ID | Unique call identifier | `a84b4c76e66710@host` |
+| CSeq | Command sequence | `314159 INVITE` |
+| From | Caller identity | `<sip:agent@domain>;tag=abc` |
+| To | Callee identity | `<sip:user@domain>` |
+| Via | Request path | `SIP/2.0/UDP host:5060;branch=z9hG4bK...` |
+| Contact | Direct reachability | `<sip:agent@192.168.1.100:5060>` |
+| Content-Type | Body format | `application/sdp` |
+| Max-Forwards | Hop limit | `70` |
+
+### Custom Headers for Voice AI Metadata
+
+```
+INVITE sip:user@example.com SIP/2.0
+...standard headers...
+X-Voice-Agent-ID: agent-production-001
+X-Session-ID: sess_abc123xyz
+X-Intent: customer-support
+X-Language: en-US
+X-Priority: high
+X-Custom-Data: {"customer_id": "12345", "account_tier": "premium"}
+```
+
+### SDP (Session Description Protocol) for Media Negotiation
+
+```
+v=0
+o=VoiceAgent 2890844526 2890842807 IN IP4 192.168.1.100
+s=Voice AI Session
+c=IN IP4 192.168.1.100
+t=0 0
+m=audio 49170 RTP/AVP 0 8 96 101
+a=rtpmap:0 PCMU/8000
+a=rtpmap:8 PCMA/8000
+a=rtpmap:96 opus/48000/2
+a=fmtp:96 maxplaybackrate=16000; sprop-maxcapturerate=16000; stereo=0
+a=rtpmap:101 telephone-event/8000
+a=fmtp:101 0-16
+a=sendrecv
+a=ptime:20
+a=maxptime:60
+```
+
+## Troubleshooting SIP Issues
+
+### Common SIP Problems and Solutions
+
+| Problem | Symptoms | Diagnosis | Solution |
+|---------|----------|-----------|----------|
+| Registration failure | 401/403 responses | Check credentials | Verify auth settings |
+| One-way audio | Can hear but not speak | NAT/firewall issues | Configure STUN/TURN |
+| No audio | Call connects, silence | RTP blocked | Open RTP port range |
+| Call drops | Random disconnections | NAT timeout | Reduce session timers |
+| Poor quality | Choppy, delayed audio | Network issues | Check jitter, packet loss |
+
+### SIP Debugging Tools
+
+```python
+class SIPDebugger:
+    """SIP message capture and analysis"""
+
+    def __init__(self, log_level: str = "INFO"):
+        self.logger = logging.getLogger("sip_debugger")
+        self.message_log = []
+
+    def capture_message(self, direction: str, message: str, timestamp: float):
+        """Log SIP message with metadata"""
+        parsed = self.parse_sip_message(message)
+
+        log_entry = {
+            "timestamp": timestamp,
+            "direction": direction,  # "inbound" or "outbound"
+            "method": parsed.get("method") or parsed.get("status_code"),
+            "call_id": parsed.get("Call-ID"),
+            "cseq": parsed.get("CSeq"),
+            "from": parsed.get("From"),
+            "to": parsed.get("To"),
+            "raw": message
+        }
+
+        self.message_log.append(log_entry)
+        self.logger.info(f"{direction}: {log_entry['method']} Call-ID={log_entry['call_id']}")
+
+    def diagnose_call_failure(self, call_id: str) -> dict:
+        """Analyze call flow for a specific Call-ID"""
+        call_messages = [m for m in self.message_log if m["call_id"] == call_id]
+
+        diagnosis = {
+            "call_id": call_id,
+            "message_count": len(call_messages),
+            "issues": []
+        }
+
+        # Check for missing ACK
+        invite_found = any(m["method"] == "INVITE" for m in call_messages)
+        ok_found = any(m["method"] == "200" for m in call_messages)
+        ack_found = any(m["method"] == "ACK" for m in call_messages)
+
+        if invite_found and ok_found and not ack_found:
+            diagnosis["issues"].append({
+                "type": "missing_ack",
+                "severity": "critical",
+                "description": "200 OK received but ACK not sent - call will timeout"
+            })
+
+        # Check for authentication issues
+        auth_failures = [m for m in call_messages if m["method"] in ["401", "403"]]
+        if len(auth_failures) > 2:
+            diagnosis["issues"].append({
+                "type": "auth_loop",
+                "severity": "critical",
+                "description": "Multiple authentication failures - check credentials"
+            })
+
+        return diagnosis
+
+    def generate_call_flow_diagram(self, call_id: str) -> str:
+        """Generate ASCII call flow for documentation"""
+        messages = sorted(
+            [m for m in self.message_log if m["call_id"] == call_id],
+            key=lambda x: x["timestamp"]
+        )
+
+        diagram = ["Call Flow Diagram", "=" * 50]
+        for msg in messages:
+            arrow = "-->" if msg["direction"] == "outbound" else "<--"
+            diagram.append(f"{msg['timestamp']:.3f} {arrow} {msg['method']}")
+
+        return "\n".join(diagram)
+```
+
+### NAT Traversal Issues
+
+```
++-----------------------------------------------------------------------------+
+|                        NAT TRAVERSAL PROBLEM                                 |
++-----------------------------------------------------------------------------+
+|                                                                              |
+|  Private Network (192.168.x.x)      NAT/Firewall      Public Internet       |
+|                                                                              |
+|  +-------------+                   +----------+                              |
+|  |Voice Agent  |                   |          |      +-------------+        |
+|  |192.168.1.100|------- SIP ------>|   NAT    |----->| SIP Server  |        |
+|  |             |                   |          |      | (public IP) |        |
+|  +-------------+                   +----------+      +-------------+        |
+|                                                                              |
+|  PROBLEM: SDP contains private IP (192.168.1.100)                           |
+|  Remote endpoint cannot send RTP to private IP                              |
+|                                                                              |
+|  SOLUTIONS:                                                                  |
+|  1. STUN: Discover public IP/port mapping                                   |
+|  2. TURN: Relay media through public server                                 |
+|  3. ICE: Combination of STUN/TURN with connectivity checks                  |
+|  4. SIP ALG: Application-level gateway (often causes more problems)         |
+|  5. rport: SIP extension for symmetric response routing                     |
+|                                                                              |
++-----------------------------------------------------------------------------+
+```
+
+### SIP Keep-Alive Strategies
+
+```python
+class SIPKeepAlive:
+    """Maintain NAT bindings and detect connection issues"""
+
+    def __init__(self, transport, interval_seconds: int = 30):
+        self.transport = transport
+        self.interval = interval_seconds
+        self.last_response = time.time()
+
+    async def start_keepalive(self):
+        """Send periodic OPTIONS to maintain NAT binding"""
+        while True:
+            await asyncio.sleep(self.interval)
+
+            try:
+                # OPTIONS is preferred - lightweight and widely supported
+                response = await self.send_options()
+
+                if response.status_code == 200:
+                    self.last_response = time.time()
+                else:
+                    self._handle_keepalive_failure(response)
+
+            except TimeoutError:
+                self._handle_connection_lost()
+
+    async def send_options(self):
+        """Send OPTIONS request as keep-alive"""
+        options_request = SIPMessage(
+            method="OPTIONS",
+            uri=self.transport.remote_uri,
+            headers={
+                "Accept": "application/sdp",
+                "Max-Forwards": "0"  # Don't forward, just check connectivity
+            }
+        )
+        return await self.transport.send(options_request)
+
+    def _handle_connection_lost(self):
+        """Re-register when connection is lost"""
+        self.logger.warning("SIP connection lost, initiating re-registration")
+        asyncio.create_task(self.re_register())
+```
+
+### Quality of Service Monitoring
+
+```python
+class SIPQoSMonitor:
+    """Monitor call quality metrics from SIP/RTP"""
+
+    def __init__(self):
+        self.active_calls = {}
+
+    def process_rtcp_report(self, call_id: str, rtcp_data: dict):
+        """Process RTCP receiver reports for quality metrics"""
+        metrics = {
+            "packet_loss": rtcp_data.get("fraction_lost", 0) / 256 * 100,
+            "jitter_ms": rtcp_data.get("interarrival_jitter", 0) / 8,  # Convert to ms
+            "round_trip_time_ms": rtcp_data.get("dlsr", 0) * 1000,
+            "packets_received": rtcp_data.get("packets_received", 0)
+        }
+
+        self.active_calls[call_id] = metrics
+
+        # Alert on quality degradation
+        if metrics["packet_loss"] > 5:
+            self.logger.warning(f"High packet loss: {metrics['packet_loss']:.1f}%")
+
+        if metrics["jitter_ms"] > 50:
+            self.logger.warning(f"High jitter: {metrics['jitter_ms']:.1f}ms")
+
+        return metrics
+
+    def calculate_mos(self, metrics: dict) -> float:
+        """Estimate Mean Opinion Score from network metrics"""
+        # Simplified E-model calculation
+        r_factor = 93.2  # Base R-factor
+
+        # Packet loss impact
+        r_factor -= 2.5 * metrics["packet_loss"]
+
+        # Jitter impact (simplified)
+        r_factor -= 0.5 * max(0, metrics["jitter_ms"] - 30)
+
+        # Latency impact
+        if metrics["round_trip_time_ms"] > 150:
+            r_factor -= 0.1 * (metrics["round_trip_time_ms"] - 150)
+
+        # Convert R-factor to MOS
+        if r_factor < 0:
+            return 1.0
+        elif r_factor > 100:
+            return 4.5
+
+        mos = 1 + 0.035 * r_factor + r_factor * (r_factor - 60) * (100 - r_factor) * 7e-6
+        return round(mos, 2)
+```
+
+## Best Practices for Voice AI SIP Integration
+
+### Security Recommendations
+
+| Practice | Implementation | Benefit |
+|----------|----------------|---------|
+| TLS Transport | Use port 5061 with TLS | Encrypted signaling |
+| SRTP | Negotiate via SAVP profile | Encrypted media |
+| IP Authentication | Whitelist known IPs | Prevent unauthorized access |
+| Rate Limiting | Limit INVITE/s per trunk | Prevent toll fraud |
+| Registration Authentication | Digest auth with strong passwords | Secure endpoint identity |
+
+### High Availability Configuration
+
+```python
+sip_ha_config = {
+    "primary_trunk": {
+        "endpoint": "sip-primary.provider.com",
+        "weight": 100,
+        "health_check_interval": 30
+    },
+    "secondary_trunk": {
+        "endpoint": "sip-secondary.provider.com",
+        "weight": 50,
+        "health_check_interval": 30
+    },
+    "failover": {
+        "trigger_on": ["503", "504", "timeout"],
+        "failback_delay": 300,
+        "max_retries": 3
+    }
+}
+```
+
+## Summary
+
+SIP provides the signaling foundation for voice AI telephony integration. Key takeaways:
+
+1. **Core Methods**: INVITE, ACK, and BYE form the basic call lifecycle
+2. **SIP Trunking**: Connects voice AI to PSTN through cloud providers like Plivo or Twilio
+3. **Registration**: Essential for receiving inbound calls and maintaining presence
+4. **Headers**: Carry critical routing and metadata information
+5. **Troubleshooting**: Focus on authentication, NAT traversal, and codec negotiation
+
+Understanding SIP enables building voice AI systems that seamlessly integrate with enterprise telephony infrastructure and reach users on any phone number worldwide.

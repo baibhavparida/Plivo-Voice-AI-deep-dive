@@ -1,0 +1,69 @@
+---
+title: "Audio Pipeline"
+description: "Complete guide to audio processing pipeline components for capturing, enhancing, and preparing voice input in voice AI systems"
+category: "infrastructure"
+tags:
+  - audio
+  - pipeline
+  - signal-processing
+  - voice-ai
+  - dsp
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Audio Pipeline
+
+The audio pipeline is the set of processing stages that audio passes through before reaching your speech recognition system. A well-designed audio pipeline ensures clean, clear audio that maximizes transcription accuracy and user experience.
+
+## Why Audio Pipeline Matters
+
+Raw audio from microphones or phone calls often contains:
+
+- **Background noise**: Traffic, HVAC, crowd noise
+- **Echo**: Speaker audio feeding back into the microphone
+- **Inconsistent levels**: Volume variations between speakers
+- **Codec artifacts**: Compression distortion from telephony
+
+The audio pipeline addresses these issues before speech recognition.
+
+## Topics in This Section
+
+### [Signal Processing](/topics/infrastructure/audio-pipeline/signal-processing)
+Digital signal processing fundamentals for audio, including sampling, encoding, filtering, and format conversion.
+
+### [Noise Cancellation](/topics/infrastructure/audio-pipeline/noise-cancellation)
+Techniques for removing background noise and improving audio clarity. From spectral subtraction to neural noise suppression.
+
+### [Echo Cancellation](/topics/infrastructure/audio-pipeline/echo-cancellation)
+Acoustic echo cancellation (AEC) for full-duplex voice communication. Prevent the AI's own voice from being picked up.
+
+### [Voice Activity Detection](/topics/infrastructure/audio-pipeline/vad)
+Detecting speech presence and managing turn-taking in conversations. Essential for knowing when to listen and when to speak.
+
+## Typical Audio Pipeline
+
+```
+Microphone/Phone → Codec Decode → Noise Cancellation → Echo Cancellation → VAD → STT
+```
+
+Each stage prepares the audio for the next:
+
+| Stage | Purpose | Impact |
+|-------|---------|--------|
+| **Codec Decode** | Convert compressed audio to PCM | Baseline quality |
+| **Noise Cancellation** | Remove background sounds | Improved WER |
+| **Echo Cancellation** | Remove speaker feedback | Enable interruption |
+| **VAD** | Detect speech boundaries | Proper endpointing |
+
+## Key Metrics
+
+| Metric | Good | Acceptable | Poor |
+|--------|------|------------|------|
+| **SNR (Signal-to-Noise)** | >20dB | 10-20dB | &lt;10dB |
+| **Processing Latency** | &lt;20ms | 20-50ms | >50ms |
+| **Echo Return Loss** | >40dB | 30-40dB | &lt;30dB |
+
+## Getting Started
+
+Begin with [Signal Processing](/topics/infrastructure/audio-pipeline/signal-processing) to understand audio fundamentals, then explore [Noise Cancellation](/topics/infrastructure/audio-pipeline/noise-cancellation) and [Echo Cancellation](/topics/infrastructure/audio-pipeline/echo-cancellation) for audio enhancement techniques.

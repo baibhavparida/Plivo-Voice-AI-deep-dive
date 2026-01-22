@@ -1,0 +1,1258 @@
+---
+title: "Sentiment Analysis in Voice AI"
+description: "Complete guide to sentiment analysis in voice AI systems, covering text-based and acoustic sentiment, real-time monitoring, escalation triggers, and practical implementation strategies."
+category: "foundations"
+tags:
+  - sentiment-analysis
+  - emotion-detection
+  - voice-ai
+  - customer-experience
+  - escalation
+relatedTopics:
+  - intent-recognition
+  - entity-extraction
+  - dialogue-state
+lastUpdated: "2026-01-21"
+difficulty: intermediate
+---
+
+# Sentiment Analysis in Voice AI
+
+Sentiment analysis in voice AI extends beyond text-based emotion detection to include acoustic signals like tone, pitch, and speaking rate. This multimodal approach enables more accurate understanding of user emotional states and appropriate response adaptation.
+
+## Text-Based Sentiment
+
+Text-based sentiment analysis processes the transcribed content of user utterances to detect emotional valence and intensity.
+
+### Sentiment Classification Approaches
+
+**1. Lexicon-Based Analysis**:
+
+```python
+from typing import Dict, Tuple
+import re
+
+class LexiconSentimentAnalyzer:
+    def __init__(self):
+        # Sentiment lexicons with intensity scores
+        self.positive_words = {
+            "great": 0.8, "excellent": 0.9, "good": 0.6, "happy": 0.7,
+            "love": 0.8, "wonderful": 0.85, "fantastic": 0.9, "pleased": 0.7,
+            "satisfied": 0.6, "amazing": 0.85, "perfect": 0.95, "helpful": 0.6,
+            "thanks": 0.5, "thank you": 0.6, "appreciate": 0.7
+        }
+
+        self.negative_words = {
+            "terrible": -0.9, "awful": -0.85, "bad": -0.6, "horrible": -0.9,
+            "hate": -0.8, "frustrated": -0.7, "angry": -0.8, "upset": -0.7,
+            "disappointed": -0.65, "annoyed": -0.6, "useless": -0.75,
+            "waste": -0.6, "ridiculous": -0.7, "unacceptable": -0.8
+        }
+
+        self.intensifiers = {
+            "very": 1.3, "really": 1.25, "extremely": 1.5, "absolutely": 1.4,
+            "so": 1.2, "totally": 1.3, "completely": 1.35
+        }
+
+        self.negators = ["not", "no", "never", "neither", "nobody", "nothing",
+                        "nowhere", "hardly", "barely", "doesn't", "don't",
+                        "didn't", "won't", "wouldn't", "couldn't", "shouldn't"]
+
+    def analyze(self, text: str) -> Dict:
+        """Analyze sentiment of text"""
+        text_lower = text.lower()
+        words = text_lower.split()
+
+        sentiment_score = 0.0
+        matched_words = []
+        is_negated = False
+        current_intensifier = 1.0
+
+        for i, word in enumerate(words):
+            # Check for negators (affects next sentiment word)
+            if word in self.negators:
+                is_negated = True
+                continue
+
+            # Check for intensifiers
+            if word in self.intensifiers:
+                current_intensifier = self.intensifiers[word]
+                continue
+
+            # Check positive words
+            if word in self.positive_words:
+                score = self.positive_words[word] * current_intensifier
+                if is_negated:
+                    score = -score * 0.5  # Negation reduces and flips
+                sentiment_score += score
+                matched_words.append((word, score))
+                is_negated = False
+                current_intensifier = 1.0
+
+            # Check negative words
+            elif word in self.negative_words:
+                score = self.negative_words[word] * current_intensifier
+                if is_negated:
+                    score = -score * 0.5  # "not bad" is mildly positive
+                sentiment_score += score
+                matched_words.append((word, score))
+                is_negated = False
+                current_intensifier = 1.0
+
+        # Normalize score
+        if matched_words:
+            sentiment_score = sentiment_score / len(matched_words)
+
+        # Determine label
+        if sentiment_score > 0.2:
+            label = "positive"
+        elif sentiment_score < -0.2:
+            label = "negative"
+        else:
+            label = "neutral"
+
+        return {
+            "score": sentiment_score,
+            "label": label,
+            "matched_words": matched_words,
+            "confidence": min(abs(sentiment_score), 1.0)
+        }
+```
+
+**2. ML-Based Sentiment Classification**:
+
+```python
+from transformers import pipeline, AutoModelForSequenceClassification, AutoTokenizer
+import torch
+
+class TransformerSentimentAnalyzer:
+    def __init__(self, model_name: str = "cardiffnlp/twitter-roberta-base-sentiment"):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.model.eval()
+
+        self.labels = ["negative", "neutral", "positive"]
+
+    def analyze(self, text: str) -> Dict:
+        """Analyze sentiment using transformer model"""
+        inputs = self.tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=512
+        )
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            probs = torch.softmax(outputs.logits, dim=-1)[0]
+
+        scores = {label: prob.item() for label, prob in zip(self.labels, probs)}
+        predicted_label = max(scores, key=scores.get)
+
+        # Convert to continuous score (-1 to 1)
+        sentiment_score = scores["positive"] - scores["negative"]
+
+        return {
+            "label": predicted_label,
+            "score": sentiment_score,
+            "probabilities": scores,
+            "confidence": scores[predicted_label]
+        }
+
+    def analyze_batch(self, texts: list[str]) -> list[Dict]:
+        """Batch analysis for efficiency"""
+        inputs = self.tokenizer(
+            texts,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=512
+        )
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            probs = torch.softmax(outputs.logits, dim=-1)
+
+        results = []
+        for i, text_probs in enumerate(probs):
+            scores = {label: prob.item() for label, prob in zip(self.labels, text_probs)}
+            predicted_label = max(scores, key=scores.get)
+            sentiment_score = scores["positive"] - scores["negative"]
+
+            results.append({
+                "text": texts[i],
+                "label": predicted_label,
+                "score": sentiment_score,
+                "confidence": scores[predicted_label]
+            })
+
+        return results
+```
+
+### Aspect-Based Sentiment
+
+Identify sentiment towards specific aspects of the conversation:
+
+```python
+class AspectSentimentAnalyzer:
+    """Analyze sentiment towards specific aspects mentioned in text"""
+
+    def __init__(self, base_analyzer):
+        self.analyzer = base_analyzer
+        self.aspect_patterns = {
+            "service": ["service", "support", "help", "assistance", "representative"],
+            "product": ["product", "item", "order", "purchase", "quality"],
+            "wait_time": ["wait", "hold", "waiting", "long", "forever", "minutes"],
+            "price": ["price", "cost", "expensive", "cheap", "value", "money"],
+            "process": ["process", "easy", "difficult", "complicated", "simple"],
+        }
+
+    def extract_aspects(self, text: str) -> list[str]:
+        """Extract aspects mentioned in text"""
+        text_lower = text.lower()
+        found_aspects = []
+
+        for aspect, keywords in self.aspect_patterns.items():
+            if any(keyword in text_lower for keyword in keywords):
+                found_aspects.append(aspect)
+
+        return found_aspects
+
+    def analyze(self, text: str) -> Dict:
+        """Analyze sentiment for each aspect"""
+        # Get overall sentiment
+        overall = self.analyzer.analyze(text)
+
+        # Find aspects
+        aspects = self.extract_aspects(text)
+
+        # Analyze sentiment around each aspect
+        aspect_sentiments = {}
+        sentences = self._split_sentences(text)
+
+        for aspect in aspects:
+            aspect_keywords = self.aspect_patterns[aspect]
+            relevant_sentences = [
+                s for s in sentences
+                if any(kw in s.lower() for kw in aspect_keywords)
+            ]
+
+            if relevant_sentences:
+                combined_text = " ".join(relevant_sentences)
+                aspect_sentiment = self.analyzer.analyze(combined_text)
+                aspect_sentiments[aspect] = {
+                    "score": aspect_sentiment["score"],
+                    "label": aspect_sentiment["label"],
+                    "context": relevant_sentences[0][:100]
+                }
+
+        return {
+            "overall": overall,
+            "aspects": aspect_sentiments
+        }
+
+    def _split_sentences(self, text: str) -> list[str]:
+        """Simple sentence splitting"""
+        import re
+        return re.split(r'[.!?]+', text)
+```
+
+## Acoustic Sentiment (Tone, Pitch)
+
+Acoustic features provide emotional signals independent of word content.
+
+### Acoustic Feature Extraction
+
+```python
+import numpy as np
+from scipy import signal
+from scipy.io import wavfile
+
+class AcousticFeatureExtractor:
+    """Extract acoustic features relevant to emotion detection"""
+
+    def __init__(self, sample_rate: int = 16000):
+        self.sample_rate = sample_rate
+
+    def extract_features(self, audio: np.ndarray) -> Dict:
+        """Extract comprehensive acoustic features"""
+
+        features = {}
+
+        # Pitch (F0) features
+        pitch_features = self._extract_pitch_features(audio)
+        features.update(pitch_features)
+
+        # Energy features
+        energy_features = self._extract_energy_features(audio)
+        features.update(energy_features)
+
+        # Speaking rate features
+        rate_features = self._extract_rate_features(audio)
+        features.update(rate_features)
+
+        # Spectral features
+        spectral_features = self._extract_spectral_features(audio)
+        features.update(spectral_features)
+
+        return features
+
+    def _extract_pitch_features(self, audio: np.ndarray) -> Dict:
+        """Extract pitch-related features"""
+        # Simplified pitch extraction using autocorrelation
+        frame_size = int(0.025 * self.sample_rate)  # 25ms
+        hop_size = int(0.010 * self.sample_rate)    # 10ms
+
+        pitches = []
+        for i in range(0, len(audio) - frame_size, hop_size):
+            frame = audio[i:i + frame_size]
+            pitch = self._estimate_pitch(frame)
+            if pitch > 0:
+                pitches.append(pitch)
+
+        if not pitches:
+            return {
+                "pitch_mean": 0, "pitch_std": 0, "pitch_range": 0,
+                "pitch_slope": 0
+            }
+
+        pitches = np.array(pitches)
+        return {
+            "pitch_mean": np.mean(pitches),
+            "pitch_std": np.std(pitches),
+            "pitch_range": np.max(pitches) - np.min(pitches),
+            "pitch_slope": self._compute_slope(pitches)
+        }
+
+    def _estimate_pitch(self, frame: np.ndarray) -> float:
+        """Estimate pitch using autocorrelation"""
+        # Apply window
+        windowed = frame * np.hanning(len(frame))
+
+        # Autocorrelation
+        corr = np.correlate(windowed, windowed, mode='full')
+        corr = corr[len(corr)//2:]
+
+        # Find first peak after initial decay
+        min_lag = int(self.sample_rate / 500)  # Max F0: 500 Hz
+        max_lag = int(self.sample_rate / 50)   # Min F0: 50 Hz
+
+        if max_lag > len(corr):
+            return 0
+
+        search_range = corr[min_lag:max_lag]
+        if len(search_range) == 0:
+            return 0
+
+        peak_idx = np.argmax(search_range) + min_lag
+        if corr[peak_idx] > 0.3 * corr[0]:  # Voicing threshold
+            return self.sample_rate / peak_idx
+        return 0
+
+    def _extract_energy_features(self, audio: np.ndarray) -> Dict:
+        """Extract energy-related features"""
+        frame_size = int(0.025 * self.sample_rate)
+        hop_size = int(0.010 * self.sample_rate)
+
+        energies = []
+        for i in range(0, len(audio) - frame_size, hop_size):
+            frame = audio[i:i + frame_size]
+            energy = np.sum(frame ** 2) / len(frame)
+            energies.append(energy)
+
+        energies = np.array(energies)
+        log_energies = np.log(energies + 1e-10)
+
+        return {
+            "energy_mean": np.mean(log_energies),
+            "energy_std": np.std(log_energies),
+            "energy_range": np.max(log_energies) - np.min(log_energies),
+            "energy_slope": self._compute_slope(log_energies)
+        }
+
+    def _extract_rate_features(self, audio: np.ndarray) -> Dict:
+        """Extract speaking rate features"""
+        # Detect voiced segments
+        frame_size = int(0.025 * self.sample_rate)
+        hop_size = int(0.010 * self.sample_rate)
+
+        voiced_frames = 0
+        total_frames = 0
+
+        for i in range(0, len(audio) - frame_size, hop_size):
+            frame = audio[i:i + frame_size]
+            energy = np.sum(frame ** 2)
+            total_frames += 1
+            if energy > np.mean(audio ** 2) * 0.1:  # Simple VAD
+                voiced_frames += 1
+
+        speech_rate = voiced_frames / total_frames if total_frames > 0 else 0
+        duration = len(audio) / self.sample_rate
+
+        return {
+            "speech_rate": speech_rate,
+            "voiced_ratio": voiced_frames / max(total_frames, 1),
+            "duration": duration
+        }
+
+    def _extract_spectral_features(self, audio: np.ndarray) -> Dict:
+        """Extract spectral features"""
+        # Compute spectrogram
+        nperseg = int(0.025 * self.sample_rate)
+        f, t, Sxx = signal.spectrogram(audio, self.sample_rate, nperseg=nperseg)
+
+        # Spectral centroid
+        centroids = np.sum(f[:, np.newaxis] * Sxx, axis=0) / (np.sum(Sxx, axis=0) + 1e-10)
+
+        # Spectral rolloff (frequency below which 85% of energy)
+        cumsum = np.cumsum(Sxx, axis=0)
+        total_energy = cumsum[-1, :]
+        rolloff_threshold = 0.85 * total_energy
+
+        rolloffs = []
+        for i in range(Sxx.shape[1]):
+            idx = np.searchsorted(cumsum[:, i], rolloff_threshold[i])
+            rolloffs.append(f[min(idx, len(f)-1)])
+
+        return {
+            "spectral_centroid_mean": np.mean(centroids),
+            "spectral_centroid_std": np.std(centroids),
+            "spectral_rolloff_mean": np.mean(rolloffs),
+            "spectral_rolloff_std": np.std(rolloffs)
+        }
+
+    def _compute_slope(self, values: np.ndarray) -> float:
+        """Compute linear slope of feature trajectory"""
+        if len(values) < 2:
+            return 0
+        x = np.arange(len(values))
+        slope, _ = np.polyfit(x, values, 1)
+        return slope
+```
+
+### Acoustic Emotion Classification
+
+```python
+class AcousticEmotionClassifier:
+    """Classify emotions from acoustic features"""
+
+    def __init__(self):
+        self.feature_extractor = AcousticFeatureExtractor()
+
+        # Feature ranges for emotion classification (simplified heuristics)
+        self.emotion_profiles = {
+            "angry": {
+                "pitch_mean": "high",
+                "pitch_range": "high",
+                "energy_mean": "high",
+                "speech_rate": "high",
+                "spectral_centroid_mean": "high"
+            },
+            "sad": {
+                "pitch_mean": "low",
+                "pitch_range": "low",
+                "energy_mean": "low",
+                "speech_rate": "low",
+                "spectral_centroid_mean": "low"
+            },
+            "happy": {
+                "pitch_mean": "high",
+                "pitch_range": "high",
+                "energy_mean": "medium-high",
+                "speech_rate": "medium-high",
+                "spectral_centroid_mean": "medium"
+            },
+            "frustrated": {
+                "pitch_mean": "medium-high",
+                "pitch_range": "high",
+                "energy_mean": "high",
+                "speech_rate": "high",
+                "energy_std": "high"  # Variable energy
+            },
+            "neutral": {
+                "pitch_mean": "medium",
+                "pitch_range": "medium",
+                "energy_mean": "medium",
+                "speech_rate": "medium",
+                "spectral_centroid_mean": "medium"
+            }
+        }
+
+    def classify(self, audio: np.ndarray) -> Dict:
+        """Classify emotion from audio"""
+        features = self.feature_extractor.extract_features(audio)
+
+        # Normalize features to [0, 1] ranges
+        normalized = self._normalize_features(features)
+
+        # Score each emotion
+        emotion_scores = {}
+        for emotion, profile in self.emotion_profiles.items():
+            score = self._score_emotion(normalized, profile)
+            emotion_scores[emotion] = score
+
+        # Get prediction
+        predicted_emotion = max(emotion_scores, key=emotion_scores.get)
+
+        # Normalize scores to probabilities
+        total = sum(emotion_scores.values())
+        probabilities = {e: s/total for e, s in emotion_scores.items()}
+
+        return {
+            "emotion": predicted_emotion,
+            "confidence": probabilities[predicted_emotion],
+            "probabilities": probabilities,
+            "features": features
+        }
+
+    def _normalize_features(self, features: Dict) -> Dict:
+        """Normalize features to interpretable ranges"""
+        # Reference ranges (should be calibrated on real data)
+        ranges = {
+            "pitch_mean": (100, 300),
+            "pitch_range": (20, 150),
+            "energy_mean": (-10, 0),
+            "speech_rate": (0.3, 0.8),
+            "spectral_centroid_mean": (500, 3000)
+        }
+
+        normalized = {}
+        for feature, value in features.items():
+            if feature in ranges:
+                low, high = ranges[feature]
+                normalized[feature] = (value - low) / (high - low)
+                normalized[feature] = max(0, min(1, normalized[feature]))
+            else:
+                normalized[feature] = value
+
+        return normalized
+
+    def _score_emotion(self, features: Dict, profile: Dict) -> float:
+        """Score how well features match emotion profile"""
+        score = 0
+        matches = 0
+
+        level_ranges = {
+            "low": (0, 0.33),
+            "medium-low": (0.15, 0.5),
+            "medium": (0.33, 0.66),
+            "medium-high": (0.5, 0.85),
+            "high": (0.66, 1.0)
+        }
+
+        for feature, expected_level in profile.items():
+            if feature in features:
+                value = features[feature]
+                low, high = level_ranges[expected_level]
+
+                if low <= value <= high:
+                    score += 1.0
+                else:
+                    # Partial credit based on distance
+                    if value < low:
+                        score += max(0, 1 - (low - value) * 2)
+                    else:
+                        score += max(0, 1 - (value - high) * 2)
+
+                matches += 1
+
+        return score / matches if matches > 0 else 0
+```
+
+## Real-Time Sentiment Monitoring
+
+Continuous sentiment tracking during conversations enables dynamic response adaptation.
+
+### Streaming Sentiment Tracker
+
+```python
+from collections import deque
+from datetime import datetime, timedelta
+from typing import Optional
+import threading
+
+class RealTimeSentimentTracker:
+    """Track sentiment continuously during a conversation"""
+
+    def __init__(
+        self,
+        text_analyzer,
+        acoustic_analyzer,
+        window_size: int = 5,
+        decay_factor: float = 0.9
+    ):
+        self.text_analyzer = text_analyzer
+        self.acoustic_analyzer = acoustic_analyzer
+        self.window_size = window_size
+        self.decay_factor = decay_factor
+
+        # Sentiment history
+        self.text_sentiments = deque(maxlen=window_size)
+        self.acoustic_sentiments = deque(maxlen=window_size)
+
+        # Combined tracking
+        self.sentiment_history = []
+        self.current_sentiment = 0.0
+        self.sentiment_trend = 0.0
+
+        # Thresholds
+        self.alert_threshold = -0.5
+        self.escalation_threshold = -0.7
+
+        # State
+        self.session_start = datetime.now()
+        self.lock = threading.Lock()
+
+    def update(
+        self,
+        text: Optional[str] = None,
+        audio: Optional[np.ndarray] = None,
+        timestamp: Optional[datetime] = None
+    ) -> Dict:
+        """Update sentiment with new input"""
+
+        with self.lock:
+            timestamp = timestamp or datetime.now()
+            text_sentiment = None
+            acoustic_sentiment = None
+
+            # Analyze text
+            if text:
+                text_result = self.text_analyzer.analyze(text)
+                text_sentiment = text_result["score"]
+                self.text_sentiments.append({
+                    "score": text_sentiment,
+                    "timestamp": timestamp,
+                    "text": text[:100]
+                })
+
+            # Analyze audio
+            if audio is not None and len(audio) > 0:
+                acoustic_result = self.acoustic_analyzer.classify(audio)
+                # Map emotion to sentiment score
+                emotion_to_score = {
+                    "angry": -0.8, "frustrated": -0.6, "sad": -0.4,
+                    "neutral": 0.0, "happy": 0.6
+                }
+                acoustic_sentiment = emotion_to_score.get(
+                    acoustic_result["emotion"], 0.0
+                )
+                self.acoustic_sentiments.append({
+                    "score": acoustic_sentiment,
+                    "emotion": acoustic_result["emotion"],
+                    "timestamp": timestamp
+                })
+
+            # Combine sentiments
+            combined = self._compute_combined_sentiment(
+                text_sentiment, acoustic_sentiment
+            )
+
+            # Update history and compute trend
+            self.sentiment_history.append({
+                "combined": combined,
+                "text": text_sentiment,
+                "acoustic": acoustic_sentiment,
+                "timestamp": timestamp
+            })
+
+            self.current_sentiment = combined
+            self.sentiment_trend = self._compute_trend()
+
+            return self.get_status()
+
+    def _compute_combined_sentiment(
+        self,
+        text_score: Optional[float],
+        acoustic_score: Optional[float]
+    ) -> float:
+        """Combine text and acoustic sentiment scores"""
+
+        # Weights for combination
+        text_weight = 0.6
+        acoustic_weight = 0.4
+
+        if text_score is not None and acoustic_score is not None:
+            return text_weight * text_score + acoustic_weight * acoustic_score
+        elif text_score is not None:
+            return text_score
+        elif acoustic_score is not None:
+            return acoustic_score
+        else:
+            return self.current_sentiment  # Keep previous
+
+    def _compute_trend(self) -> float:
+        """Compute sentiment trend (positive = improving, negative = worsening)"""
+
+        if len(self.sentiment_history) < 2:
+            return 0.0
+
+        # Use exponential weighting for recent history
+        recent = self.sentiment_history[-self.window_size:]
+
+        if len(recent) < 2:
+            return 0.0
+
+        # Weighted linear regression
+        weights = [self.decay_factor ** (len(recent) - i - 1) for i in range(len(recent))]
+        scores = [h["combined"] for h in recent]
+
+        # Simple trend calculation
+        first_half = sum(s * w for s, w in zip(scores[:len(scores)//2], weights[:len(weights)//2]))
+        first_weight = sum(weights[:len(weights)//2])
+
+        second_half = sum(s * w for s, w in zip(scores[len(scores)//2:], weights[len(weights)//2:]))
+        second_weight = sum(weights[len(weights)//2:])
+
+        if first_weight > 0 and second_weight > 0:
+            return (second_half / second_weight) - (first_half / first_weight)
+
+        return 0.0
+
+    def get_status(self) -> Dict:
+        """Get current sentiment status"""
+
+        status = {
+            "current_sentiment": self.current_sentiment,
+            "sentiment_label": self._score_to_label(self.current_sentiment),
+            "trend": self.sentiment_trend,
+            "trend_direction": "improving" if self.sentiment_trend > 0.1 else
+                             "worsening" if self.sentiment_trend < -0.1 else "stable",
+            "requires_attention": self.current_sentiment < self.alert_threshold,
+            "requires_escalation": self.current_sentiment < self.escalation_threshold,
+            "session_duration": (datetime.now() - self.session_start).seconds
+        }
+
+        # Add recent history summary
+        if self.sentiment_history:
+            status["recent_sentiments"] = [
+                {"score": h["combined"], "timestamp": h["timestamp"].isoformat()}
+                for h in self.sentiment_history[-3:]
+            ]
+
+        return status
+
+    def _score_to_label(self, score: float) -> str:
+        """Convert sentiment score to label"""
+        if score >= 0.3:
+            return "positive"
+        elif score <= -0.3:
+            return "negative"
+        else:
+            return "neutral"
+
+    def get_sentiment_summary(self) -> Dict:
+        """Get summary statistics for the session"""
+
+        if not self.sentiment_history:
+            return {"status": "no_data"}
+
+        scores = [h["combined"] for h in self.sentiment_history]
+
+        return {
+            "average_sentiment": sum(scores) / len(scores),
+            "min_sentiment": min(scores),
+            "max_sentiment": max(scores),
+            "sentiment_volatility": np.std(scores) if len(scores) > 1 else 0,
+            "num_measurements": len(scores),
+            "negative_turns": sum(1 for s in scores if s < -0.3),
+            "positive_turns": sum(1 for s in scores if s > 0.3),
+            "session_duration_seconds": (datetime.now() - self.session_start).seconds
+        }
+```
+
+### Sentiment-Aware Response Adaptation
+
+```python
+class SentimentAwareResponder:
+    """Adapt responses based on detected sentiment"""
+
+    def __init__(self, sentiment_tracker: RealTimeSentimentTracker):
+        self.tracker = sentiment_tracker
+
+        self.response_modifiers = {
+            "very_negative": {
+                "tone": "empathetic",
+                "urgency": "high",
+                "verbosity": "concise",
+                "acknowledgment": True,
+                "offer_escalation": True
+            },
+            "negative": {
+                "tone": "understanding",
+                "urgency": "medium",
+                "verbosity": "moderate",
+                "acknowledgment": True,
+                "offer_escalation": False
+            },
+            "neutral": {
+                "tone": "professional",
+                "urgency": "normal",
+                "verbosity": "standard",
+                "acknowledgment": False,
+                "offer_escalation": False
+            },
+            "positive": {
+                "tone": "friendly",
+                "urgency": "normal",
+                "verbosity": "standard",
+                "acknowledgment": False,
+                "offer_escalation": False
+            }
+        }
+
+        self.acknowledgment_phrases = {
+            "very_negative": [
+                "I completely understand your frustration.",
+                "I'm really sorry you're experiencing this.",
+                "I can see this has been a difficult situation."
+            ],
+            "negative": [
+                "I understand this can be frustrating.",
+                "I appreciate your patience.",
+                "I'm here to help resolve this."
+            ]
+        }
+
+    def get_response_modifiers(self) -> Dict:
+        """Get modifiers for current response based on sentiment"""
+
+        status = self.tracker.get_status()
+        sentiment = status["current_sentiment"]
+
+        # Determine sentiment category
+        if sentiment <= -0.6:
+            category = "very_negative"
+        elif sentiment <= -0.2:
+            category = "negative"
+        elif sentiment >= 0.3:
+            category = "positive"
+        else:
+            category = "neutral"
+
+        modifiers = self.response_modifiers[category].copy()
+
+        # Add trend-based adjustments
+        if status["trend_direction"] == "worsening":
+            modifiers["urgency"] = "high"
+            modifiers["offer_escalation"] = True
+
+        # Add acknowledgment if needed
+        if modifiers.get("acknowledgment"):
+            phrases = self.acknowledgment_phrases.get(category, [])
+            if phrases:
+                import random
+                modifiers["acknowledgment_phrase"] = random.choice(phrases)
+
+        return modifiers
+
+    def modify_response(self, base_response: str) -> str:
+        """Modify a response based on current sentiment"""
+
+        modifiers = self.get_response_modifiers()
+        modified = base_response
+
+        # Add acknowledgment prefix
+        if modifiers.get("acknowledgment_phrase"):
+            modified = f"{modifiers['acknowledgment_phrase']} {modified}"
+
+        # Add escalation offer
+        if modifiers.get("offer_escalation"):
+            modified += " If you'd prefer, I can connect you with a team member right away."
+
+        return modified
+```
+
+## Escalation Triggers
+
+Define conditions that trigger escalation to human agents or supervisors.
+
+### Escalation Rule Engine
+
+```python
+from enum import Enum
+from dataclasses import dataclass
+from typing import List, Callable
+import time
+
+class EscalationType(Enum):
+    IMMEDIATE = "immediate"      # Transfer immediately
+    OFFER = "offer"              # Offer escalation option
+    ALERT = "alert"              # Alert supervisor but continue
+    LOG = "log"                  # Log for review, no action
+
+@dataclass
+class EscalationRule:
+    name: str
+    condition: Callable
+    escalation_type: EscalationType
+    priority: int
+    message: str
+
+class EscalationEngine:
+    """Engine for detecting and handling escalation conditions"""
+
+    def __init__(self, sentiment_tracker: RealTimeSentimentTracker):
+        self.tracker = sentiment_tracker
+        self.rules = self._create_default_rules()
+        self.escalation_history = []
+        self.session_escalated = False
+
+    def _create_default_rules(self) -> List[EscalationRule]:
+        """Create default escalation rules"""
+
+        rules = []
+
+        # Rule 1: Extreme negative sentiment
+        rules.append(EscalationRule(
+            name="extreme_negative",
+            condition=lambda ctx: ctx["current_sentiment"] < -0.8,
+            escalation_type=EscalationType.IMMEDIATE,
+            priority=1,
+            message="Customer showing extreme dissatisfaction"
+        ))
+
+        # Rule 2: Sustained negative sentiment
+        rules.append(EscalationRule(
+            name="sustained_negative",
+            condition=lambda ctx: (
+                ctx["current_sentiment"] < -0.5 and
+                ctx.get("negative_turn_count", 0) >= 3
+            ),
+            escalation_type=EscalationType.OFFER,
+            priority=2,
+            message="Customer sustained negative sentiment for multiple turns"
+        ))
+
+        # Rule 3: Worsening trend
+        rules.append(EscalationRule(
+            name="worsening_trend",
+            condition=lambda ctx: (
+                ctx["trend"] < -0.3 and
+                ctx["current_sentiment"] < 0
+            ),
+            escalation_type=EscalationType.ALERT,
+            priority=3,
+            message="Sentiment rapidly deteriorating"
+        ))
+
+        # Rule 4: Explicit request phrases
+        rules.append(EscalationRule(
+            name="explicit_request",
+            condition=lambda ctx: ctx.get("explicit_escalation_request", False),
+            escalation_type=EscalationType.IMMEDIATE,
+            priority=1,
+            message="Customer explicitly requested human agent"
+        ))
+
+        # Rule 5: High volatility
+        rules.append(EscalationRule(
+            name="high_volatility",
+            condition=lambda ctx: ctx.get("sentiment_volatility", 0) > 0.5,
+            escalation_type=EscalationType.ALERT,
+            priority=4,
+            message="High sentiment volatility detected"
+        ))
+
+        # Rule 6: Profanity or aggressive language
+        rules.append(EscalationRule(
+            name="aggressive_language",
+            condition=lambda ctx: ctx.get("aggressive_language_detected", False),
+            escalation_type=EscalationType.IMMEDIATE,
+            priority=1,
+            message="Aggressive or inappropriate language detected"
+        ))
+
+        return sorted(rules, key=lambda r: r.priority)
+
+    def check_escalation(
+        self,
+        additional_context: Dict = None
+    ) -> Optional[Dict]:
+        """Check if any escalation rules are triggered"""
+
+        # Build context
+        status = self.tracker.get_status()
+        summary = self.tracker.get_sentiment_summary()
+
+        context = {
+            **status,
+            **summary,
+            **(additional_context or {})
+        }
+
+        # Count negative turns
+        if self.tracker.sentiment_history:
+            context["negative_turn_count"] = sum(
+                1 for h in self.tracker.sentiment_history
+                if h["combined"] < -0.3
+            )
+
+        # Check rules in priority order
+        for rule in self.rules:
+            try:
+                if rule.condition(context):
+                    escalation = {
+                        "triggered": True,
+                        "rule": rule.name,
+                        "type": rule.escalation_type.value,
+                        "priority": rule.priority,
+                        "message": rule.message,
+                        "context": {
+                            "sentiment": context["current_sentiment"],
+                            "trend": context.get("trend", 0),
+                            "turn_count": len(self.tracker.sentiment_history)
+                        }
+                    }
+
+                    self.escalation_history.append({
+                        **escalation,
+                        "timestamp": datetime.now().isoformat()
+                    })
+
+                    if rule.escalation_type == EscalationType.IMMEDIATE:
+                        self.session_escalated = True
+
+                    return escalation
+
+            except Exception as e:
+                # Log error but continue checking rules
+                print(f"Error checking rule {rule.name}: {e}")
+
+        return {"triggered": False}
+
+    def add_custom_rule(self, rule: EscalationRule):
+        """Add a custom escalation rule"""
+        self.rules.append(rule)
+        self.rules = sorted(self.rules, key=lambda r: r.priority)
+
+
+class AggressiveLanguageDetector:
+    """Detect aggressive or inappropriate language"""
+
+    def __init__(self):
+        # Word patterns (in production, use a proper content moderation API)
+        self.aggressive_patterns = [
+            r"\b(stupid|idiot|dumb|useless)\b",
+            r"\b(this is ridiculous|what a joke|waste of time)\b",
+            r"\b(hate this|hate you|hate your)\b",
+        ]
+
+        self.explicit_escalation = [
+            r"\b(speak to|talk to|transfer to)\b.*(human|person|agent|manager|supervisor)",
+            r"\b(get me|want|need)\b.*(human|person|agent|manager|supervisor)",
+            r"\bi want to (escalate|complain)",
+            r"\blet me speak to",
+        ]
+
+    def detect(self, text: str) -> Dict:
+        """Detect aggressive language and escalation requests"""
+        import re
+
+        text_lower = text.lower()
+
+        # Check aggressive patterns
+        aggressive = any(
+            re.search(pattern, text_lower)
+            for pattern in self.aggressive_patterns
+        )
+
+        # Check escalation requests
+        explicit_request = any(
+            re.search(pattern, text_lower)
+            for pattern in self.explicit_escalation
+        )
+
+        return {
+            "aggressive_language_detected": aggressive,
+            "explicit_escalation_request": explicit_request
+        }
+```
+
+### Escalation Handler
+
+```python
+class EscalationHandler:
+    """Handle escalation actions"""
+
+    def __init__(self, escalation_engine: EscalationEngine):
+        self.engine = escalation_engine
+
+    def handle_escalation(
+        self,
+        escalation_result: Dict,
+        session_context: Dict
+    ) -> Dict:
+        """Handle triggered escalation"""
+
+        if not escalation_result.get("triggered"):
+            return {"action": "continue"}
+
+        escalation_type = escalation_result["type"]
+
+        if escalation_type == "immediate":
+            return self._handle_immediate_escalation(
+                escalation_result, session_context
+            )
+        elif escalation_type == "offer":
+            return self._handle_offer_escalation(
+                escalation_result, session_context
+            )
+        elif escalation_type == "alert":
+            return self._handle_alert_escalation(
+                escalation_result, session_context
+            )
+        else:
+            return self._handle_log_escalation(
+                escalation_result, session_context
+            )
+
+    def _handle_immediate_escalation(
+        self,
+        escalation: Dict,
+        context: Dict
+    ) -> Dict:
+        """Handle immediate transfer to human"""
+
+        return {
+            "action": "transfer",
+            "response": "I understand this is important. Let me connect you "
+                       "with a team member who can better assist you.",
+            "handoff_data": {
+                "reason": escalation["message"],
+                "rule_triggered": escalation["rule"],
+                "sentiment_summary": escalation.get("context", {}),
+                "conversation_history": context.get("history", []),
+                "priority": "high"
+            }
+        }
+
+    def _handle_offer_escalation(
+        self,
+        escalation: Dict,
+        context: Dict
+    ) -> Dict:
+        """Offer escalation option to user"""
+
+        return {
+            "action": "offer_escalation",
+            "response": "I want to make sure you get the help you need. "
+                       "Would you like me to connect you with a team member?",
+            "options": ["yes", "no"],
+            "on_yes": {
+                "action": "transfer",
+                "handoff_data": {
+                    "reason": escalation["message"],
+                    "priority": "medium"
+                }
+            },
+            "on_no": {
+                "action": "continue",
+                "response": "No problem. I'm here to help however I can."
+            }
+        }
+
+    def _handle_alert_escalation(
+        self,
+        escalation: Dict,
+        context: Dict
+    ) -> Dict:
+        """Alert supervisor but continue conversation"""
+
+        # In production, send alert to supervisor dashboard
+        return {
+            "action": "alert_and_continue",
+            "alert": {
+                "type": "sentiment_alert",
+                "session_id": context.get("session_id"),
+                "message": escalation["message"],
+                "sentiment": escalation.get("context", {}).get("sentiment"),
+                "priority": "medium"
+            },
+            "response": None  # Continue normal flow
+        }
+
+    def _handle_log_escalation(
+        self,
+        escalation: Dict,
+        context: Dict
+    ) -> Dict:
+        """Log for later review"""
+
+        return {
+            "action": "log",
+            "log_entry": {
+                "session_id": context.get("session_id"),
+                "rule": escalation["rule"],
+                "message": escalation["message"],
+                "context": escalation.get("context", {})
+            }
+        }
+```
+
+## Integration Example
+
+```python
+class SentimentAwareVoiceAgent:
+    """Complete sentiment-aware voice AI agent"""
+
+    def __init__(self):
+        # Initialize components
+        self.text_analyzer = TransformerSentimentAnalyzer()
+        self.acoustic_analyzer = AcousticEmotionClassifier()
+        self.language_detector = AggressiveLanguageDetector()
+
+        self.sentiment_tracker = RealTimeSentimentTracker(
+            self.text_analyzer,
+            self.acoustic_analyzer
+        )
+
+        self.escalation_engine = EscalationEngine(self.sentiment_tracker)
+        self.escalation_handler = EscalationHandler(self.escalation_engine)
+        self.responder = SentimentAwareResponder(self.sentiment_tracker)
+
+    def process_turn(
+        self,
+        text: str,
+        audio: Optional[np.ndarray],
+        session_context: Dict
+    ) -> Dict:
+        """Process a conversation turn with full sentiment awareness"""
+
+        # Update sentiment tracking
+        self.sentiment_tracker.update(text=text, audio=audio)
+
+        # Check for aggressive language
+        language_check = self.language_detector.detect(text)
+
+        # Check escalation triggers
+        escalation_result = self.escalation_engine.check_escalation(
+            additional_context=language_check
+        )
+
+        # Handle escalation if triggered
+        if escalation_result.get("triggered"):
+            escalation_action = self.escalation_handler.handle_escalation(
+                escalation_result,
+                session_context
+            )
+
+            if escalation_action["action"] == "transfer":
+                return escalation_action
+
+        # Get response modifiers
+        modifiers = self.responder.get_response_modifiers()
+
+        return {
+            "action": "continue",
+            "sentiment_status": self.sentiment_tracker.get_status(),
+            "response_modifiers": modifiers,
+            "escalation_checked": escalation_result
+        }
+```
+
+## Next Steps
+
+- **[Intent Recognition](/topics/foundations/language-understanding/intent-recognition)** - Understand user goals
+- **[Entity Extraction](/topics/foundations/language-understanding/entity-extraction)** - Extract specific information
+- **[Dialogue State Tracking](/topics/foundations/language-understanding/dialogue-state)** - Maintain conversation context

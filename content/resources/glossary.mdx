@@ -1,0 +1,888 @@
+---
+title: "Voice AI Glossary and Technical Reference"
+description: "Comprehensive glossary of 120+ Voice AI terms organized by category, including acronym quick reference for speech recognition, synthesis, LLMs, telephony, and business metrics"
+category: "resources"
+tags: ["glossary", "terminology", "reference", "voice-ai", "definitions", "acronyms"]
+relatedTopics: ["voice-ai-fundamentals", "architecture", "speech-recognition", "speech-synthesis"]
+---
+
+# Voice AI Glossary and Technical Reference
+
+The definitive terminology reference for the Voice AI industry, covering 120+ terms across 10 categories.
+
+---
+
+## Quick Navigation
+
+- [Core Technologies](#core-technologies)
+- [Audio Processing](#audio-processing)
+- [Machine Learning / AI](#machine-learning--ai)
+- [Speech Recognition](#speech-recognition)
+- [Speech Synthesis](#speech-synthesis)
+- [Conversation Management](#conversation-management)
+- [Telephony](#telephony)
+- [Performance Metrics](#performance-metrics)
+- [Infrastructure](#infrastructure)
+- [Business Terms](#business-terms)
+- [Acronym Quick Reference](#acronym-quick-reference)
+
+---
+
+## Core Technologies
+
+### ASR (Automatic Speech Recognition)
+Technology that converts spoken language into written text. ASR systems analyze audio input, identify speech patterns, and transcribe them into machine-readable text format. ASR is the foundational input technology for voice AI systems, enabling machines to understand human speech.
+
+**Related Terms:** STT, Speech-to-Text, Transcription, Voice Recognition
+
+### STT (Speech-to-Text)
+The process of converting spoken audio into written text. Often used interchangeably with ASR, though STT typically refers to the output process while ASR encompasses the entire recognition system.
+
+**Related Terms:** ASR, Transcription, Dictation
+
+### TTS (Text-to-Speech)
+Technology that converts written text into synthetic spoken audio. Modern TTS systems use neural networks to produce natural-sounding speech with appropriate prosody, emotion, and intonation.
+
+**Related Terms:** Speech Synthesis, Voice Synthesis, Neural TTS
+
+### VAD (Voice Activity Detection)
+Algorithm that detects the presence or absence of human speech in an audio signal. VAD distinguishes speech segments from silence, background noise, and non-speech sounds. Critical for efficient voice processing.
+
+**Related Terms:** Speech Detection, Endpointing, Silence Detection
+
+### NLU (Natural Language Understanding)
+A subset of NLP focused on machine comprehension of human language meaning. NLU extracts semantic meaning, intent, and entities from text or transcribed speech.
+
+**Related Terms:** Intent Recognition, Entity Extraction, Semantic Analysis, NLP
+
+### NLP (Natural Language Processing)
+A field of AI dealing with the interaction between computers and human language. NLP encompasses both understanding (NLU) and generation (NLG) of natural language.
+
+**Related Terms:** NLU, NLG, Computational Linguistics, Text Processing
+
+### NLG (Natural Language Generation)
+Technology that produces human-readable text from structured data or semantic representations. NLG creates natural, contextually appropriate responses for voice systems.
+
+**Related Terms:** Text Generation, Response Generation, Language Model
+
+### Wake Word
+A specific word or phrase that activates a voice assistant from a standby state (also called Hotword or Trigger Word). Wake words are processed locally using lightweight, always-on models. Examples include "Alexa," "Hey Siri," and "OK Google."
+
+**Related Terms:** Hotword, Trigger Phrase, Keyword Spotting, KWS
+
+### KWS (Keyword Spotting)
+Technology for detecting specific words or phrases within continuous speech. KWS systems are optimized for low-latency, low-power operation to enable always-on listening.
+
+**Related Terms:** Wake Word Detection, Hotword Detection, Voice Trigger
+
+### Conversational AI
+AI systems designed to engage in human-like dialogue, understanding context, managing multi-turn conversations, and providing relevant responses. Combines NLU, dialogue management, and NLG.
+
+**Related Terms:** Dialogue System, Chatbot, Voice Assistant, Virtual Agent
+
+### Voice Assistant
+An AI-powered software agent that responds to voice commands and performs tasks on behalf of users. Integrates ASR, NLU, dialogue management, and TTS into a cohesive user experience.
+
+**Related Terms:** Virtual Assistant, Digital Assistant, Smart Speaker, Voice Bot
+
+### Voice Bot
+An automated conversational agent that interacts with users through voice, typically handling specific tasks or workflows. Commonly deployed in customer service and support scenarios.
+
+**Related Terms:** Voice Agent, Virtual Agent, IVR, Conversational IVR
+
+### Multimodal AI
+AI systems that process and integrate information from multiple input types (modalities) such as voice, text, images, and gestures. Provides richer, more contextual interactions.
+
+**Related Terms:** Cross-Modal, Multimedia AI, Multi-Input Systems
+
+---
+
+## Audio Processing
+
+### Sampling Rate
+The number of audio samples captured per second, measured in Hertz (Hz). Common rates: 8kHz (telephony), 16kHz (wideband speech), 44.1kHz (CD quality), 48kHz (professional audio). Voice AI typically uses 16kHz for optimal balance.
+
+**Related Terms:** Nyquist Frequency, Sample Rate, Audio Resolution
+
+### Nyquist Frequency
+The highest frequency that can be accurately captured at a given sampling rate, equal to half the sampling rate. To capture a 4kHz signal, you need at least 8kHz sampling.
+
+**Related Terms:** Sampling Rate, Aliasing, Bandwidth
+
+### MFCC (Mel-Frequency Cepstral Coefficients)
+A representation of audio that mimics human auditory perception. MFCCs compress spectral information into a compact feature vector commonly used as input to speech recognition systems.
+
+**Related Terms:** Mel Spectrogram, Feature Extraction, Cepstrum
+
+### Mel Spectrogram
+A visual representation of audio frequency content over time, with frequencies mapped to the mel scale (which approximates human pitch perception). Common input to neural speech models.
+
+**Related Terms:** Spectrogram, MFCC, Filterbank, Short-Time Fourier Transform
+
+### Filterbank
+A set of bandpass filters that decompose an audio signal into multiple frequency bands. Mel filterbanks weight these bands according to human perception.
+
+**Related Terms:** Mel Filterbank, MFCC, Frequency Analysis
+
+### Spectrogram
+A visual representation showing how the frequency content of a signal changes over time. X-axis represents time, y-axis represents frequency, and color intensity represents amplitude.
+
+**Related Terms:** Mel Spectrogram, STFT, Time-Frequency Representation
+
+### FFT (Fast Fourier Transform)
+An algorithm that efficiently computes the Discrete Fourier Transform, converting a time-domain signal into its frequency components. Fundamental to audio analysis.
+
+**Related Terms:** DFT, STFT, Frequency Analysis, Spectral Analysis
+
+### STFT (Short-Time Fourier Transform)
+A technique that divides audio into short overlapping segments and applies FFT to each, producing a time-frequency representation.
+
+**Related Terms:** FFT, Spectrogram, Windowing, Overlap-Add
+
+### Audio Codec
+Software or hardware that compresses and decompresses digital audio. Common speech codecs include G.711, G.729, Opus, and Speex.
+
+**Related Terms:** Compression, Encoding, G.711, Opus
+
+### PCM (Pulse Code Modulation)
+A method for digitally representing analog audio signals. PCM samples the amplitude of the audio waveform at regular intervals and quantizes each sample to a discrete value. The standard uncompressed audio format.
+
+**Related Terms:** Sampling, Quantization, WAV, Raw Audio
+
+### Bit Depth
+The number of bits used to represent each audio sample. Higher bit depth provides greater dynamic range. Common values are 16-bit (96dB range) and 24-bit.
+
+**Related Terms:** Dynamic Range, Quantization, Audio Quality
+
+### Noise Reduction
+Signal processing techniques that reduce unwanted background noise while preserving speech. Modern approaches use neural networks trained to separate speech from various noise types.
+
+**Related Terms:** Denoising, Noise Cancellation, Speech Enhancement
+
+### AEC (Acoustic Echo Cancellation)
+Technology that removes echo caused by speaker output being picked up by the microphone. Essential for speakerphone applications and full-duplex conversation.
+
+**Related Terms:** Echo Suppression, Full Duplex, Barge-In
+
+### AGC (Automatic Gain Control)
+A system that automatically adjusts audio signal amplitude to maintain consistent volume levels regardless of speaker distance or volume.
+
+**Related Terms:** Volume Normalization, Dynamic Range Compression, Level Control
+
+### Diarization
+The process of partitioning an audio stream into segments according to speaker identity, answering "who spoke when." Essential for meeting transcription and multi-party analysis.
+
+**Related Terms:** Speaker Segmentation, Speaker Identification, Voice Fingerprinting
+
+### Beamforming
+A signal processing technique using multiple microphones to focus on sound from a specific direction while reducing noise from other directions.
+
+**Related Terms:** Microphone Array, Spatial Filtering, Far-Field Recognition
+
+### Far-Field Recognition
+Speech recognition optimized for audio captured at a distance (typically 1-5 meters). Requires beamforming, noise reduction, and robust acoustic models.
+
+**Related Terms:** Beamforming, Microphone Array, Room Acoustics
+
+---
+
+## Machine Learning / AI
+
+### Transformer
+A neural network architecture based on self-attention mechanisms, enabling parallel processing of sequential data. Foundation of all modern LLMs and speech models.
+
+**Related Terms:** Self-Attention, BERT, GPT, Encoder-Decoder
+
+### Attention Mechanism
+A neural network component that allows models to focus on relevant parts of the input when producing each output. Computes weighted combinations of input elements based on relevance.
+
+**Related Terms:** Self-Attention, Multi-Head Attention, Cross-Attention, Transformer
+
+### LLM (Large Language Model)
+Neural networks with billions of parameters trained on vast text corpora, capable of understanding and generating human-like text. Exhibit emergent capabilities including reasoning and instruction-following.
+
+**Related Terms:** GPT, Foundation Model, Generative AI, Language Model
+
+### LSTM (Long Short-Term Memory)
+A recurrent neural network architecture designed to capture long-range dependencies in sequential data. Uses gating mechanisms to control information flow through memory cells.
+
+**Related Terms:** RNN, GRU, Sequence Modeling, Recurrent Networks
+
+### RNN (Recurrent Neural Network)
+Neural networks designed to process sequential data by maintaining hidden state across time steps. Foundational for early neural speech processing.
+
+**Related Terms:** LSTM, GRU, Sequence-to-Sequence, Hidden State
+
+### CNN (Convolutional Neural Network)
+Neural networks using convolutional layers to extract local patterns from data. In speech, CNNs capture spectral and temporal features from audio representations.
+
+**Related Terms:** Convolution, Feature Extraction, Pooling, Convolutional Layers
+
+### Encoder-Decoder
+A neural architecture where an encoder processes input into a latent representation, and a decoder generates output from that representation. Enables input-output sequences of different lengths.
+
+**Related Terms:** Sequence-to-Sequence, Attention, Latent Representation
+
+### Fine-Tuning
+The process of adapting a pre-trained model to a specific task or domain by continuing training on task-specific data. Leverages knowledge from large-scale pre-training.
+
+**Related Terms:** Transfer Learning, Domain Adaptation, Pre-Training
+
+### Inference
+The process of using a trained model to make predictions on new data. Performance (latency, throughput) is critical for real-time voice applications.
+
+**Related Terms:** Prediction, Model Serving, Latency, Throughput
+
+### Embedding
+A learned dense vector representation that captures semantic or acoustic properties of input data. Speaker embeddings capture voice characteristics; word embeddings capture semantic meaning.
+
+**Related Terms:** Vector Representation, Latent Space, Feature Vector
+
+### Pre-Training
+Initial training phase where models learn general representations from large-scale unlabeled or weakly-labeled data. Creates foundation models for fine-tuning.
+
+**Related Terms:** Self-Supervised Learning, Foundation Model, Transfer Learning
+
+### Quantization
+Technique that reduces model precision from 32-bit floating point to lower bit-widths (16-bit, 8-bit, or 4-bit). Reduces memory footprint and accelerates inference.
+
+**Related Terms:** Model Compression, Pruning, Optimization, INT8
+
+### Pruning
+Technique that removes unnecessary model parameters to reduce model size and computational requirements. Can be structured or unstructured.
+
+**Related Terms:** Model Compression, Sparsity, Quantization, Distillation
+
+### Knowledge Distillation
+Training technique where a smaller "student" model learns to mimic a larger "teacher" model. Transfers knowledge to efficient models suitable for deployment.
+
+**Related Terms:** Model Compression, Teacher-Student, Soft Labels
+
+### Conformer
+A hybrid architecture combining convolutional neural networks with transformers, designed specifically for speech processing. Achieves state-of-the-art ASR accuracy.
+
+**Related Terms:** Transformer, CNN, ASR Architecture, Hybrid Model
+
+### Wav2Vec
+A self-supervised pre-training framework that learns speech representations from unlabeled audio. Enables high-quality ASR with limited labeled data.
+
+**Related Terms:** Self-Supervised Learning, Pre-Training, HuBERT, Representation Learning
+
+---
+
+## Speech Recognition
+
+### WER (Word Error Rate)
+The primary metric for ASR accuracy: (Substitutions + Insertions + Deletions) / Total Words * 100%. Human transcription WER is approximately 5%. Below 10% is typically production-ready.
+
+**Related Terms:** CER, Accuracy, Substitution Error, Deletion Error
+
+### CER (Character Error Rate)
+An accuracy metric calculated at the character level rather than word level. Useful for languages without clear word boundaries.
+
+**Related Terms:** WER, Edit Distance, Levenshtein Distance
+
+### Acoustic Model
+The component of an ASR system that maps audio features to phonetic or linguistic units. Learns the relationship between sound patterns and speech sounds.
+
+**Related Terms:** Language Model, End-to-End ASR, Phoneme Recognition
+
+### Language Model (ASR)
+A model that predicts the probability of word sequences, helping ASR choose among acoustically similar hypotheses. Domain-specific LMs dramatically improve accuracy.
+
+**Related Terms:** Acoustic Model, N-gram, Neural Language Model, Perplexity
+
+### Beam Search
+A search algorithm that maintains multiple hypothesis candidates during decoding. Beam width controls the trade-off between thoroughness and speed.
+
+**Related Terms:** Decoding, Greedy Search, Hypothesis, Pruning
+
+### CTC (Connectionist Temporal Classification)
+A loss function and decoding method that handles alignment between input sequences (audio frames) and output sequences without requiring explicit alignment labels.
+
+**Related Terms:** Alignment, Loss Function, Blank Token, Decoding
+
+### RNN-T (RNN Transducer)
+An end-to-end ASR architecture combining encoder, prediction network, and joint network for streaming recognition. Dominant for on-device streaming ASR.
+
+**Related Terms:** CTC, Transducer, Streaming ASR, End-to-End
+
+### End-to-End ASR
+ASR systems that directly map audio to text using a single neural network, without separate acoustic model, pronunciation dictionary, and language model.
+
+**Related Terms:** Hybrid ASR, CTC, RNN-T, Attention-based ASR
+
+### Streaming ASR
+ASR that produces transcription results incrementally as audio arrives, rather than waiting for the complete utterance. Essential for interactive voice applications.
+
+**Related Terms:** Real-Time ASR, Incremental Recognition, Online ASR
+
+### Offline ASR
+ASR that processes complete audio files after recording, with access to the full utterance including future context. Enables higher accuracy than streaming.
+
+**Related Terms:** Batch Processing, Non-Streaming, Post-Processing
+
+### OOV (Out-of-Vocabulary)
+Words not in the ASR system's vocabulary or training data. Often misrecognized, particularly in traditional systems with fixed vocabularies.
+
+**Related Terms:** Vocabulary, Unknown Word, Rare Word, Subword
+
+### Confidence Score
+A numerical estimate of how confident the ASR system is in its transcription, typically 0 to 1. Helps identify potentially erroneous transcriptions.
+
+**Related Terms:** Posterior Probability, Uncertainty, Quality Estimation
+
+### N-best List
+A ranked list of the N most probable transcription hypotheses from ASR decoding. Provides alternatives when the top hypothesis may be incorrect.
+
+**Related Terms:** Beam Search, Hypothesis, Alternative Transcription
+
+### Punctuation Restoration
+Adding punctuation marks to ASR output, which typically lacks punctuation. Essential for readability and downstream processing.
+
+**Related Terms:** Truecasing, Post-Processing, Readability
+
+### Inverse Text Normalization (ITN)
+Converting spoken-form text to written-form (e.g., "one hundred twenty three dollars" to "$123"). Essential for human-readable transcripts.
+
+**Related Terms:** Text Normalization, Formatting, Post-Processing
+
+---
+
+## Speech Synthesis
+
+### Vocoder
+A signal processing component that converts acoustic features (typically mel spectrograms) into audio waveforms. Quality vocoders (HiFi-GAN, WaveGlow) are critical for natural output.
+
+**Related Terms:** Waveform Generation, HiFi-GAN, WaveNet, Griffin-Lim
+
+### Prosody
+The musical aspects of speech including intonation, stress, rhythm, and timing. Prosody conveys meaning, emotion, and emphasis beyond literal words.
+
+**Related Terms:** Intonation, Stress, Rhythm, Expressiveness
+
+### Fundamental Frequency (F0)
+The lowest frequency of a periodic waveform, perceived as pitch. F0 varies over time to create intonation patterns that convey meaning and emotion.
+
+**Related Terms:** Pitch, Intonation, Prosody, Voice Source
+
+### Phoneme
+The smallest unit of sound that distinguishes meaning in a language. English has approximately 44 phonemes represented by symbols like /p/, /ae/, /sh/.
+
+**Related Terms:** Grapheme, Phonetics, Pronunciation, IPA
+
+### Grapheme
+The smallest unit of a writing system, typically a letter or character. Grapheme-to-phoneme (G2P) conversion maps written text to pronounced sounds.
+
+**Related Terms:** Phoneme, G2P, Character, Letter
+
+### G2P (Grapheme-to-Phoneme)
+The process of converting written text (graphemes) into pronunciation (phonemes). Handles regular spelling patterns and exceptions.
+
+**Related Terms:** Pronunciation Dictionary, Lexicon, Phoneme, Text Analysis
+
+### Voice Cloning
+Technology that creates a synthetic voice matching a specific person's voice characteristics from sample recordings. Modern systems can clone from minutes of audio.
+
+**Related Terms:** Speaker Adaptation, Custom Voice, Voice Synthesis, Deepfake
+
+### Speaker Adaptation
+Techniques for adapting a TTS model to a new speaker's voice using limited data. Enables rapid custom voice creation without full retraining.
+
+**Related Terms:** Voice Cloning, Transfer Learning, Fine-Tuning, Speaker Embedding
+
+### Neural TTS
+TTS systems using deep neural networks to generate natural-sounding speech. Has dramatically improved naturalness compared to older approaches.
+
+**Related Terms:** Deep Learning TTS, End-to-End TTS, Tacotron, VITS
+
+### Concatenative TTS
+TTS approach that synthesizes speech by concatenating pre-recorded speech segments. Quality depends heavily on the unit database.
+
+**Related Terms:** Unit Selection, Diphone, Speech Database, Legacy TTS
+
+### SSML (Speech Synthesis Markup Language)
+An XML-based markup language for controlling TTS output including pronunciation, prosody, volume, speaking rate, and pauses.
+
+**Related Terms:** TTS Control, Pronunciation, Prosody Markup
+
+### Formant
+Resonant frequencies of the vocal tract that characterize vowel sounds. The first two formants (F1, F2) are primary cues for vowel identity.
+
+**Related Terms:** Vocal Tract, Resonance, Vowel, Spectral Envelope
+
+### Duration Model
+A component that predicts how long each phoneme or linguistic unit should be spoken. Critical for natural rhythm and intelligibility.
+
+**Related Terms:** Timing, Prosody, Rhythm, Speaking Rate
+
+### Emotion Synthesis
+TTS capability to generate speech expressing specific emotions (happy, sad, angry, excited). Varies prosody, speaking rate, and voice quality.
+
+**Related Terms:** Expressive TTS, Prosody, Style Transfer, Affective Computing
+
+---
+
+## Conversation Management
+
+### Turn-Taking
+The process of managing when each participant speaks in a conversation. Effective turn-taking avoids awkward pauses and overlapping speech.
+
+**Related Terms:** Endpointing, Barge-In, Dialogue Flow, Conversation Dynamics
+
+### Endpointing
+Detecting when a speaker has finished their turn, distinguishing final silence from mid-utterance pauses. Enables timely responses without interrupting users.
+
+**Related Terms:** VAD, Turn-Taking, Silence Detection, Response Timing
+
+### Barge-In
+The capability for users to interrupt system speech and immediately begin a new command. Requires echo cancellation and speech recognition during playback.
+
+**Related Terms:** Echo Cancellation, Interruption, Full Duplex, User Control
+
+### Dialogue State
+A structured representation of the current conversation context, including gathered information (slots), history, and system beliefs about user goals.
+
+**Related Terms:** State Tracking, Context, Slot Filling, Conversation Memory
+
+### Intent
+The goal or action a user wants to accomplish with their utterance. Intent classification maps input to predefined action categories.
+
+**Related Terms:** Intent Classification, User Goal, Action, NLU
+
+### Slot
+A parameter or piece of information needed to fulfill a user's intent. Slots have types (date, location, name) and may be required or optional.
+
+**Related Terms:** Entity, Parameter, Slot Filling, Named Entity Recognition
+
+### Entity
+A specific piece of information extracted from user input, such as names, dates, locations, or product identifiers. Entities fill slots and parameterize actions.
+
+**Related Terms:** NER, Slot, Named Entity Recognition, Information Extraction
+
+### Context
+The accumulated information from previous turns that influences interpretation of current utterances. Enables pronoun resolution and coherent multi-turn interactions.
+
+**Related Terms:** Dialogue State, History, Coreference, Anaphora Resolution
+
+### Prompt (Dialogue)
+The initial instructions or context provided to an AI system that shapes its behavior, personality, and response style.
+
+**Related Terms:** System Message, Instructions, Persona, Behavior Configuration
+
+### Fallback
+A response used when the system cannot understand or handle user input. Effective fallbacks offer specific guidance rather than generic messages.
+
+**Related Terms:** Error Handling, Disambiguation, Clarification, Recovery
+
+### Clarification
+A system response asking the user to provide additional information or confirm understanding. Resolves ambiguity and fills missing slots.
+
+**Related Terms:** Disambiguation, Confirmation, Slot Filling, Error Recovery
+
+### Confirmation
+Asking users to verify that the system correctly understood their request before taking action. Important for high-stakes or irreversible actions.
+
+**Related Terms:** Verification, Acknowledgment, Clarification, Safety
+
+### Disambiguation
+Resolving ambiguous user input when multiple interpretations are possible. May involve clarifying questions or using context.
+
+**Related Terms:** Clarification, Context, Interpretation, Ambiguity Resolution
+
+### Dialogue Policy
+The decision-making component that determines system actions based on dialogue state. Decides when to ask questions, provide information, or execute actions.
+
+**Related Terms:** Dialogue Management, Decision Making, State Machine, Reinforcement Learning
+
+### Conversation Flow
+The designed sequence of interactions for accomplishing tasks, including prompts, expected responses, and branching logic.
+
+**Related Terms:** Dialogue Design, User Journey, Interaction Design, VUI Design
+
+### Repair
+Strategies for recovering from misunderstandings or errors in conversation. Includes self-correction, user correction, and graceful error handling.
+
+**Related Terms:** Error Recovery, Correction, Clarification, Fallback
+
+---
+
+## Telephony
+
+### SIP (Session Initiation Protocol)
+A signaling protocol for initiating, maintaining, and terminating real-time communication sessions. Foundation of VoIP telephony.
+
+**Related Terms:** VoIP, PBX, Trunk, Call Control
+
+### WebRTC
+A set of standards enabling peer-to-peer audio/video communication directly in web browsers without plugins.
+
+**Related Terms:** Browser Communication, Peer-to-Peer, Real-Time Media
+
+### PSTN (Public Switched Telephone Network)
+The traditional circuit-switched telephone network including landlines and cellular voice. PSTN audio has limited bandwidth (8kHz).
+
+**Related Terms:** Telephony, Circuit-Switched, Phone Network, POTS
+
+### DTMF (Dual-Tone Multi-Frequency)
+The signaling tones generated when pressing telephone keypad buttons. Enables fallback input when voice recognition fails.
+
+**Related Terms:** Touch-Tone, Keypad Input, IVR Navigation
+
+### IVR (Interactive Voice Response)
+An automated telephony system that interacts with callers through voice prompts and DTMF or speech input. Routes calls and handles simple transactions.
+
+**Related Terms:** Voice Menu, Auto Attendant, Phone Bot, Call Automation
+
+### SBC (Session Border Controller)
+A network device that manages VoIP communication across network boundaries, providing security and quality of service.
+
+**Related Terms:** Network Security, VoIP Gateway, Firewall, Border Security
+
+### PBX (Private Branch Exchange)
+A private telephone switching system serving an organization, connecting internal extensions and managing external call routing.
+
+**Related Terms:** Phone System, IP-PBX, Unified Communications, Enterprise Telephony
+
+### VoIP (Voice over IP)
+Technology for delivering voice communications over IP networks instead of traditional circuit-switched networks.
+
+**Related Terms:** Internet Telephony, SIP, IP Communications
+
+### Trunk
+A virtual connection between an organization and a telephony provider for making and receiving calls. SIP trunks replace physical phone lines.
+
+**Related Terms:** SIP, Carrier, Phone Numbers, Connectivity
+
+### DID (Direct Inward Dialing)
+A service that provides individual phone numbers that route directly to specific destinations without going through a menu.
+
+**Related Terms:** Phone Number, Inbound Calling, Number Provisioning
+
+### Call Transfer
+Moving an active call from one destination to another. Can be blind (immediate) or warm (with introduction).
+
+**Related Terms:** Handoff, Escalation, Agent Transfer, Context Passing
+
+### Call Recording
+Capturing audio from telephone calls for quality assurance, compliance, or analytics. Subject to legal consent requirements.
+
+**Related Terms:** Recording Compliance, Quality Assurance, Call Analytics
+
+### Carrier
+A company that provides telephone services and connectivity. Operates networks and offers SIP trunk services.
+
+**Related Terms:** Telco, Provider, SIP Trunk, Connectivity
+
+### G.711
+A standard ITU audio codec for telephony, encoding at 64 kbps with 8kHz sampling. Universally supported but limited quality.
+
+**Related Terms:** Codec, PCMU, PCMA, Telephony Audio
+
+### Opus
+A versatile, open audio codec supporting 6-510 kbps with excellent quality. Preferred for WebRTC and modern VoIP.
+
+**Related Terms:** WebRTC, VoIP Codec, Variable Bitrate, Audio Compression
+
+---
+
+## Performance Metrics
+
+### Latency
+The time delay between an event and the system's response. Conversational AI targets under 500ms; >1000ms feels noticeably slow.
+
+**Related Terms:** Response Time, Delay, TTFB, Processing Time
+
+### TTFT (Time to First Token)
+The latency from receiving input to generating the first output token. Determines perceived responsiveness in streaming responses.
+
+**Related Terms:** First Byte Latency, Response Latency, Streaming
+
+### TTFA (Time to First Audio)
+The latency from user speech completion to the first synthesized audio output. Primary responsiveness metric for voice AI.
+
+**Related Terms:** Response Latency, TTFT, Audio Latency
+
+### RTF (Real-Time Factor)
+The ratio of processing time to audio duration. RTF = 0.5 means 1 second of audio is processed in 0.5 seconds. RTF < 1.0 required for real-time.
+
+**Related Terms:** Processing Speed, Throughput, Efficiency
+
+### MOS (Mean Opinion Score)
+A measure of audio quality based on human perception, rated 1-5. TTS scores range from ~3.0 (older) to ~4.5 (best neural). Human speech: 4.5-5.0.
+
+**Related Terms:** Audio Quality, Naturalness, PESQ, POLQA
+
+### Accuracy
+The percentage of correct predictions. For ASR: 100% - WER. For intent classification: correct predictions / total.
+
+**Related Terms:** WER, Precision, Recall, F1 Score
+
+### Precision
+The proportion of positive predictions that are actually correct. High precision means few false alarms.
+
+**Related Terms:** Recall, F1 Score, False Positive Rate
+
+### Recall
+The proportion of actual positives correctly identified. High recall means few missed detections.
+
+**Related Terms:** Precision, F1 Score, False Negative Rate
+
+### F1 Score
+The harmonic mean of precision and recall. F1 = 2 * (Precision * Recall) / (Precision + Recall).
+
+**Related Terms:** Precision, Recall, Balanced Accuracy
+
+### Throughput
+The number of requests or operations processed per unit time. Measures concurrent sessions, utterances per second, or audio hours processed.
+
+**Related Terms:** Concurrency, Capacity, Scalability, QPS
+
+### P99 Latency
+The latency threshold that 99% of requests complete within. Captures tail latency affecting worst-case experience.
+
+**Related Terms:** Tail Latency, Percentile, SLA, Response Time Distribution
+
+### Uptime
+The percentage of time a system is operational. Expressed in "nines": 99.9% (three nines) = 8.76 hours downtime/year.
+
+**Related Terms:** Availability, Reliability, SLA, Downtime
+
+### Task Completion Rate
+The percentage of user sessions that successfully accomplish their intended goal. The ultimate success metric.
+
+**Related Terms:** Success Rate, Goal Completion, Containment Rate
+
+---
+
+## Infrastructure
+
+### Streaming
+Continuous transmission of data as it's generated rather than waiting for complete batches. Enables real-time voice processing.
+
+**Related Terms:** Real-Time Processing, Chunked Transfer, WebSocket
+
+### WebSocket
+A communication protocol providing full-duplex channels over a single TCP connection. Standard for voice AI APIs.
+
+**Related Terms:** Real-Time Communication, Bidirectional, Persistent Connection
+
+### gRPC
+A high-performance RPC framework using Protocol Buffers and HTTP/2. Suited for high-throughput, low-latency speech processing.
+
+**Related Terms:** RPC, Protocol Buffers, HTTP/2, API
+
+### REST API
+An architectural style for web APIs using HTTP methods and stateless operations. Used for non-streaming voice operations.
+
+**Related Terms:** HTTP API, Web Service, JSON, Endpoint
+
+### Edge Computing
+Processing data near its source rather than in centralized data centers. Reduces latency for voice AI on local devices.
+
+**Related Terms:** On-Device Processing, Local Processing, Fog Computing
+
+### GPU Inference
+Using graphics processing units to accelerate neural network inference. Provides order-of-magnitude speedups over CPU.
+
+**Related Terms:** Hardware Acceleration, CUDA, Inference Optimization, Tensor Cores
+
+### TPU (Tensor Processing Unit)
+Google's custom AI accelerator chip optimized for machine learning workloads. Powers Google's voice AI services.
+
+**Related Terms:** AI Accelerator, Google Cloud, Custom Hardware
+
+### Model Serving
+Infrastructure for deploying trained models to handle inference requests at scale. Manages loading, routing, batching, and scaling.
+
+**Related Terms:** Inference Server, Deployment, MLOps, Serving Infrastructure
+
+### Batching
+Combining multiple inference requests into a single batch for efficient GPU utilization. Trades latency for throughput.
+
+**Related Terms:** Throughput Optimization, GPU Utilization, Latency Trade-off
+
+### Load Balancing
+Distributing incoming requests across multiple servers to ensure no single server is overwhelmed.
+
+**Related Terms:** Horizontal Scaling, High Availability, Traffic Distribution
+
+### Auto-Scaling
+Automatically adjusting running instances based on demand. Adds capacity during peaks, removes during lulls.
+
+**Related Terms:** Elasticity, Dynamic Scaling, Cloud Infrastructure
+
+### Containerization
+Packaging applications with dependencies into isolated containers (e.g., Docker) for consistent deployment.
+
+**Related Terms:** Docker, Kubernetes, Microservices, Deployment
+
+### Kubernetes
+An open-source container orchestration platform for automating deployment, scaling, and management.
+
+**Related Terms:** Container Orchestration, K8s, Cloud Native, Infrastructure
+
+### Microservices
+An architectural approach with small, independent services communicating via APIs. Enables independent scaling of ASR, NLU, TTS.
+
+**Related Terms:** Service-Oriented Architecture, API-First, Distributed Systems
+
+### CDN (Content Delivery Network)
+A distributed network delivering content from locations close to users. Can cache pre-generated TTS audio.
+
+**Related Terms:** Edge Caching, Geographic Distribution, Latency Reduction
+
+---
+
+## Business Terms
+
+### Containment Rate
+The percentage of interactions fully handled by voice AI without human assistance. Primary ROI metric. Rates: 20% (complex) to 80%+ (simple).
+
+**Related Terms:** Automation Rate, Deflection Rate, Self-Service Rate
+
+### AHT (Average Handle Time)
+The average duration of customer interactions including talk time and after-call work. Voice AI aims to reduce AHT.
+
+**Related Terms:** Handle Time, Call Duration, Efficiency
+
+### FCR (First Contact Resolution)
+The percentage of issues resolved during the first interaction without follow-up. Indicates resolution effectiveness.
+
+**Related Terms:** Resolution Rate, First Call Resolution, Customer Effort
+
+### CSAT (Customer Satisfaction)
+A metric measuring satisfaction with an interaction, typically via post-call survey on a 1-5 or 1-10 scale.
+
+**Related Terms:** NPS, Customer Experience, Survey Metrics
+
+### NPS (Net Promoter Score)
+A loyalty metric based on likelihood to recommend. NPS = % Promoters (9-10) - % Detractors (0-6). Range: -100 to +100.
+
+**Related Terms:** CSAT, Customer Loyalty, Brand Perception
+
+### CX (Customer Experience)
+The overall perception customers have of interactions across all touchpoints. Voice AI is often a significant CX touchpoint.
+
+**Related Terms:** User Experience, Customer Journey, Touchpoint
+
+### ROI (Return on Investment)
+A financial metric measuring profitability. ROI = (Net Profit / Cost) * 100%. Voice AI ROI comes from labor reduction and extended hours.
+
+**Related Terms:** Cost Savings, Business Case, TCO
+
+### TCO (Total Cost of Ownership)
+Complete cost of implementing and operating a system over its lifetime, including direct costs, training, and maintenance.
+
+**Related Terms:** ROI, Implementation Cost, Operating Cost
+
+### SLA (Service Level Agreement)
+A contract defining expected service quality metrics including uptime, latency, and support response times.
+
+**Related Terms:** Uptime, Availability, Support, Contract
+
+### ASA (Average Speed of Answer)
+The average time callers wait before their call is answered. Voice AI can dramatically reduce ASA with instant response.
+
+**Related Terms:** Wait Time, Queue Time, Abandonment Rate
+
+### Abandonment Rate
+The percentage of callers who hang up before completing their task. Voice AI reduces abandonment by eliminating wait times.
+
+**Related Terms:** Drop Rate, ASA, Customer Experience
+
+### Self-Service
+Enabling customers to complete tasks independently without agent assistance. Voice AI extends self-service to voice channels.
+
+**Related Terms:** Automation, Containment, IVR, Digital Self-Service
+
+### Agent Assist
+AI technology supporting human agents during interactions with relevant information, suggested responses, and automated work.
+
+**Related Terms:** Agent Augmentation, Co-Pilot, Real-Time Guidance
+
+### Escalation
+Transferring an interaction from voice AI to a human agent when automation cannot resolve the issue.
+
+**Related Terms:** Transfer, Handoff, Agent Routing, Fallback
+
+### Call Volume
+The number of calls received over a given period. Informs capacity planning and ROI calculations.
+
+**Related Terms:** Traffic, Capacity, Peak Volume, Concurrency
+
+### Intent Recognition Rate
+The percentage of utterances where the system correctly identifies the intended action. Above 90% typically required for production.
+
+**Related Terms:** NLU Accuracy, Classification Accuracy, Intent Detection
+
+### Voice Commerce
+Conducting commercial transactions through voice interfaces, including product search, ordering, and payment.
+
+**Related Terms:** Conversational Commerce, Voice Shopping, Voice Payments
+
+### Sentiment Analysis
+Automated detection of emotional tone and attitude in speech, typically classifying as positive, negative, or neutral.
+
+**Related Terms:** Emotion Detection, Tone Analysis, Customer Mood
+
+---
+
+## Acronym Quick Reference
+
+| Acronym | Full Name |
+|---------|-----------|
+| AEC | Acoustic Echo Cancellation |
+| AGC | Automatic Gain Control |
+| AHT | Average Handle Time |
+| API | Application Programming Interface |
+| ASA | Average Speed of Answer |
+| ASR | Automatic Speech Recognition |
+| CDN | Content Delivery Network |
+| CER | Character Error Rate |
+| CNN | Convolutional Neural Network |
+| CSAT | Customer Satisfaction |
+| CTC | Connectionist Temporal Classification |
+| CX | Customer Experience |
+| DID | Direct Inward Dialing |
+| DTMF | Dual-Tone Multi-Frequency |
+| F0 | Fundamental Frequency |
+| FCR | First Contact Resolution |
+| FFT | Fast Fourier Transform |
+| G2P | Grapheme-to-Phoneme |
+| GPU | Graphics Processing Unit |
+| gRPC | gRPC Remote Procedure Call |
+| IVR | Interactive Voice Response |
+| KWS | Keyword Spotting |
+| LLM | Large Language Model |
+| LSTM | Long Short-Term Memory |
+| MFCC | Mel-Frequency Cepstral Coefficients |
+| MOS | Mean Opinion Score |
+| NLG | Natural Language Generation |
+| NLP | Natural Language Processing |
+| NLU | Natural Language Understanding |
+| NPS | Net Promoter Score |
+| OOV | Out-of-Vocabulary |
+| PBX | Private Branch Exchange |
+| PCM | Pulse Code Modulation |
+| PSTN | Public Switched Telephone Network |
+| REST | Representational State Transfer |
+| RNN | Recurrent Neural Network |
+| RNN-T | RNN Transducer |
+| ROI | Return on Investment |
+| RTF | Real-Time Factor |
+| SBC | Session Border Controller |
+| SIP | Session Initiation Protocol |
+| SLA | Service Level Agreement |
+| SSML | Speech Synthesis Markup Language |
+| STFT | Short-Time Fourier Transform |
+| STT | Speech-to-Text |
+| TCO | Total Cost of Ownership |
+| TPU | Tensor Processing Unit |
+| TTFA | Time to First Audio |
+| TTFT | Time to First Token |
+| TTS | Text-to-Speech |
+| VAD | Voice Activity Detection |
+| VoIP | Voice over Internet Protocol |
+| WebRTC | Web Real-Time Communication |
+| WER | Word Error Rate |

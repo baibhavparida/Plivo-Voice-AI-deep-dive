@@ -1,0 +1,673 @@
+---
+title: "Voice AI Benchmarks"
+description: "Comprehensive benchmarks for evaluating Voice AI systems including STT accuracy datasets, TTS quality metrics, LLM latency comparisons, and end-to-end performance testing methodologies"
+category: "resources"
+tags: ["benchmarks", "evaluation", "wer", "mos", "latency", "performance", "datasets", "testing"]
+relatedTopics: ["provider-comparison", "optimization", "model-selection", "glossary"]
+lastUpdated: "2026-01-21"
+---
+
+# Voice AI Benchmarks
+
+Benchmarking is essential for making informed decisions about Voice AI components. This guide covers standard datasets, metrics, provider comparisons, and methodologies for running your own evaluations.
+
+---
+
+## Quick Navigation
+
+- [STT Benchmark Datasets](#stt-benchmark-datasets)
+- [STT Accuracy Comparisons](#stt-accuracy-comparisons)
+- [TTS Quality Benchmarks](#tts-quality-benchmarks)
+- [LLM Latency Benchmarks](#llm-latency-benchmarks)
+- [End-to-End Latency](#end-to-end-latency)
+- [Running Your Own Benchmarks](#running-your-own-benchmarks)
+- [Interpreting Results](#interpreting-results)
+
+---
+
+## STT Benchmark Datasets
+
+Standard datasets enable fair comparisons across Speech-to-Text providers. Each dataset has unique characteristics that test different aspects of ASR performance.
+
+### LibriSpeech
+
+The most widely used ASR benchmark, derived from public domain audiobooks.
+
+| Subset | Hours | Speakers | Characteristics |
+|--------|-------|----------|-----------------|
+| test-clean | 5.4 | 40 | Clear read speech |
+| test-other | 5.1 | 33 | More challenging acoustics |
+| dev-clean | 5.4 | 40 | Development set, clean |
+| dev-other | 5.3 | 33 | Development set, challenging |
+
+**Use For**: Baseline accuracy comparisons, clean speech evaluation.
+
+**Limitations**: Read speech only, no spontaneous conversation, predominantly US English accents.
+
+**Download**: openslr.org/12/
+
+### Common Voice (Mozilla)
+
+Crowdsourced multilingual dataset with diverse speakers and recording conditions.
+
+| Language | Validated Hours | Speakers | Notes |
+|----------|----------------|----------|-------|
+| English | 3,000+ | 90,000+ | Most validated |
+| Spanish | 800+ | 30,000+ | Strong coverage |
+| French | 1,000+ | 25,000+ | Good diversity |
+| German | 1,200+ | 25,000+ | High quality |
+| Mandarin | 300+ | 15,000+ | Growing |
+
+**Use For**: Multilingual evaluation, accent diversity testing, real-world recording conditions.
+
+**Limitations**: Variable audio quality, some transcription errors, crowdsourced inconsistencies.
+
+**Download**: commonvoice.mozilla.org
+
+### Earnings-22
+
+Corporate earnings calls dataset designed for real-world business speech evaluation.
+
+| Metric | Value |
+|--------|-------|
+| Total Hours | 119 |
+| Companies | Fortune 500 |
+| Audio Quality | Telephony (8kHz typical) |
+| Speech Type | Spontaneous, domain-specific |
+
+**Use For**: Business/enterprise ASR evaluation, telephony audio, financial terminology.
+
+**Characteristics**:
+- Real telephony conditions
+- Multiple speakers with overlapping speech
+- Technical financial vocabulary
+- Various accents and speaking styles
+
+**Download**: github.com/revdotcom/speech-datasets
+
+### GigaSpeech
+
+Large-scale English speech recognition corpus from diverse sources.
+
+| Subset | Hours | Sources |
+|--------|-------|---------|
+| XS | 10 | Mixed |
+| S | 250 | Mixed |
+| M | 1,000 | Mixed |
+| L | 2,500 | Mixed |
+| XL | 10,000 | Mixed |
+
+**Sources Include**: Audiobooks, podcasts, YouTube.
+
+**Use For**: Large-scale training evaluation, diverse acoustic conditions.
+
+### FLEURS
+
+Few-shot Learning Evaluation of Universal Representations of Speech - 102 languages.
+
+**Use For**: Multilingual model evaluation, low-resource language testing.
+
+**Coverage**: 102 languages with parallel content.
+
+### SPGISpeech
+
+Financial domain dataset with professional transcriptions.
+
+| Metric | Value |
+|--------|-------|
+| Hours | 5,000 |
+| Domain | Financial services |
+| Quality | Professional transcription |
+
+**Use For**: High-accuracy domain-specific evaluation, financial services applications.
+
+### VoxPopuli
+
+European Parliament proceedings in 23 languages.
+
+**Use For**: Political/formal speech, European language evaluation, long-form content.
+
+---
+
+## STT Accuracy Comparisons
+
+Word Error Rate (WER) comparisons across major providers on standard benchmarks.
+
+### LibriSpeech Test-Clean Results
+
+| Provider/Model | WER (%) | Notes |
+|---------------|---------|-------|
+| OpenAI Whisper Large-v3 | 2.7 | Batch only |
+| NVIDIA Parakeet TDT 0.6B V2 | 3.0 | Open source |
+| Deepgram Nova-3 | 3.2 | Streaming available |
+| AssemblyAI Universal-2 | 3.8 | With Speech Understanding |
+| Google Chirp 3 | 4.1 | 125+ languages |
+| Azure Speech | 4.5 | Custom models available |
+| Amazon Transcribe | 5.2 | AWS integrated |
+
+### LibriSpeech Test-Other Results
+
+| Provider/Model | WER (%) | Notes |
+|---------------|---------|-------|
+| OpenAI Whisper Large-v3 | 5.4 | Robust to noise |
+| Deepgram Nova-3 | 5.8 | Consistent performance |
+| NVIDIA Parakeet TDT 0.6B V2 | 6.1 | Fast inference |
+| AssemblyAI Universal-2 | 7.2 | Streaming mode |
+| Google Chirp 3 | 8.0 | Multilingual optimized |
+| Azure Speech | 8.8 | Variable by region |
+| Amazon Transcribe | 9.5 | Telephony optimized |
+
+### Real-World Benchmark (Earnings-22 / Call Center)
+
+Real-world audio presents significantly different challenges than clean benchmarks.
+
+| Provider | WER (%) | Streaming Latency | Notes |
+|----------|---------|-------------------|-------|
+| Deepgram Nova-3 | 6.8 | ~150ms | Optimized for voice agents |
+| AssemblyAI Universal-2 | 8.5 | ~300ms | Best speech understanding |
+| OpenAI Whisper Large-v3 | 9.2 | N/A (batch) | Hallucination issues |
+| Google Chirp 3 | 10.5 | ~400ms | Best multilingual |
+| Azure Speech | 12.0 | ~350ms | Custom model improves |
+| Amazon Transcribe | 15.0 | ~500ms | AWS native |
+
+### Streaming vs Batch Accuracy
+
+Streaming modes typically have 15-30% higher WER than batch due to limited lookahead context.
+
+| Provider | Batch WER | Streaming WER | Degradation |
+|----------|-----------|---------------|-------------|
+| Deepgram Nova-3 | 5.2% | 6.8% | +30% |
+| AssemblyAI | 6.5% | 8.5% | +31% |
+| Google Chirp | 8.0% | 10.5% | +31% |
+| Azure Speech | 10.0% | 12.0% | +20% |
+
+---
+
+## TTS Quality Benchmarks
+
+Text-to-Speech quality is measured through subjective (human evaluation) and objective (automated) metrics.
+
+### Mean Opinion Score (MOS)
+
+MOS is the gold standard for TTS quality, measured on a 1-5 scale through human evaluation.
+
+| Score | Quality Level | Description |
+|-------|--------------|-------------|
+| 5.0 | Excellent | Indistinguishable from human |
+| 4.5 | Very Good | Minor artifacts, highly natural |
+| 4.0 | Good | Noticeable synthesis, acceptable |
+| 3.5 | Fair | Clearly synthetic but intelligible |
+| 3.0 | Poor | Robotic, difficult listening |
+
+### Provider MOS Scores (2025)
+
+| Provider | Model | MOS Score | Notes |
+|----------|-------|-----------|-------|
+| Human Speech | N/A | 4.5-4.8 | Reference |
+| ElevenLabs | Multilingual v2 | 4.4 | Best expressiveness |
+| Google Cloud | Chirp 3: HD | 4.3 | Excellent multilingual |
+| Azure | Neural HD | 4.2 | Strong SSML support |
+| Cartesia | Sonic 3 | 4.1 | Lowest latency |
+| Deepgram | Aura-2 | 4.0 | Enterprise optimized |
+| OpenAI | gpt-4o-mini-tts | 4.0 | Steerable |
+| Amazon Polly | Generative | 3.9 | AWS integrated |
+| Amazon Polly | Neural | 3.6 | Cost effective |
+
+### TTS Latency Benchmarks (TTFA)
+
+Time to First Audio (TTFA) measures responsiveness.
+
+| Provider | Model | TTFA (p50) | TTFA (p99) |
+|----------|-------|------------|------------|
+| Cartesia | Sonic | 40ms | 90ms |
+| ElevenLabs | Flash v2.5 | 75ms | 150ms |
+| Deepgram | Aura-2 | 100ms | 200ms |
+| ElevenLabs | Turbo v2.5 | 150ms | 300ms |
+| OpenAI | tts-1 | 200ms | 400ms |
+| Google | Neural2 | 250ms | 500ms |
+| Azure | Neural | 250ms | 450ms |
+| ElevenLabs | Multilingual v2 | 300ms | 500ms |
+
+### Objective Quality Metrics
+
+Automated metrics complement MOS evaluations.
+
+| Metric | Description | Good Score |
+|--------|-------------|------------|
+| PESQ | Perceptual Evaluation of Speech Quality | > 3.5 |
+| POLQA | Perceptual Objective Listening Quality | > 3.5 |
+| STOI | Short-Time Objective Intelligibility | > 0.9 |
+| MCD | Mel Cepstral Distortion | < 5.0 dB |
+| F0 RMSE | Pitch prediction error | < 20 Hz |
+
+### Voice Cloning Quality
+
+| Provider | Clone Quality | Min Audio | Time to Clone |
+|----------|--------------|-----------|---------------|
+| ElevenLabs | Excellent | 30 sec | Instant |
+| PlayHT | Very Good | 30 sec | < 30 sec |
+| Coqui XTTS | Good | 6 sec | Minutes |
+| Azure Custom | Very Good | 30 min+ | Hours |
+
+---
+
+## LLM Latency Benchmarks
+
+LLM inference represents approximately 71% of total voice agent latency.
+
+### Time to First Token (TTFT) Comparison
+
+| Model | Provider | TTFT (p50) | TTFT (p99) | Notes |
+|-------|----------|------------|------------|-------|
+| Llama 3.1 70B | Groq | 200ms | 280ms | LPU architecture |
+| Gemini 2.0 Flash | Google | 300ms | 450ms | 1M context |
+| Claude 3.5 Haiku | Anthropic | 350ms | 600ms | Safety focused |
+| GPT-4o-mini | OpenAI | 400ms | 800ms | Best value |
+| Llama 3.1 70B | Together | 450ms | 700ms | Open weights |
+| Llama 3.1 70B | Fireworks | 500ms | 750ms | Flexible |
+| GPT-4o | OpenAI | 700ms | 1500ms | Highest quality |
+| Claude 3.5 Sonnet | Anthropic | 800ms | 1200ms | Best reasoning |
+| Claude 3 Opus | Anthropic | 1200ms | 2000ms | Premium tier |
+
+### Tokens Per Second (TPS) Comparison
+
+| Model | Provider | TPS | Notes |
+|-------|----------|-----|-------|
+| Llama 3.1 70B | Groq | 280-400 | Fastest |
+| Gemini 2.0 Flash | Google | ~250 | Multimodal |
+| GPT-4o-mini | OpenAI | ~100 | Balanced |
+| Claude 3.5 Haiku | Anthropic | ~80 | Compact |
+| Claude 3.5 Sonnet | Anthropic | ~77 | Quality |
+| GPT-4o | OpenAI | ~60 | Premium |
+
+### Voice-Relevant Quality Benchmarks
+
+| Model | Instruction Following | Tool Calling | Conversation Quality |
+|-------|----------------------|--------------|---------------------|
+| GPT-4o | 94% | 92% | Excellent |
+| Claude 3.5 Sonnet | 93% | 90% | Excellent |
+| Gemini 2.0 Flash | 89% | 88% | Very Good |
+| GPT-4o-mini | 87% | 85% | Very Good |
+| Claude 3.5 Haiku | 85% | 83% | Good |
+| Llama 3.1 70B | 82% | 78% | Good |
+
+---
+
+## End-to-End Latency
+
+Complete voice agent latency from user speech to agent audio response.
+
+### Latency Budget Breakdown
+
+```
+Total Latency = T_STT + T_LLM + T_TTS + T_Network
+
+Target: < 800ms for natural conversation
+Acceptable: < 1200ms
+Degraded: > 1500ms (noticeable delays)
+```
+
+### Optimal Stack Latency
+
+| Component | Provider | Latency | Cumulative |
+|-----------|----------|---------|------------|
+| STT | Deepgram Nova-3 | 150ms | 150ms |
+| LLM | Groq Llama 3.1 70B | 200ms | 350ms |
+| TTS | Cartesia Sonic | 50ms | 400ms |
+| Network | Optimized | 50ms | 450ms |
+| **Total** | | | **450ms** |
+
+### Balanced Stack Latency
+
+| Component | Provider | Latency | Cumulative |
+|-----------|----------|---------|------------|
+| STT | Deepgram Nova-3 | 150ms | 150ms |
+| LLM | GPT-4o-mini | 400ms | 550ms |
+| TTS | ElevenLabs Turbo | 150ms | 700ms |
+| Network | Standard | 100ms | 800ms |
+| **Total** | | | **800ms** |
+
+### Quality-Focused Stack Latency
+
+| Component | Provider | Latency | Cumulative |
+|-----------|----------|---------|------------|
+| STT | AssemblyAI | 300ms | 300ms |
+| LLM | Claude 3.5 Sonnet | 800ms | 1100ms |
+| TTS | ElevenLabs v2 | 300ms | 1400ms |
+| Network | Standard | 100ms | 1500ms |
+| **Total** | | | **1500ms** |
+
+### Real-World Latency by Platform
+
+| Platform | Advertised | Measured (p50) | Measured (p99) |
+|----------|------------|----------------|----------------|
+| Vapi | < 800ms | 650ms | 1200ms |
+| Vocode | < 1000ms | 800ms | 1500ms |
+| Retell | < 800ms | 700ms | 1300ms |
+| LiveKit Agents | Varies | 500-900ms | 1000-2000ms |
+| Custom (optimized) | Varies | 400-600ms | 800-1200ms |
+
+---
+
+## Running Your Own Benchmarks
+
+### STT Benchmark Methodology
+
+```python
+import time
+from dataclasses import dataclass
+from typing import List
+import jiwer
+
+@dataclass
+class STTBenchmarkResult:
+    provider: str
+    dataset: str
+    wer: float
+    latency_p50: float
+    latency_p99: float
+    samples: int
+
+def benchmark_stt_provider(
+    provider_client,
+    audio_files: List[str],
+    reference_transcripts: List[str]
+) -> STTBenchmarkResult:
+    """
+    Benchmark an STT provider on a dataset.
+    """
+    hypotheses = []
+    latencies = []
+
+    for audio_file in audio_files:
+        start = time.perf_counter()
+
+        # Transcribe audio
+        result = provider_client.transcribe(audio_file)
+
+        latency = (time.perf_counter() - start) * 1000
+        latencies.append(latency)
+        hypotheses.append(result.text)
+
+    # Calculate WER
+    wer = jiwer.wer(reference_transcripts, hypotheses)
+
+    # Calculate latency percentiles
+    latencies.sort()
+    p50_idx = int(len(latencies) * 0.5)
+    p99_idx = int(len(latencies) * 0.99)
+
+    return STTBenchmarkResult(
+        provider=provider_client.name,
+        dataset="custom",
+        wer=wer * 100,
+        latency_p50=latencies[p50_idx],
+        latency_p99=latencies[p99_idx],
+        samples=len(audio_files)
+    )
+```
+
+### TTS Benchmark Methodology
+
+```python
+@dataclass
+class TTSBenchmarkResult:
+    provider: str
+    ttfa_p50: float
+    ttfa_p99: float
+    total_latency_p50: float
+    samples: int
+
+def benchmark_tts_provider(
+    provider_client,
+    test_sentences: List[str],
+    measure_ttfa: bool = True
+) -> TTSBenchmarkResult:
+    """
+    Benchmark a TTS provider on latency metrics.
+    """
+    ttfa_times = []
+    total_times = []
+
+    for sentence in test_sentences:
+        start = time.perf_counter()
+        first_audio_time = None
+
+        # Stream audio
+        for chunk in provider_client.synthesize_stream(sentence):
+            if first_audio_time is None:
+                first_audio_time = (time.perf_counter() - start) * 1000
+
+        total_time = (time.perf_counter() - start) * 1000
+
+        if first_audio_time:
+            ttfa_times.append(first_audio_time)
+        total_times.append(total_time)
+
+    ttfa_times.sort()
+    total_times.sort()
+
+    return TTSBenchmarkResult(
+        provider=provider_client.name,
+        ttfa_p50=ttfa_times[int(len(ttfa_times) * 0.5)],
+        ttfa_p99=ttfa_times[int(len(ttfa_times) * 0.99)],
+        total_latency_p50=total_times[int(len(total_times) * 0.5)],
+        samples=len(test_sentences)
+    )
+```
+
+### LLM Benchmark Methodology
+
+```python
+@dataclass
+class LLMBenchmarkResult:
+    model: str
+    provider: str
+    ttft_p50: float
+    ttft_p99: float
+    tps: float
+    samples: int
+
+def benchmark_llm_latency(
+    client,
+    model: str,
+    test_prompts: List[str],
+    max_tokens: int = 100
+) -> LLMBenchmarkResult:
+    """
+    Benchmark LLM TTFT and TPS.
+    """
+    ttft_times = []
+    tps_values = []
+
+    for prompt in test_prompts:
+        start = time.perf_counter()
+        first_token_time = None
+        token_count = 0
+
+        # Stream response
+        for chunk in client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            stream=True
+        ):
+            if first_token_time is None and chunk.choices[0].delta.content:
+                first_token_time = (time.perf_counter() - start) * 1000
+            if chunk.choices[0].delta.content:
+                token_count += 1
+
+        total_time = time.perf_counter() - start
+
+        if first_token_time:
+            ttft_times.append(first_token_time)
+        if token_count > 1:
+            # TPS after first token
+            generation_time = total_time - (first_token_time / 1000)
+            tps_values.append(token_count / generation_time)
+
+    ttft_times.sort()
+
+    return LLMBenchmarkResult(
+        model=model,
+        provider=client.base_url,
+        ttft_p50=ttft_times[int(len(ttft_times) * 0.5)],
+        ttft_p99=ttft_times[int(len(ttft_times) * 0.99)],
+        tps=sum(tps_values) / len(tps_values),
+        samples=len(test_prompts)
+    )
+```
+
+### End-to-End Benchmark
+
+```python
+def benchmark_voice_pipeline(
+    stt_client,
+    llm_client,
+    tts_client,
+    test_audio_files: List[str],
+    system_prompt: str
+) -> dict:
+    """
+    Benchmark complete voice pipeline latency.
+    """
+    results = []
+
+    for audio_file in test_audio_files:
+        timings = {}
+
+        # STT
+        start = time.perf_counter()
+        transcript = stt_client.transcribe(audio_file)
+        timings['stt'] = (time.perf_counter() - start) * 1000
+
+        # LLM (measure to first token)
+        start = time.perf_counter()
+        first_token = False
+        response_text = ""
+
+        for chunk in llm_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": transcript.text}
+            ],
+            stream=True
+        ):
+            if not first_token and chunk.choices[0].delta.content:
+                timings['llm_ttft'] = (time.perf_counter() - start) * 1000
+                first_token = True
+            if chunk.choices[0].delta.content:
+                response_text += chunk.choices[0].delta.content
+
+        timings['llm_total'] = (time.perf_counter() - start) * 1000
+
+        # TTS (measure to first audio)
+        start = time.perf_counter()
+        first_audio = False
+
+        for audio_chunk in tts_client.synthesize_stream(response_text):
+            if not first_audio:
+                timings['tts_ttfa'] = (time.perf_counter() - start) * 1000
+                first_audio = True
+
+        timings['tts_total'] = (time.perf_counter() - start) * 1000
+
+        # Calculate end-to-end
+        timings['e2e_to_first_audio'] = (
+            timings['stt'] +
+            timings['llm_ttft'] +
+            timings['tts_ttfa']
+        )
+
+        results.append(timings)
+
+    return aggregate_results(results)
+```
+
+### Benchmark Test Sentences
+
+Use consistent test sentences for comparable results:
+
+```python
+BENCHMARK_SENTENCES = [
+    # Short (< 10 words)
+    "Hello, how can I help you today?",
+    "Your appointment is confirmed for tomorrow.",
+    "Please hold while I check that.",
+
+    # Medium (10-25 words)
+    "I understand you're having trouble with your account. Let me look into that and find a solution for you.",
+    "Based on your preferences, I'd recommend our premium plan which includes unlimited calls and priority support.",
+
+    # Long (25+ words)
+    "Thank you for being a valued customer. I've reviewed your account and applied a twenty percent discount to your next billing cycle. You should see this reflected within two business days.",
+]
+```
+
+---
+
+## Interpreting Results
+
+### WER Interpretation Guide
+
+| WER Range | Interpretation | Production Readiness |
+|-----------|---------------|---------------------|
+| < 5% | Excellent | High-stakes applications |
+| 5-10% | Good | General production |
+| 10-15% | Acceptable | With human fallback |
+| 15-20% | Marginal | Simple use cases only |
+| > 20% | Poor | Not recommended |
+
+**Context Matters**: Real-world WER is typically 1.5-2x higher than clean benchmark WER.
+
+### Latency Interpretation Guide
+
+| Total Latency | User Experience | Use Case Fit |
+|---------------|-----------------|--------------|
+| < 500ms | Excellent | Real-time conversation |
+| 500-800ms | Good | Most voice agents |
+| 800-1200ms | Acceptable | Complex tasks |
+| 1200-1500ms | Marginal | Non-conversational |
+| > 1500ms | Poor | Avoid for real-time |
+
+### P99 vs P50 Considerations
+
+- **P50 (Median)**: Typical user experience
+- **P99**: Worst-case experience (1 in 100 requests)
+
+**Rule of Thumb**: P99 should be < 2x P50 for consistent experience.
+
+### Statistical Significance
+
+Minimum sample sizes for reliable benchmarks:
+
+| Metric | Minimum Samples | Recommended |
+|--------|----------------|-------------|
+| WER | 100 utterances | 500+ |
+| Latency | 50 requests | 200+ |
+| MOS | 20 evaluators | 50+ |
+
+### Benchmark Limitations
+
+1. **Dataset Bias**: Benchmarks may not reflect your specific domain
+2. **Temporal Variation**: Provider performance varies by time of day
+3. **Geographic Impact**: Latency depends on client-server distance
+4. **Load Conditions**: Results may differ under production load
+
+### Recommended Benchmark Protocol
+
+1. **Run at multiple times**: Morning, afternoon, evening
+2. **Use production-like data**: Domain-specific audio/text
+3. **Include warm-up requests**: Discard first 10 requests
+4. **Measure over time**: Weekly benchmarks for trend analysis
+5. **Document conditions**: Region, time, concurrent load
+
+---
+
+## Further Reading
+
+- **[STT Provider Comparison](/topics/foundations/speech-recognition/provider-comparison)** - Detailed provider analysis
+- **[TTS Provider Comparison](/topics/foundations/speech-synthesis/provider-comparison)** - TTS provider details
+- **[LLM Model Selection](/topics/llm-integration/model-selection)** - Model selection framework
+- **[Glossary](/topics/resources/glossary)** - Technical terminology

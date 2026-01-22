@@ -1,0 +1,661 @@
+---
+title: "Conversation State Machines and Context Management"
+description: "Deep dive into state machine design, context management, and interruption handling for voice AI agents"
+---
+
+# Conversation State Machines and Context Management
+
+Voice AI agents must manage complex, real-time state transitions while maintaining conversation context across multiple turns. This guide covers state machine design patterns, multi-layered context management, and robust interruption handling for production voice AI systems.
+
+## Conversation State Machine
+
+A well-designed state machine is the backbone of predictable voice agent behavior. The following state machine captures the essential states and transitions for a conversational voice AI.
+
+```
+                    +-----------+
+                    |   IDLE    |
+                    +-----+-----+
+                          | audio_detected
+                          v
+                    +-----------+
+         +----------|  LISTENING |<------------+
+         |          +-----+-----+              |
+         |                | end_of_utterance   |
+         |                v                    |
+         |          +-----------+              |
+         |          | PROCESSING|              |
+         |          +-----+-----+              |
+         |                | response_ready     |
+         |                v                    |
+         |          +-----------+              |
+         +----------|  SPEAKING |--------------+ user_interruption
+         |          +-----+-----+              |
+         |                | speech_complete    |
+         |                v                    |
+         |          +-----------+              |
+         +----------|   READY   |--------------+
+                    +-----------+
+```
+
+### State Definitions
+
+| State | Description | Entry Actions | Exit Actions |
+|-------|-------------|---------------|--------------|
+| **IDLE** | No active conversation | Stop all processing | Initialize session |
+| **LISTENING** | Capturing user speech | Start VAD, begin STT | Buffer transcript |
+| **PROCESSING** | Generating response | Start LLM inference | Prepare TTS input |
+| **SPEAKING** | Playing agent response | Start TTS playback | Clean up audio buffer |
+| **READY** | Awaiting next turn | Emit turn complete | N/A |
+
+### State Transition Events
+
+```python
+from enum import Enum, auto
+from dataclasses import dataclass
+from typing import Optional, Callable
+
+class State(Enum):
+    IDLE = auto()
+    LISTENING = auto()
+    PROCESSING = auto()
+    SPEAKING = auto()
+    READY = auto()
+
+class Event(Enum):
+    AUDIO_DETECTED = auto()
+    END_OF_UTTERANCE = auto()
+    RESPONSE_READY = auto()
+    SPEECH_COMPLETE = auto()
+    USER_INTERRUPTION = auto()
+    SESSION_TIMEOUT = auto()
+    ERROR = auto()
+
+@dataclass
+class Transition:
+    from_state: State
+    event: Event
+    to_state: State
+    action: Optional[Callable] = None
+    guard: Optional[Callable] = None
+
+class ConversationStateMachine:
+    """Finite state machine for voice conversation management"""
+
+    TRANSITIONS = [
+        Transition(State.IDLE, Event.AUDIO_DETECTED, State.LISTENING),
+        Transition(State.LISTENING, Event.END_OF_UTTERANCE, State.PROCESSING),
+        Transition(State.LISTENING, Event.USER_INTERRUPTION, State.LISTENING),
+        Transition(State.PROCESSING, Event.RESPONSE_READY, State.SPEAKING),
+        Transition(State.SPEAKING, Event.SPEECH_COMPLETE, State.READY),
+        Transition(State.SPEAKING, Event.USER_INTERRUPTION, State.LISTENING),
+        Transition(State.READY, Event.AUDIO_DETECTED, State.LISTENING),
+        Transition(State.READY, Event.SESSION_TIMEOUT, State.IDLE),
+        # Error recovery
+        Transition(State.PROCESSING, Event.ERROR, State.READY),
+        Transition(State.SPEAKING, Event.ERROR, State.READY),
+    ]
+
+    def __init__(self):
+        self.state = State.IDLE
+        self.listeners = []
+        self._build_transition_table()
+
+    def _build_transition_table(self):
+        self.transition_table = {}
+        for t in self.TRANSITIONS:
+            self.transition_table[(t.from_state, t.event)] = t
+
+    def handle_event(self, event: Event, context: dict = None) -> bool:
+        """Process event and transition if valid"""
+        key = (self.state, event)
+
+        if key not in self.transition_table:
+            return False  # Invalid transition
+
+        transition = self.transition_table[key]
+
+        # Check guard condition
+        if transition.guard and not transition.guard(context):
+            return False
+
+        # Execute transition
+        old_state = self.state
+        self.state = transition.to_state
+
+        # Execute action
+        if transition.action:
+            transition.action(context)
+
+        # Notify listeners
+        for listener in self.listeners:
+            listener(old_state, event, self.state)
+
+        return True
+```
+
+## Multi-Layered Context Management
+
+Voice AI systems must maintain multiple context layers simultaneously, each with different lifecycles and purposes.
+
+### Context Layers
+
+```python
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
+
+@dataclass
+class UserProfile:
+    user_id: str
+    name: Optional[str] = None
+    preferences: Dict[str, Any] = field(default_factory=dict)
+    history_summary: Optional[str] = None
+
+@dataclass
+class Turn:
+    role: str  # "user" or "assistant"
+    content: str
+    timestamp: float
+    audio_duration_ms: Optional[int] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class ToolCall:
+    name: str
+    arguments: Dict[str, Any]
+    status: str  # "pending", "executing", "completed", "failed"
+    result: Optional[Any] = None
+
+class VADState:
+    is_speech: bool = False
+    energy_db: float = 0.0
+    silence_duration_ms: int = 0
+
+class ConversationContext:
+    """Multi-layered context management for voice AI"""
+
+    # Session-level context (persistent across turns)
+    session_id: str
+    user_profile: UserProfile
+    conversation_history: List[Turn]
+    accumulated_facts: Dict[str, Any]
+
+    # Turn-level context (reset each turn)
+    current_transcript: str
+    partial_results: List[str]
+    pending_tool_calls: List[ToolCall]
+
+    # Audio-level context (real-time)
+    audio_buffer: 'CircularBuffer'
+    vad_state: VADState
+    energy_history: List[float]
+
+    # LLM context
+    system_prompt: str
+    function_definitions: List[dict]
+    kv_cache: Optional['KVCache']  # For session continuity
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.conversation_history = []
+        self.accumulated_facts = {}
+        self.current_transcript = ""
+        self.partial_results = []
+        self.pending_tool_calls = []
+        self.energy_history = []
+        self.vad_state = VADState()
+
+    def add_turn(self, role: str, content: str, **metadata):
+        """Add a completed turn to history"""
+        turn = Turn(
+            role=role,
+            content=content,
+            timestamp=time.time(),
+            metadata=metadata
+        )
+        self.conversation_history.append(turn)
+
+        # Extract facts for long-term memory
+        self._extract_facts(content)
+
+    def reset_turn_context(self):
+        """Reset turn-level state for new turn"""
+        self.current_transcript = ""
+        self.partial_results = []
+        self.pending_tool_calls = []
+
+    def get_llm_messages(self, max_turns: int = 10) -> List[dict]:
+        """Format context for LLM consumption"""
+        messages = [{"role": "system", "content": self.system_prompt}]
+
+        # Add recent conversation history
+        recent_turns = self.conversation_history[-max_turns:]
+        for turn in recent_turns:
+            messages.append({
+                "role": turn.role,
+                "content": turn.content
+            })
+
+        return messages
+
+    def _extract_facts(self, content: str):
+        """Extract and store facts from conversation"""
+        # Implementation would use NLP or LLM extraction
+        pass
+```
+
+### Context Persistence Strategies
+
+```python
+class ContextPersistence:
+    """Strategies for persisting conversation context"""
+
+    def __init__(self, redis_client, postgres_pool):
+        self.redis = redis_client
+        self.postgres = postgres_pool
+
+    async def save_turn(self, session_id: str, turn: Turn):
+        """Save turn to both cache and persistent storage"""
+        # Real-time cache (Redis) - fast access for current session
+        await self.redis.lpush(
+            f"session:{session_id}:turns",
+            turn.to_json()
+        )
+        await self.redis.expire(f"session:{session_id}:turns", 3600)
+
+        # Persistent storage (Postgres) - for analytics and resumption
+        async with self.postgres.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO conversation_turns
+                (session_id, role, content, timestamp, metadata)
+                VALUES ($1, $2, $3, $4, $5)
+            """, session_id, turn.role, turn.content,
+                turn.timestamp, turn.metadata)
+
+    async def load_context(self, session_id: str) -> ConversationContext:
+        """Load context from cache or persistent storage"""
+        # Try cache first
+        cached_turns = await self.redis.lrange(
+            f"session:{session_id}:turns", 0, -1
+        )
+
+        if cached_turns:
+            return self._reconstruct_from_cache(session_id, cached_turns)
+
+        # Fall back to persistent storage
+        return await self._load_from_database(session_id)
+```
+
+## Interruption Handling (Barge-in)
+
+Barge-in (user interruption) is critical for natural conversation. Users expect to be able to interrupt a verbose AI response.
+
+```
++-------------------------------------------------------------+
+|                   INTERRUPTION HANDLING FLOW                 |
++-------------------------------------------------------------+
+|                                                              |
+|  Agent Speaking --> VAD Detects User Speech --> Energy Check |
+|                                                              |
+|       |                                                      |
+|       v                                                      |
+|  +-----------------------------------------------------+    |
+|  |  DECISION: Is this a true interruption?              |    |
+|  |  - Duration > 200ms?                                 |    |
+|  |  - Energy level sufficient?                          |    |
+|  |  - Not echo/feedback?                                |    |
+|  +-----------------------------------------------------+    |
+|       |                                                      |
+|       v                                                      |
+|  YES: Cancel TTS --> Flush Audio Buffer --> LISTENING       |
+|  NO:  Continue playback, monitor further                    |
+|                                                              |
++-------------------------------------------------------------+
+```
+
+### Interruption Detection
+
+```python
+class InterruptionDetector:
+    """Detect and validate user interruptions during agent speech"""
+
+    def __init__(
+        self,
+        min_duration_ms: int = 200,
+        energy_threshold_db: float = -35.0,
+        echo_detection: bool = True
+    ):
+        self.min_duration_ms = min_duration_ms
+        self.energy_threshold = energy_threshold_db
+        self.echo_detection = echo_detection
+
+        # State tracking
+        self.speech_start_time = None
+        self.is_potential_interruption = False
+
+    async def process(
+        self,
+        audio_chunk: bytes,
+        agent_audio_playing: bytes = None
+    ) -> bool:
+        """
+        Process audio chunk and determine if interruption occurred.
+
+        Returns True if valid interruption detected.
+        """
+        # Calculate energy
+        energy_db = self._calculate_energy(audio_chunk)
+
+        # Check for echo if agent is speaking
+        if agent_audio_playing and self.echo_detection:
+            if self._is_echo(audio_chunk, agent_audio_playing):
+                return False
+
+        # Check if speech detected
+        is_speech = energy_db > self.energy_threshold
+
+        if is_speech and not self.is_potential_interruption:
+            # Potential interruption starting
+            self.speech_start_time = time.time()
+            self.is_potential_interruption = True
+
+        elif is_speech and self.is_potential_interruption:
+            # Check duration threshold
+            duration_ms = (time.time() - self.speech_start_time) * 1000
+            if duration_ms >= self.min_duration_ms:
+                self.is_potential_interruption = False
+                return True  # Valid interruption
+
+        elif not is_speech:
+            # Speech stopped before threshold
+            self.is_potential_interruption = False
+            self.speech_start_time = None
+
+        return False
+
+    def _calculate_energy(self, audio_chunk: bytes) -> float:
+        """Calculate RMS energy in dB"""
+        samples = np.frombuffer(audio_chunk, dtype=np.int16)
+        rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2))
+        return 20 * np.log10(max(rms, 1e-10))
+
+    def _is_echo(self, mic_audio: bytes, speaker_audio: bytes) -> bool:
+        """Detect if mic audio is echo of speaker audio"""
+        # Cross-correlation based echo detection
+        mic = np.frombuffer(mic_audio, dtype=np.int16)
+        spk = np.frombuffer(speaker_audio, dtype=np.int16)
+
+        correlation = np.correlate(mic, spk, mode='valid')
+        max_corr = np.max(np.abs(correlation))
+        threshold = 0.7 * np.sqrt(np.sum(mic**2) * np.sum(spk**2))
+
+        return max_corr > threshold
+```
+
+### Interruption Handler
+
+```python
+class InterruptionHandler:
+    """Handle interruption events and coordinate pipeline cancellation"""
+
+    def __init__(self, pipeline_components: dict):
+        self.tts = pipeline_components['tts']
+        self.llm = pipeline_components['llm']
+        self.audio_output = pipeline_components['audio_output']
+        self.state_machine = pipeline_components['state_machine']
+        self.metrics = pipeline_components['metrics']
+
+    async def handle_interruption(self, context: ConversationContext):
+        """
+        Handle user interruption during agent speech.
+        Must be fast (under 100ms) to feel responsive.
+        """
+        start_time = time.perf_counter()
+
+        # 1. Stop TTS synthesis immediately
+        await self.tts.cancel()
+
+        # 2. Flush audio output buffer
+        await self.audio_output.flush()
+
+        # 3. Cancel any pending LLM generation
+        await self.llm.cancel()
+
+        # 4. Log partial response (for analytics)
+        partial_response = self.tts.get_generated_text()
+        context.add_turn(
+            role="assistant",
+            content=partial_response,
+            interrupted=True
+        )
+
+        # 5. Transition state machine
+        self.state_machine.handle_event(Event.USER_INTERRUPTION)
+
+        # 6. Record metrics
+        latency_ms = (time.perf_counter() - start_time) * 1000
+        self.metrics.record("interruption_latency_ms", latency_ms)
+
+        return partial_response
+```
+
+### Interruption Policies
+
+Different use cases may require different interruption behaviors:
+
+```python
+from enum import Enum
+
+class InterruptionPolicy(Enum):
+    IMMEDIATE = "immediate"      # Stop immediately on any speech
+    CONFIRMED = "confirmed"      # Wait for duration threshold
+    KEYWORD = "keyword"          # Only interrupt on specific phrases
+    DISABLED = "disabled"        # Never allow interruption
+
+class InterruptionPolicyManager:
+    """Manage different interruption policies"""
+
+    def __init__(self, default_policy: InterruptionPolicy = InterruptionPolicy.CONFIRMED):
+        self.default_policy = default_policy
+        self.keyword_detector = KeywordDetector(["stop", "wait", "hold on"])
+
+    async def should_interrupt(
+        self,
+        audio: bytes,
+        policy: InterruptionPolicy = None,
+        context: dict = None
+    ) -> bool:
+        """Determine if interruption should occur based on policy"""
+        policy = policy or self.default_policy
+
+        if policy == InterruptionPolicy.DISABLED:
+            return False
+
+        if policy == InterruptionPolicy.IMMEDIATE:
+            return self._has_any_speech(audio)
+
+        if policy == InterruptionPolicy.CONFIRMED:
+            return await self._confirmed_speech(audio)
+
+        if policy == InterruptionPolicy.KEYWORD:
+            transcript = await self.stt.quick_transcribe(audio)
+            return self.keyword_detector.detect(transcript)
+
+        return False
+```
+
+## Turn Detection and Endpointing
+
+Accurately detecting when a user has finished speaking is crucial for responsive conversations.
+
+### Voice Activity Detection Integration
+
+```python
+class TurnDetector:
+    """Detect end of user turn for conversation management"""
+
+    def __init__(
+        self,
+        silence_threshold_ms: int = 700,
+        min_turn_duration_ms: int = 500,
+        use_semantic_endpointing: bool = True
+    ):
+        self.silence_threshold = silence_threshold_ms
+        self.min_turn_duration = min_turn_duration_ms
+        self.use_semantic = use_semantic_endpointing
+
+        self.vad = SileroVAD()
+        self.semantic_model = None
+        if use_semantic_endpointing:
+            self.semantic_model = EndpointingModel.load()
+
+        # State
+        self.turn_start_time = None
+        self.last_speech_time = None
+        self.accumulated_transcript = ""
+
+    async def process_audio(
+        self,
+        audio_chunk: bytes,
+        partial_transcript: str = None
+    ) -> tuple[bool, str]:
+        """
+        Process audio and return (is_end_of_turn, reason).
+
+        Returns:
+            (True, "silence") - Silence threshold exceeded
+            (True, "semantic") - Semantic end detected
+            (False, "") - Turn continues
+        """
+        is_speech = self.vad.is_speech(audio_chunk)
+
+        if is_speech:
+            if self.turn_start_time is None:
+                self.turn_start_time = time.time()
+            self.last_speech_time = time.time()
+
+            if partial_transcript:
+                self.accumulated_transcript = partial_transcript
+
+        # Check silence duration
+        if self.last_speech_time:
+            silence_duration = (time.time() - self.last_speech_time) * 1000
+
+            if silence_duration >= self.silence_threshold:
+                turn_duration = (time.time() - self.turn_start_time) * 1000
+
+                if turn_duration >= self.min_turn_duration:
+                    # Check semantic endpointing for borderline cases
+                    if self.use_semantic and silence_duration < self.silence_threshold * 1.5:
+                        if not self._is_semantic_endpoint(self.accumulated_transcript):
+                            # Extend threshold for incomplete thoughts
+                            return (False, "")
+
+                    self._reset()
+                    return (True, "silence")
+
+        # Check semantic endpoint during short pauses
+        if self.use_semantic and partial_transcript:
+            if self._is_semantic_endpoint(partial_transcript):
+                return (True, "semantic")
+
+        return (False, "")
+
+    def _is_semantic_endpoint(self, transcript: str) -> bool:
+        """Use ML model to detect semantic end of utterance"""
+        if not self.semantic_model:
+            return False
+
+        # Model predicts probability of turn completion
+        prob = self.semantic_model.predict(transcript)
+        return prob > 0.85
+
+    def _reset(self):
+        """Reset state for next turn"""
+        self.turn_start_time = None
+        self.last_speech_time = None
+        self.accumulated_transcript = ""
+```
+
+## Error Recovery and Graceful Degradation
+
+### Error State Handling
+
+```python
+class ErrorRecoveryManager:
+    """Manage error recovery and graceful degradation"""
+
+    ERROR_RESPONSES = {
+        "stt_failed": "I'm having trouble hearing you clearly. Could you repeat that?",
+        "llm_failed": "I'm having trouble thinking right now. Let me try that again.",
+        "tts_failed": "I'm having trouble speaking right now.",
+        "timeout": "I'm sorry, that's taking longer than expected. Let me try again.",
+        "unknown": "Something went wrong. Let me start over.",
+    }
+
+    def __init__(self, pipeline, state_machine, metrics):
+        self.pipeline = pipeline
+        self.state_machine = state_machine
+        self.metrics = metrics
+        self.consecutive_errors = 0
+        self.max_consecutive_errors = 3
+
+    async def handle_error(
+        self,
+        error: Exception,
+        context: ConversationContext
+    ) -> str:
+        """Handle pipeline error and return recovery response"""
+        error_type = self._classify_error(error)
+        self.consecutive_errors += 1
+
+        # Log error
+        self.metrics.record_error(error_type, str(error))
+
+        # Check for repeated failures
+        if self.consecutive_errors >= self.max_consecutive_errors:
+            return await self._escalate_to_human(context)
+
+        # Get appropriate response
+        response = self.ERROR_RESPONSES.get(error_type, self.ERROR_RESPONSES["unknown"])
+
+        # Transition state machine
+        self.state_machine.handle_event(Event.ERROR)
+
+        return response
+
+    def _classify_error(self, error: Exception) -> str:
+        """Classify error type for appropriate handling"""
+        error_str = str(error).lower()
+
+        if "stt" in error_str or "transcription" in error_str:
+            return "stt_failed"
+        if "llm" in error_str or "generation" in error_str:
+            return "llm_failed"
+        if "tts" in error_str or "synthesis" in error_str:
+            return "tts_failed"
+        if "timeout" in error_str:
+            return "timeout"
+
+        return "unknown"
+
+    async def _escalate_to_human(self, context: ConversationContext) -> str:
+        """Escalate to human agent after repeated failures"""
+        await self.pipeline.request_human_handoff(context)
+        return "I'm having some technical difficulties. Let me connect you with someone who can help."
+
+    def reset_error_count(self):
+        """Reset error count after successful turn"""
+        self.consecutive_errors = 0
+```
+
+## Summary
+
+Effective state machine design and context management are foundational to building reliable voice AI agents:
+
+1. **State machines** provide predictable behavior through well-defined states and transitions
+2. **Multi-layered context** supports different information lifecycles (session, turn, audio)
+3. **Interruption handling** enables natural conversation flow with responsive barge-in
+4. **Turn detection** balances responsiveness with accurate utterance boundary detection
+5. **Error recovery** maintains conversation continuity through graceful degradation
+
+The next section covers orchestration frameworks that implement these patterns at scale.

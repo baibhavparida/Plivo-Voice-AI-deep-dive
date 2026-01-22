@@ -1,0 +1,438 @@
+---
+title: "Voice Activity Detection (VAD)"
+description: "Deep dive into VAD fundamentals, algorithms, configuration, and implementation for voice AI systems"
+category: "infrastructure"
+tags: ["vad", "voice-activity-detection", "audio-processing", "speech-detection", "webrtc", "silero", "pyannote"]
+relatedTopics: ["signal-processing", "noise-cancellation", "turn-detection", "stt-fundamentals"]
+---
+
+# Voice Activity Detection (VAD)
+
+Voice Activity Detection (VAD) is the foundational signal processing technique that determines the presence or absence of human speech within an audio signal. As the first processing stage in voice AI systems, VAD serves as the "ears gatekeeper" that determines what audio reaches downstream components like STT and NLU.
+
+## How VAD Works
+
+VAD produces a binary decision or probability score indicating speech presence:
+
+```
+Given an audio signal x(t) sampled at rate fs:
+
+D(t) = 1 if speech present at time t
+D(t) = 0 if speech absent at time t
+
+Or as Speech Presence Probability (SPP):
+P(speech|x(t)) in [0, 1]
+```
+
+A threshold converts probability to binary decision: `D(t) = 1 if P(speech|x(t)) > threshold`.
+
+### Why VAD Quality Affects Everything Downstream
+
+| VAD Error Type | Downstream Impact |
+|----------------|-------------------|
+| False Negatives (missing speech) | Truncated utterances, incomplete transcriptions |
+| False Positives (false triggers) | Unnecessary STT processing, increased latency |
+| Late Detection | Clipped beginnings of utterances |
+| Premature Cutoff | Incomplete sentences, misunderstood intent |
+
+## Audio Signal Characteristics
+
+Understanding acoustic differences between speech and non-speech is fundamental to VAD design.
+
+### Temporal Characteristics
+
+| Property | Speech | Non-Speech (Noise) |
+|----------|--------|-------------------|
+| Energy Envelope | Highly variable, pulsed | Relatively constant |
+| Duration | Syllables: 100-300ms | Continuous or random |
+| Periodicity | Quasi-periodic (voiced) | Random or continuous |
+| Modulation | 3-8 Hz syllabic rate | No characteristic rate |
+
+### Spectral Characteristics
+
+| Property | Speech | Non-Speech |
+|----------|--------|------------|
+| Frequency Range | 100 Hz - 8 kHz | Varies widely |
+| Formants | Clear resonance patterns | No formant structure |
+| Harmonic Structure | Present in voiced segments | Typically absent |
+| Spectral Tilt | -6 to -12 dB/octave rolloff | Environment-dependent |
+
+## Feature Extraction for VAD
+
+### Energy-Based Features
+
+**Short-Time Energy (STE)** measures signal power within a frame:
+
+```
+E(n) = sum over m of |x(n*H + m) * w(m)|^2
+```
+
+Where:
+- `x(n)` = input signal samples
+- `w(m)` = window function (Hamming, Hann)
+- `N` = frame length (typically 20-30ms)
+- `H` = hop size (typically 10ms)
+
+**RMS Energy:**
+
+```
+E_rms(n) = sqrt(1/N * sum(x^2(n*H + m)))
+```
+
+### Zero-Crossing Rate (ZCR)
+
+Measures the rate of sign changes in the time-domain signal:
+
+- **Voiced speech:** Low ZCR (100-300 crossings/sec) due to quasi-periodic structure
+- **Unvoiced speech:** High ZCR (1000-5000 crossings/sec) due to noise-like characteristics
+- **Silence:** Variable, often low but depends on background noise
+
+### Spectral Features
+
+**Spectral Entropy** quantifies the "peakiness" of the spectrum:
+
+```
+H(n) = -sum(P(n,k) * log2(P(n,k)))
+```
+
+Where P(n,k) is the normalized power spectrum.
+
+- **Speech:** Lower entropy (concentrated energy at formants)
+- **Noise:** Higher entropy (flat, diffuse spectrum)
+
+**Spectral Flatness Measure (SFM):**
+
+```
+SFM -> 1: Flat spectrum (noise-like)
+SFM -> 0: Peaked spectrum (tonal/harmonic)
+```
+
+## VAD Algorithms and Architectures
+
+### Traditional DSP Approaches
+
+#### Energy Threshold Detection
+
+```python
+def energy_vad(signal, frame_size, hop_size, threshold):
+    vad_decisions = []
+    num_frames = (len(signal) - frame_size) // hop_size + 1
+
+    for i in range(num_frames):
+        start = i * hop_size
+        frame = signal[start:start + frame_size]
+
+        energy = np.sum(frame ** 2)
+        log_energy = 10 * np.log10(energy + 1e-10)
+
+        vad_decisions.append(1 if log_energy > threshold else 0)
+
+    return vad_decisions
+```
+
+**Advantages:** Simple, fast, low latency
+**Disadvantages:** Sensitive to noise, requires threshold tuning
+
+### WebRTC VAD (GMM-Based)
+
+Google's production VAD implementation uses a Gaussian Mixture Model approach with 6-band spectral analysis:
+
+| Attribute | Details |
+|-----------|---------|
+| Architecture | Gaussian Mixture Model (GMM) |
+| Model Size | ~158 KB |
+| Sample Rates | 8, 16, 32, 48 kHz |
+| Frame Sizes | 10, 20, 30 ms |
+| Latency | < 1ms per frame |
+| License | BSD 3-Clause |
+
+**Aggressiveness Modes:**
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| 0 | Quality mode | High-quality audio, low noise |
+| 1 | Low bitrate | Standard conditions |
+| 2 | Aggressive | Moderate noise |
+| 3 | Very aggressive | High noise environments |
+
+```python
+import webrtcvad
+
+vad = webrtcvad.Vad()
+vad.set_mode(2)  # Aggressiveness 0-3
+
+sample_rate = 16000
+frame_duration_ms = 30
+frame_size = int(sample_rate * frame_duration_ms / 1000)
+
+is_speech = vad.is_speech(audio_frame, sample_rate)
+```
+
+### Silero VAD
+
+Deep neural network-based VAD with enterprise-grade performance:
+
+| Attribute | Details |
+|-----------|---------|
+| Architecture | DNN with LSTM layer |
+| Model Size | 1-2 MB (JIT/ONNX) |
+| Sample Rates | 8, 16 kHz |
+| Training Data | 100+ languages |
+| Processing | < 1ms for 30ms chunks on CPU |
+| Output | Probability [0, 1] |
+| License | MIT |
+
+**Performance Benchmarks (ONNX):**
+
+| Configuration | Audio | Time | Speed |
+|--------------|-------|------|-------|
+| 1 thread | 5071 sec | 6.4 sec | 800x real-time |
+| 4 threads | 5071 sec | 4.1 sec | 1240x real-time |
+
+**Accuracy (LibriSpeech + DEMAND noise @ 0dB SNR):**
+- 90%+ TPR at 5% FPR (vs ~50% for WebRTC)
+
+```python
+import torch
+
+model, utils = torch.hub.load(
+    repo_or_dir='snakers4/silero-vad',
+    model='silero_vad',
+    force_reload=False
+)
+
+(get_speech_timestamps, save_audio, read_audio,
+ VADIterator, collect_chunks) = utils
+
+wav = read_audio('audio.wav', sampling_rate=16000)
+
+speech_timestamps = get_speech_timestamps(
+    wav, model,
+    threshold=0.5,
+    min_speech_duration_ms=250,
+    min_silence_duration_ms=100
+)
+
+# For streaming
+vad_iterator = VADIterator(model)
+for chunk in audio_chunks:
+    speech_dict = vad_iterator(chunk)
+```
+
+### Pyannote VAD
+
+State-of-the-art VAD through the PyanNet segmentation model:
+
+| Attribute | Details |
+|-----------|---------|
+| Architecture | SincNet + LSTM |
+| Model Size | ~100+ MB |
+| Sample Rates | 16 kHz |
+| Input Length | 10 seconds |
+| Output | Frame-level probabilities + timestamps |
+| License | MIT |
+
+**Capabilities:**
+- Voice Activity Detection
+- Overlapped Speech Detection
+- Speaker Change Detection
+- Speaker Diarization
+
+```python
+from pyannote.audio import Pipeline
+
+pipeline = Pipeline.from_pretrained(
+    "pyannote/voice-activity-detection",
+    use_auth_token="YOUR_HF_TOKEN"
+)
+
+vad = pipeline("audio.wav")
+
+for speech in vad.get_timeline().support():
+    print(f"Speech from {speech.start:.2f}s to {speech.end:.2f}s")
+
+# Custom parameters
+pipeline.instantiate({
+    "onset": 0.6,
+    "offset": 0.4,
+    "min_duration_on": 0.1,
+    "min_duration_off": 0.1
+})
+```
+
+## VAD Configuration for Voice Agents
+
+### Sensitivity Tuning
+
+**Conservative (High Sensitivity):**
+- Lower thresholds
+- More false positives (noise detected as speech)
+- Fewer false negatives (less speech missed)
+- Use when missing speech is costly
+
+**Aggressive (Low Sensitivity):**
+- Higher thresholds
+- Fewer false positives
+- More false negatives
+- Use when false triggers are costly
+
+```python
+vad_config = {
+    "conservative": {
+        "onset_threshold": 0.3,
+        "offset_threshold": 0.2,
+        "min_speech_duration_ms": 100,
+        "min_silence_duration_ms": 500
+    },
+    "balanced": {
+        "onset_threshold": 0.5,
+        "offset_threshold": 0.35,
+        "min_speech_duration_ms": 250,
+        "min_silence_duration_ms": 300
+    },
+    "aggressive": {
+        "onset_threshold": 0.7,
+        "offset_threshold": 0.5,
+        "min_speech_duration_ms": 500,
+        "min_silence_duration_ms": 150
+    }
+}
+```
+
+### Frame Size and Hop Length Selection
+
+| Frame Size | Hop Length | Latency | Accuracy | Use Case |
+|------------|------------|---------|----------|----------|
+| 10 ms | 10 ms | Very Low | Lower | Ultra-low latency |
+| 20 ms | 10 ms | Low | Good | Real-time communication |
+| 30 ms | 10 ms | Low | Better | Standard voice AI |
+| 50 ms | 25 ms | Medium | Higher | Quality-focused |
+
+### Hangover Time Configuration
+
+Hangover time keeps VAD active after speech ends to prevent premature cutoff:
+
+| Application | Hangover Time | Rationale |
+|-------------|--------------|-----------|
+| Speech coding | 150-250 ms | Balance bandwidth and quality |
+| ASR | 300-500 ms | Capture complete utterances |
+| Voice assistant | 500-1000 ms | Handle thinking pauses |
+| Dictation | 1000-2000 ms | Allow natural pauses |
+
+```python
+def adaptive_hangover(snr_estimate, base_hangover=300):
+    if snr_estimate > 20:
+        return base_hangover
+    elif snr_estimate > 10:
+        return base_hangover * 1.5
+    elif snr_estimate > 5:
+        return base_hangover * 2.0
+    else:
+        return base_hangover * 2.5
+```
+
+## Performance Metrics
+
+### Frame-Level Metrics
+
+| Metric | Formula | Target |
+|--------|---------|--------|
+| True Positive Rate | TP / (TP + FN) | > 0.95 |
+| False Positive Rate | FP / (FP + TN) | < 0.05 |
+| Frame Error Rate | (FP + FN) / Total | < 0.05 |
+| F1 Score | 2 * (Precision * Recall) / (Precision + Recall) | > 0.95 |
+
+### Latency Metrics
+
+| Metric | Target | Description |
+|--------|--------|-------------|
+| Detection Delay | < 100ms | Time from speech onset to detection |
+| Hangover Time | 200-500ms | Time VAD remains active after speech ends |
+| End-to-End Latency | < 100ms | Total processing latency |
+
+## VAD Comparison Matrix
+
+| Feature | WebRTC | Silero | Cobra | Pyannote |
+|---------|--------|--------|-------|----------|
+| Accuracy (clean) | Good | Excellent | Excellent | Excellent |
+| Accuracy (noisy) | Poor | Very Good | Very Good | Very Good |
+| Latency | < 1ms | < 1ms | < 1ms | ~100ms+ |
+| CPU (desktop) | Minimal | Low | Low | Medium |
+| CPU (embedded) | Low | High | Low | N/A |
+| Model Size | 158 KB | 1-2 MB | Small | 100+ MB |
+| Streaming | Yes | Yes | Yes | Limited |
+| Multi-speaker | No | No | No | Yes |
+| License | BSD | MIT | Commercial | MIT |
+| Recommended For | Real-time, embedded | Production, noisy | Embedded | Diarization |
+
+## Common Challenges and Solutions
+
+### False Triggers from Background Noise
+
+| Approach | Effectiveness |
+|----------|---------------|
+| Bandpass filtering (300-3500 Hz) | Medium |
+| Adaptive thresholding | High |
+| Noise estimation during silence | High |
+| DNN-based VAD | Very High |
+| Ensemble methods | Very High |
+
+### Missing Speech Segments
+
+| Cause | Solution |
+|-------|----------|
+| Threshold too high | Lower onset threshold |
+| Quiet speaker | Automatic gain control (AGC) |
+| Unusual speech patterns | More diverse training data |
+| Microphone issues | Input validation and normalization |
+
+### Cross-Talk Handling
+
+```python
+class TargetSpeakerVAD:
+    def __init__(self, vad_model, speaker_model, target_embedding):
+        self.vad = vad_model
+        self.speaker = speaker_model
+        self.target = target_embedding
+
+    def process(self, audio_frame):
+        if not self.vad.is_speech(audio_frame):
+            return False
+
+        embedding = self.speaker.embed(audio_frame)
+        similarity = cosine_similarity(embedding, self.target)
+
+        return similarity > 0.7
+```
+
+## Integration with Voice Pipeline
+
+```
+Audio Stream
+    |
+    v
++-------------+
+| Audio Buffer|
+| (Ring Buffer)|
++------+------+
+       |
+       v
++-------------+
+|    VAD      |
+|   Frame     |
+| Processing  |
++------+------+
+       |
+       +---- Speech Start --> Collect Speech Frames
+       |                           |
+       +---- Speech End -----------+
+       |                           v
+       |                    Send to STT Engine
+       |                           |
+       |                           v
+       |                    Transcription Output
+       |
+       +---- Silence --> Continue monitoring
+```
+
+VAD integration with Krisp's BVC-VAD approach shows 18% WER improvement by running Whisper on original audio while VAD uses Krisp-processed audio for better speech/silence detection.

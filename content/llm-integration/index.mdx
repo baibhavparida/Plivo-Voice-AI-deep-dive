@@ -1,0 +1,151 @@
+---
+title: "LLM Integration"
+description: "Integrating Large Language Models for intelligent voice AI conversations"
+---
+
+# LLM Integration for Voice AI
+
+Large Language Models (LLMs) have transformed voice AI from rigid, script-based systems into intelligent conversational agents that can understand context, handle unexpected inputs, and engage in natural dialogue. This section covers how to effectively integrate LLMs into your voice AI applications.
+
+## Topics in This Section
+
+### Model Selection
+
+Choosing the right LLM for your voice AI use case is critical for balancing quality, latency, and cost.
+
+- **[Model Selection](/topics/llm-integration/model-selection)** - Compare models from OpenAI, Anthropic, Google, and open-source alternatives
+
+### Prompt Engineering
+
+Well-crafted prompts are essential for consistent, high-quality voice agent behavior.
+
+- **[Prompt Engineering](/topics/llm-integration/prompt-engineering)** - Design system prompts, handle edge cases, and maintain persona
+
+### Function Calling
+
+Enable your voice agent to take actions by calling external APIs and tools.
+
+- **[Function Calling](/topics/llm-integration/function-calling)** - Implement tool use, handle async operations, and chain actions
+
+### Context Management
+
+Managing conversation history efficiently is crucial for coherent, long-running conversations.
+
+- **[Context Management](/topics/llm-integration/context-management)** - Handle context windows, implement memory, and optimize token usage
+
+### Speech-to-Speech Models
+
+The emerging frontier of end-to-end voice AI that bypasses text intermediaries.
+
+- **[Speech-to-Speech Models](/topics/llm-integration/speech-to-speech-models)** - Explore GPT-4o, Gemini 2.0, and other multimodal models
+
+## Why LLMs for Voice AI?
+
+Traditional voice AI systems relied on:
+- **Intent classification** - Mapping utterances to predefined categories
+- **Slot filling** - Extracting specific entities
+- **Dialog trees** - Scripted conversation flows
+
+LLMs enable:
+- **Natural conversation** - Handle any input, not just expected phrases
+- **Context awareness** - Remember and reference earlier conversation
+- **Reasoning** - Make decisions based on complex information
+- **Flexibility** - Adapt to new scenarios without retraining
+
+## LLM Integration Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    LLM-Powered Voice AI                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   User Speech                                                    │
+│        │                                                         │
+│        ▼                                                         │
+│   ┌─────────┐     ┌─────────────────────────────────────┐       │
+│   │   STT   │────▶│           LLM Engine                │       │
+│   └─────────┘     │  ┌─────────────────────────────┐    │       │
+│                   │  │      System Prompt          │    │       │
+│                   │  │  • Persona & behavior       │    │       │
+│                   │  │  • Available functions      │    │       │
+│                   │  │  • Conversation rules       │    │       │
+│                   │  └─────────────────────────────┘    │       │
+│                   │  ┌─────────────────────────────┐    │       │
+│                   │  │    Conversation History     │    │       │
+│                   │  │  • User messages            │    │       │
+│                   │  │  • Assistant responses      │    │       │
+│                   │  │  • Function results         │    │       │
+│                   │  └─────────────────────────────┘    │       │
+│   ┌─────────┐     │  ┌─────────────────────────────┐    │       │
+│   │   TTS   │◀────│  │      Function Calling       │    │       │
+│   └─────────┘     │  │  • API integrations         │    │       │
+│        │          │  │  • Database queries         │    │       │
+│        ▼          │  │  • External services        │    │       │
+│   Agent Speech    │  └─────────────────────────────┘    │       │
+│                   └─────────────────────────────────────┘       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Key Considerations
+
+### Latency
+
+LLM inference adds significant latency to your voice pipeline:
+
+| Model Type | Typical Latency | Use Case |
+|------------|-----------------|----------|
+| Small/Fast models | 100-300ms | Simple responses, high volume |
+| Medium models | 300-600ms | Balanced quality/speed |
+| Large models | 500-1500ms | Complex reasoning, quality focus |
+| Streaming | First token: 100-200ms | Reduces perceived latency |
+
+**Tip**: Use streaming responses and start TTS as soon as the first sentence is complete.
+
+### Cost
+
+LLM costs can add up quickly in high-volume voice applications:
+
+| Factor | Impact |
+|--------|--------|
+| Input tokens | Conversation history grows each turn |
+| Output tokens | Longer responses cost more |
+| Model choice | GPT-4 costs 10-30x more than GPT-3.5 |
+| Function calling | Additional tokens for tool definitions |
+
+**Tip**: Summarize conversation history, use smaller models for simple tasks, and cache common responses.
+
+### Quality
+
+Voice conversations have unique quality requirements:
+
+- **Conciseness** - Long responses feel unnatural when spoken
+- **Natural language** - Avoid bullet points, markdown, lists
+- **Conversation flow** - Acknowledge, respond, ask follow-ups
+- **Error handling** - Graceful recovery from misunderstandings
+
+## Model Comparison Quick Reference
+
+| Model | Latency | Quality | Cost | Best For |
+|-------|---------|---------|------|----------|
+| GPT-4o | Medium | Excellent | High | Complex agents, reasoning |
+| GPT-4o-mini | Fast | Very Good | Low | Most production use cases |
+| Claude 3.5 Sonnet | Medium | Excellent | Medium | Nuanced conversations |
+| Claude 3.5 Haiku | Fast | Good | Low | High-volume, simple tasks |
+| Gemini 2.0 Flash | Very Fast | Very Good | Low | Speed-critical applications |
+| Llama 3.1 70B | Medium | Very Good | Self-host | Privacy, customization |
+
+## Getting Started
+
+1. **[Model Selection](/topics/llm-integration/model-selection)** - Choose the right model for your use case
+2. **[Prompt Engineering](/topics/llm-integration/prompt-engineering)** - Design your agent's personality and behavior
+3. **[Function Calling](/topics/llm-integration/function-calling)** - Enable your agent to take actions
+4. **[Context Management](/topics/llm-integration/context-management)** - Handle long conversations efficiently
+
+## Next Steps
+
+After mastering LLM integration:
+
+- **[Agent Architecture](/topics/agent-architecture)** - Design patterns for complex agents
+- **[Enterprise](/topics/enterprise)** - Scale and secure your LLM-powered voice AI
+- **[Implementation](/topics/implementation)** - Code examples and deployment guides
